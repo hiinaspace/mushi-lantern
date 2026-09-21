@@ -16,8 +16,23 @@ extends Resource
 @export var max_acceleration: float = 6.2
 @export var arrival_radius: float = 1.65
 @export var goal_repulsion_strength: float = 0.8
+@export var goal_repulsion_outer_width: float = 1.8
 @export var baseline_arousal: float = 0.32
 @export var arousal_response: float = 0.85
+@export var energy_dynamics: bool = false
+@export var energy_neutral_target: float = 0.45
+@export var energy_recovery_rate: float = 0.18
+@export var energy_individuality: float = 0.035
+@export var energy_individuality_rate: float = 0.42
+@export var mushroom_radius: float = 3.4
+@export var mushroom_attraction_weight: float = 1.7
+@export var mushroom_suppression_rate: float = 1.8
+@export var blue_energy_target: float = 0.04
+@export var blue_energy_response: float = 0.65
+@export var orange_energy_target: float = 0.96
+@export var orange_energy_response: float = 8.0
+@export var sleep_threshold: float = 0.16
+@export var sleep_velocity_damping: float = 7.0
 
 func copy_preset() -> HerdPreset:
 	var result := HerdPreset.new()
@@ -25,7 +40,13 @@ func copy_preset() -> HerdPreset:
 		"preset_name", "social_enabled", "arousal_memory", "separation_weight",
 		"alignment_weight", "cohesion_weight", "wander_weight", "light_weight",
 		"obstacle_weight", "neighbor_radius", "separation_radius", "max_speed",
-		"max_acceleration", "arrival_radius", "goal_repulsion_strength", "baseline_arousal", "arousal_response"
+		"max_acceleration", "arrival_radius", "goal_repulsion_strength",
+		"goal_repulsion_outer_width", "baseline_arousal", "arousal_response",
+		"energy_dynamics", "energy_neutral_target", "energy_recovery_rate",
+		"energy_individuality", "energy_individuality_rate", "mushroom_radius",
+		"mushroom_attraction_weight", "mushroom_suppression_rate",
+		"blue_energy_target", "blue_energy_response", "orange_energy_target",
+		"orange_energy_response", "sleep_threshold", "sleep_velocity_damping"
 	]:
 		result.set(property, get(property))
 	return result
@@ -47,8 +68,23 @@ func to_dict() -> Dictionary:
 		"max_acceleration": max_acceleration,
 		"arrival_radius": arrival_radius,
 		"goal_repulsion_strength": goal_repulsion_strength,
+		"goal_repulsion_outer_width": goal_repulsion_outer_width,
 		"baseline_arousal": baseline_arousal,
 		"arousal_response": arousal_response,
+		"energy_dynamics": energy_dynamics,
+		"energy_neutral_target": energy_neutral_target,
+		"energy_recovery_rate": energy_recovery_rate,
+		"energy_individuality": energy_individuality,
+		"energy_individuality_rate": energy_individuality_rate,
+		"mushroom_radius": mushroom_radius,
+		"mushroom_attraction_weight": mushroom_attraction_weight,
+		"mushroom_suppression_rate": mushroom_suppression_rate,
+		"blue_energy_target": blue_energy_target,
+		"blue_energy_response": blue_energy_response,
+		"orange_energy_target": orange_energy_target,
+		"orange_energy_response": orange_energy_response,
+		"sleep_threshold": sleep_threshold,
+		"sleep_velocity_damping": sleep_velocity_damping,
 	}
 
 static func from_dict(data: Dictionary) -> HerdPreset:
@@ -73,4 +109,16 @@ static func builtins() -> Array[HerdPreset]:
 	independent.alignment_weight = 0.0
 	independent.cohesion_weight = 0.0
 
-	return [plain, memory, independent]
+	var energy := plain.copy_preset()
+	energy.preset_name = "Energy recovery"
+	energy.energy_dynamics = true
+	energy.arousal_memory = true
+	energy.baseline_arousal = 0.45
+	energy.goal_repulsion_strength = 0.48
+	energy.goal_repulsion_outer_width = 4.2
+
+	var lingering := energy.copy_preset()
+	lingering.preset_name = "Lingering energy"
+	lingering.energy_recovery_rate = 0.07
+
+	return [plain, memory, independent, energy, lingering]

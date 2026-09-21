@@ -16,6 +16,15 @@ func _ready() -> void:
 	_test_goal_resistance_is_local_and_repellent()
 	_test_lifecycle_accounting_and_neighbor_exclusion()
 	_test_short_unattended_control()
+	_test_energy_preset_contract_and_compatibility()
+	_test_energy_reset_and_rate_consistency()
+	_test_mushroom_sleep_and_recovery()
+	_test_orange_extracts_from_mushrooms()
+	_test_lingering_recovery_is_slower()
+	_test_blue_sustains_sleep_at_pursuit_distance()
+	_test_energy_controls_mobility_without_colored_light()
+	_test_energy_goal_resistance_is_wider()
+	_test_energy_simulation_finite_and_bounded()
 	if failures == 0:
 		print("M0_CHECKS PASS checks=%d failures=0" % checks)
 	else:
@@ -90,7 +99,8 @@ func _test_blue_settle_and_moving_catchup() -> void:
 func _test_finite_bounded_all_presets() -> void:
 	var obstacles := PackedVector2Array([Vector2(-2.8, -2.2), Vector2(3.0, 2.0), Vector2(1.0, -7.0)])
 	var radii := PackedFloat32Array([1.05, 1.2, 0.85])
-	for preset: HerdPreset in HerdPreset.builtins():
+	for preset_index: int in 3:
+		var preset := HerdPreset.builtins()[preset_index]
 		var sim := FlockSimulation.new()
 		sim.obstacle_centers = obstacles
 		sim.obstacle_radii = radii
@@ -171,7 +181,8 @@ func _test_lifecycle_accounting_and_neighbor_exclusion() -> void:
 func _test_short_unattended_control() -> void:
 	var field := _forward_field(LightField.Mode.CLEAR)
 	field.shutter_openness = 0.0
-	for preset: HerdPreset in HerdPreset.builtins():
+	for preset_index: int in 3:
+		var preset := HerdPreset.builtins()[preset_index]
 		var sim := FlockSimulation.new()
 		sim.obstacle_centers = PackedVector2Array([Vector2(-2.8, -2.2), Vector2(3.0, 2.0), Vector2(1.0, -7.0)])
 		sim.obstacle_radii = PackedFloat32Array([1.05, 1.2, 0.85])
@@ -179,6 +190,137 @@ func _test_short_unattended_control() -> void:
 		for _step: int in 720:
 			sim.step(1.0 / 60.0, field)
 		_expect(sim.score == 0, "%s has no automatic returns in 12-second unattended control" % preset.preset_name)
+
+func _test_energy_preset_contract_and_compatibility() -> void:
+	var presets := HerdPreset.builtins()
+	_expect(presets.size() == 5 and presets[3].preset_name == "Energy recovery" and presets[4].preset_name == "Lingering energy", "energy variants append after the three original presets")
+	_expect(not presets[0].energy_dynamics and presets[0].goal_repulsion_outer_width == 1.8, "legacy preset defaults retain original energy and goal behavior")
+	var old_save := {"preset_name": "Old save", "max_speed": 1.75, "arousal_memory": true}
+	var restored := HerdPreset.from_dict(old_save)
+	_expect(restored.max_speed == 1.75 and restored.arousal_memory and not restored.energy_dynamics, "old save dictionaries load with compatible energy defaults")
+	var round_trip := HerdPreset.from_dict(presets[4].to_dict())
+	_expect(round_trip.energy_dynamics and is_equal_approx(round_trip.energy_recovery_rate, presets[4].energy_recovery_rate), "energy parameters survive preset serialization")
+
+func _test_energy_reset_and_rate_consistency() -> void:
+	var preset := _isolated_energy_preset(3)
+	var sim := FlockSimulation.new()
+	sim.reset(4, 8128, preset)
+	var initial_energies := sim.arousals.duplicate()
+	var has_individuality := false
+	for index: int in range(1, initial_energies.size()):
+		has_individuality = has_individuality or absf(initial_energies[index] - initial_energies[0]) > 0.001
+	var clear := _clear_field()
+	for _step: int in 120:
+		sim.step(1.0 / 60.0, clear)
+	var evolved_energies := sim.arousals.duplicate()
+	sim.reset(4, 8128, preset)
+	for _step: int in 120:
+		sim.step(1.0 / 60.0, clear)
+	_expect(has_individuality, "seeded energy phases give agents modest individual neutral cycles")
+	_expect(sim.arousals == evolved_energies and initial_energies != evolved_energies, "same seed deterministically restores and evolves energy phases")
+
+	var fixed_target := preset.copy_preset()
+	fixed_target.energy_individuality = 0.0
+	var sixty_hz := _single_agent_sim(fixed_target)
+	var thirty_hz := _single_agent_sim(fixed_target)
+	sixty_hz.arousals[0] = 0.04
+	thirty_hz.arousals[0] = 0.04
+	for _step: int in 120:
+		sixty_hz.step(1.0 / 60.0, clear)
+	for _step: int in 60:
+		thirty_hz.step(1.0 / 30.0, clear)
+	_expect(absf(sixty_hz.arousals[0] - thirty_hz.arousals[0]) < 0.0001, "energy relaxation rate is delta-consistent")
+
+func _test_mushroom_sleep_and_recovery() -> void:
+	var preset := _isolated_energy_preset(3)
+	var sim := FlockSimulation.new()
+	sim.mushroom_centers = PackedVector2Array([Vector2(-7.2, -6.6)])
+	sim.reset(1, 101, preset)
+	_expect(sim.mushroom_exposures[0] > 0.5 and sim.arousals[0] < preset.sleep_threshold, "reset near an authored mushroom patch starts sleepy")
+	var clear := _clear_field()
+	for _step: int in 180:
+		sim.step(1.0 / 60.0, clear)
+	_expect(sim.arousals[0] < preset.sleep_threshold and sim.velocities[0].length() < 0.12, "mushroom suppression damps residual motion into sleep")
+	sim.mushroom_centers = PackedVector2Array()
+	for _step: int in 360:
+		sim.step(1.0 / 60.0, clear)
+	_expect(sim.arousals[0] > 0.28, "energy recovers slowly toward neutral after leaving blue sources")
+
+func _test_orange_extracts_from_mushrooms() -> void:
+	var preset := _isolated_energy_preset(3)
+	var sim := _single_agent_sim(preset)
+	sim.mushroom_centers = PackedVector2Array([Vector2.ZERO])
+	sim.arousals[0] = preset.blue_energy_target
+	var orange := _forward_field(LightField.Mode.ORANGE)
+	for _step: int in 150:
+		sim.step(1.0 / 60.0, orange)
+	_expect(sim.arousals[0] > 0.55, "orange wakes an agent under simultaneous mushroom suppression")
+	_expect(sim.positions[0].distance_to(Vector2.ZERO) > 1.0 and sim.velocities[0].y < 0.0, "orange locally overcomes mushroom pull and extracts the agent")
+
+func _test_lingering_recovery_is_slower() -> void:
+	var normal := _single_agent_sim(_isolated_energy_preset(3))
+	var lingering := _single_agent_sim(_isolated_energy_preset(4))
+	normal.arousals[0] = 0.04
+	lingering.arousals[0] = 0.04
+	var clear := _clear_field()
+	for _step: int in 360:
+		normal.step(1.0 / 60.0, clear)
+		lingering.step(1.0 / 60.0, clear)
+	_expect(normal.arousals[0] > lingering.arousals[0] + 0.12, "standard recovery wakes materially faster than lingering suppression")
+	_expect(lingering.arousals[0] < 0.22, "lingering variant retains low energy after six clear seconds")
+
+func _test_blue_sustains_sleep_at_pursuit_distance() -> void:
+	var preset := _isolated_energy_preset(3)
+	var sim := _single_agent_sim(preset)
+	sim.positions[0] = Vector2(0.0, -2.0)
+	sim.previous_positions[0] = sim.positions[0]
+	var blue := _forward_field(LightField.Mode.BLUE)
+	var distance_to_target := sim.positions[0].distance_to(blue.ground_target(FlockSimulation.BODY_HEIGHT))
+	for _step: int in 360:
+		sim.step(1.0 / 60.0, blue)
+	_expect(distance_to_target > preset.arrival_radius, "blue sleep fixture begins at pursuit distance")
+	_expect(sim.exposures[0] > 0.5 and sim.arousals[0] < preset.sleep_threshold, "sustained blue can put an illuminated pursuer to sleep")
+	_expect(sim.velocities[0].length() < 0.12, "blue-slept pursuer does not slide under attraction force")
+
+func _test_energy_controls_mobility_without_colored_light() -> void:
+	var preset := _isolated_energy_preset(3)
+	preset.energy_recovery_rate = 0.0
+	preset.energy_individuality = 0.0
+	preset.wander_weight = 1.0
+	var sleepy := _single_agent_sim(preset)
+	var awake := _single_agent_sim(preset)
+	sleepy.arousals[0] = 0.04
+	awake.arousals[0] = 0.8
+	var clear := _clear_field()
+	for _step: int in 120:
+		sleepy.step(1.0 / 60.0, clear)
+		awake.step(1.0 / 60.0, clear)
+	_expect(sleepy.positions[0].length() < 0.08, "low e suppresses motion without relying on lantern color")
+	_expect(awake.positions[0].length() > sleepy.positions[0].length() + 0.5, "high e retains active locomotion in clear light")
+
+func _test_energy_goal_resistance_is_wider() -> void:
+	var legacy := FlockSimulation.new()
+	legacy.reset(1, 101, HerdPreset.builtins()[0])
+	var energy := FlockSimulation.new()
+	energy.reset(1, 101, HerdPreset.builtins()[3])
+	var wide_point := Vector2(legacy.goal_radius + 2.6, 0.0)
+	_expect(legacy._goal_resistance(wide_point).is_zero_approx(), "legacy goal resistance keeps its original outer range")
+	_expect(energy._goal_resistance(wide_point).dot(wide_point.normalized()) > 0.0, "energy preset goal resistance begins farther from the return region")
+	_expect(energy.preset.goal_repulsion_strength < legacy.preset.goal_repulsion_strength, "wider energy goal resistance uses gentler strength")
+
+func _test_energy_simulation_finite_and_bounded() -> void:
+	for preset_index: int in [3, 4]:
+		var sim := FlockSimulation.new()
+		sim.mushroom_centers = PackedVector2Array([Vector2(-7.2, -6.6), Vector2(7.3, -6.0), Vector2(7.7, 6.8)])
+		sim.reset(24, 40721, HerdPreset.builtins()[preset_index])
+		var field := _forward_field(LightField.Mode.BLUE)
+		for tick: int in 900:
+			if tick == 300:
+				field.mode = LightField.Mode.ORANGE
+			elif tick == 600:
+				field = _clear_field()
+			sim.step(1.0 / 60.0, field)
+		_expect(sim.is_finite_and_bounded(), "%s keeps position, force, energy, and exposure finite and bounded" % sim.preset.preset_name)
 
 func _forward_field(mode: LightField.Mode) -> LightField:
 	var field := LightField.new()
@@ -190,11 +332,26 @@ func _forward_field(mode: LightField.Mode) -> LightField:
 	field.source_direction = Vector3(0.0, -0.4, -1.0).normalized()
 	return field
 
+func _clear_field() -> LightField:
+	var field := _forward_field(LightField.Mode.CLEAR)
+	field.shutter_openness = 0.0
+	return field
+
 func _isolated_preset() -> HerdPreset:
 	var preset := HerdPreset.builtins()[2].copy_preset()
 	preset.wander_weight = 0.0
 	preset.max_acceleration = 8.0
 	preset.max_speed = 3.0
+	preset.goal_repulsion_strength = 0.0
+	return preset
+
+func _isolated_energy_preset(index: int) -> HerdPreset:
+	var preset := HerdPreset.builtins()[index].copy_preset()
+	preset.social_enabled = false
+	preset.separation_weight = 0.0
+	preset.alignment_weight = 0.0
+	preset.cohesion_weight = 0.0
+	preset.wander_weight = 0.0
 	preset.goal_repulsion_strength = 0.0
 	return preset
 

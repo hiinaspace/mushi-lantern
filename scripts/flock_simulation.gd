@@ -15,6 +15,7 @@ var velocities: PackedVector2Array = PackedVector2Array()
 var accelerations: PackedVector2Array = PackedVector2Array()
 var arousals: PackedFloat32Array = PackedFloat32Array()
 var exposures: PackedFloat32Array = PackedFloat32Array()
+var mushroom_exposures: PackedFloat32Array = PackedFloat32Array()
 var lifecycles: PackedInt32Array = PackedInt32Array()
 var lifecycle_times: PackedFloat32Array = PackedFloat32Array()
 var wander_phases: PackedFloat32Array = PackedFloat32Array()
@@ -24,10 +25,13 @@ var goal_radius: float = 2.05
 var goal_dwell_seconds: float = 0.45
 var obstacle_centers: PackedVector2Array = PackedVector2Array()
 var obstacle_radii: PackedFloat32Array = PackedFloat32Array()
+var mushroom_centers: PackedVector2Array = PackedVector2Array()
 var score: int = 0
 var _last_field_mode: int = -1
 var committed_this_step: PackedInt32Array = PackedInt32Array()
 var _goal_dwells: PackedFloat32Array = PackedFloat32Array()
+var _energy_phases: PackedFloat32Array = PackedFloat32Array()
+var _energy_time: float = 0.0
 
 func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	seed_value = new_seed
@@ -38,16 +42,21 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	accelerations = PackedVector2Array()
 	arousals = PackedFloat32Array()
 	exposures = PackedFloat32Array()
+	mushroom_exposures = PackedFloat32Array()
 	lifecycles = PackedInt32Array()
 	lifecycle_times = PackedFloat32Array()
 	wander_phases = PackedFloat32Array()
 	group_ids = PackedInt32Array()
 	_goal_dwells = PackedFloat32Array()
+	_energy_phases = PackedFloat32Array()
+	_energy_time = 0.0
 	score = 0
 	_last_field_mode = -1
 	committed_this_step = PackedInt32Array()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = new_seed
+	var energy_rng := RandomNumberGenerator.new()
+	energy_rng.seed = new_seed ^ 0x5f3759df
 	var centers: Array[Vector2] = [Vector2(-7.2, -6.6), Vector2(7.3, -6.0), Vector2(7.7, 6.8)]
 	for index: int in agent_count:
 		var group: int = 0 if agent_count == 3 else index / 8
@@ -60,7 +69,16 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 		previous_positions.append(position)
 		velocities.append(velocity)
 		accelerations.append(Vector2.ZERO)
-		arousals.append(preset.baseline_arousal)
+		var energy_phase := energy_rng.randf_range(0.0, TAU)
+		_energy_phases.append(energy_phase)
+		var mushroom_exposure := _mushroom_exposure_at(position) if preset.energy_dynamics else 0.0
+		mushroom_exposures.append(mushroom_exposure)
+		var initial_energy := preset.baseline_arousal
+		if preset.energy_dynamics:
+			var neutral := _individual_neutral_target(energy_phase)
+			var initial_suppression := smoothstep(0.0, 0.7, mushroom_exposure)
+			initial_energy = lerpf(neutral, preset.blue_energy_target, initial_suppression)
+		arousals.append(clampf(initial_energy, 0.0, 1.0))
 		exposures.append(0.0)
 		lifecycles.append(Lifecycle.ACTIVE)
 		lifecycle_times.append(0.0)
@@ -69,6 +87,7 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 		_goal_dwells.append(0.0)
 
 func step(delta: float, field: LightField, social_multiplier: float = 1.0, wander_multiplier: float = 1.0) -> void:
+	_energy_time += delta
 	# Smoothed exposure belongs to a filter; do not reinterpret it after switching.
 	if _last_field_mode != field.mode:
 		exposures.fill(0.0)
@@ -92,17 +111,35 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 		var sample_position := Vector3(old_positions[index].x, BODY_HEIGHT, old_positions[index].y)
 		var stimulus := field.sample(sample_position)
 		exposures[index] = move_toward(exposures[index], stimulus, delta * 4.0)
-		_update_arousal(index, field.mode, exposures[index], delta)
+		var mushroom_influence := _mushroom_influence(old_positions[index], old_velocities[index])
+		mushroom_exposures[index] = mushroom_influence[0] if preset.energy_dynamics else 0.0
+		_update_arousal(index, field.mode, exposures[index], mushroom_exposures[index], delta)
 		force += _lantern_force(index, old_positions[index], old_velocities[index], field, exposures[index])
+		if preset.energy_dynamics:
+			var mushroom_force: Vector2 = mushroom_influence[1]
+			if field.mode == LightField.Mode.ORANGE:
+				mushroom_force *= 1.0 - exposures[index] * 0.85
+			force += mushroom_force
 		force += _boundary_force(old_positions[index])
 		force += _goal_resistance(old_positions[index])
 		# Reserve the steering budget for avoidance before behavioral forces.
 		var avoidance := _obstacle_force(old_positions[index], old_velocities[index]).limit_length(preset.max_acceleration)
 		force = avoidance + force.limit_length(maxf(0.0, preset.max_acceleration - avoidance.length()))
-		accelerations[index] = force
 		var activity_scale := lerpf(0.88, 1.18, arousals[index])
-		var velocity := (old_velocities[index] + force * delta).limit_length(preset.max_speed * activity_scale)
-		if velocity.length_squared() < 0.014:
+		var applied_force := force
+		var velocity := old_velocities[index] + force * delta
+		if preset.energy_dynamics:
+			var mobility := _energy_mobility(arousals[index])
+			var sleep_amount := 1.0 - mobility
+			applied_force *= mobility
+			velocity = old_velocities[index] * exp(-delta * preset.sleep_velocity_damping * sleep_amount)
+			velocity += applied_force * delta
+			var sleepy_speed_scale := lerpf(0.035, activity_scale, mobility)
+			velocity = velocity.limit_length(preset.max_speed * sleepy_speed_scale)
+		else:
+			velocity = velocity.limit_length(preset.max_speed * activity_scale)
+		accelerations[index] = applied_force
+		if not preset.energy_dynamics and velocity.length_squared() < 0.014:
 			velocity += Vector2.from_angle(wander_phases[index]) * delta * 0.4
 		var constrained := _constrain_motion(old_positions[index], velocity, delta)
 		next_positions[index] = constrained[0]
@@ -161,7 +198,27 @@ func _lantern_force(index: int, position: Vector2, velocity: Vector2, field: Lig
 		desired_speed = maxf(desired_speed, 1.05)
 	return (direction * desired_speed - velocity) * preset.light_weight * stimulus
 
-func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, delta: float) -> void:
+func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, mushroom_exposure: float, delta: float) -> void:
+	if preset.energy_dynamics:
+		var recovery_rate := maxf(0.0, preset.energy_recovery_rate)
+		var total_rate := recovery_rate
+		var weighted_target := recovery_rate * _individual_neutral_target(_energy_phases[index])
+		var mushroom_rate := maxf(0.0, preset.mushroom_suppression_rate) * mushroom_exposure
+		total_rate += mushroom_rate
+		weighted_target += mushroom_rate * preset.blue_energy_target
+		if field_mode == LightField.Mode.BLUE:
+			var blue_rate := maxf(0.0, preset.blue_energy_response) * stimulus
+			total_rate += blue_rate
+			weighted_target += blue_rate * preset.blue_energy_target
+		elif field_mode == LightField.Mode.ORANGE:
+			var orange_rate := maxf(0.0, preset.orange_energy_response) * stimulus
+			total_rate += orange_rate
+			weighted_target += orange_rate * preset.orange_energy_target
+		if total_rate > 0.00001:
+			var target := weighted_target / total_rate
+			arousals[index] = lerpf(arousals[index], target, 1.0 - exp(-delta * total_rate))
+		arousals[index] = clampf(arousals[index], 0.0, 1.0)
+		return
 	if not preset.arousal_memory:
 		arousals[index] = preset.baseline_arousal
 		return
@@ -172,6 +229,47 @@ func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, d
 		target = lerpf(target, 0.92, stimulus)
 	var rate := preset.arousal_response if stimulus > 0.02 else preset.arousal_response * 0.32
 	arousals[index] = lerpf(arousals[index], target, 1.0 - exp(-delta * rate))
+
+func _individual_neutral_target(phase: float) -> float:
+	var cycle := sin(_energy_time * preset.energy_individuality_rate + phase)
+	return clampf(preset.energy_neutral_target + cycle * preset.energy_individuality, 0.0, 1.0)
+
+func _energy_mobility(energy: float) -> float:
+	return smoothstep(preset.sleep_threshold, maxf(preset.sleep_threshold + 0.001, preset.energy_neutral_target), energy)
+
+func _mushroom_exposure_at(position: Vector2) -> float:
+	if preset.mushroom_radius <= 0.001:
+		return 0.0
+	var total := 0.0
+	for center: Vector2 in mushroom_centers:
+		var distance := position.distance_to(center)
+		if distance < preset.mushroom_radius:
+			total += 1.0 - smoothstep(preset.mushroom_radius * 0.18, preset.mushroom_radius, distance)
+	return clampf(total, 0.0, 1.0)
+
+func _mushroom_influence(position: Vector2, velocity: Vector2) -> Array:
+	if not preset.energy_dynamics or mushroom_centers.is_empty() or preset.mushroom_radius <= 0.001:
+		return [0.0, Vector2.ZERO]
+	var total_weight := 0.0
+	var weighted_center := Vector2.ZERO
+	for center: Vector2 in mushroom_centers:
+		var distance := position.distance_to(center)
+		if distance >= preset.mushroom_radius:
+			continue
+		var weight := 1.0 - smoothstep(preset.mushroom_radius * 0.18, preset.mushroom_radius, distance)
+		total_weight += weight
+		weighted_center += center * weight
+	var exposure := clampf(total_weight, 0.0, 1.0)
+	if total_weight <= 0.00001:
+		return [0.0, Vector2.ZERO]
+	var to_center := weighted_center / total_weight - position
+	var distance_to_center := to_center.length()
+	if distance_to_center <= 0.001:
+		return [exposure, -velocity * preset.mushroom_attraction_weight * exposure]
+	var arrival := smoothstep(0.0, preset.arrival_radius * 1.5, distance_to_center)
+	var desired_velocity := to_center / distance_to_center * preset.max_speed * 0.55 * arrival
+	var force := (desired_velocity - velocity) * preset.mushroom_attraction_weight * exposure
+	return [exposure, force]
 
 func _obstacle_force(position: Vector2, velocity: Vector2) -> Vector2:
 	var result := Vector2.ZERO
@@ -229,6 +327,10 @@ func is_finite_and_bounded() -> bool:
 	for index: int in positions.size():
 		if not positions[index].is_finite() or not velocities[index].is_finite() or not accelerations[index].is_finite():
 			return false
+		if not is_finite(arousals[index]) or not is_finite(mushroom_exposures[index]):
+			return false
+		if arousals[index] < 0.0 or arousals[index] > 1.0 or mushroom_exposures[index] < 0.0 or mushroom_exposures[index] > 1.0:
+			return false
 		if accelerations[index].length() > preset.max_acceleration + 0.001:
 			return false
 		if velocities[index].length() > preset.max_speed * 1.181:
@@ -277,8 +379,9 @@ func _constrain_motion(start: Vector2, velocity: Vector2, delta: float) -> Array
 func _goal_resistance(position: Vector2) -> Vector2:
 	var offset := position - goal_position
 	var distance := offset.length()
-	if distance < 0.001 or distance >= goal_radius + 1.8:
+	var outer_width := maxf(0.0, preset.goal_repulsion_outer_width)
+	if distance < 0.001 or distance >= goal_radius + outer_width or outer_width <= 0.001:
 		return Vector2.ZERO
 	var inner := smoothstep(goal_radius - 0.8, goal_radius, distance)
-	var outer := 1.0 - smoothstep(goal_radius, goal_radius + 1.8, distance)
+	var outer := 1.0 - smoothstep(goal_radius, goal_radius + outer_width, distance)
 	return offset / distance * inner * outer * preset.goal_repulsion_strength

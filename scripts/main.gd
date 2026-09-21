@@ -2,6 +2,7 @@ extends Node3D
 
 const FIXED_STEP := 1.0 / 60.0
 const DEFAULT_SEED := 40721
+const PATCH_CENTERS := [Vector2(-7.2, -6.6), Vector2(7.3, -6.0), Vector2(7.7, 6.8)]
 const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
 const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
 
@@ -9,7 +10,7 @@ var simulation := FlockSimulation.new()
 var light_field := LightField.new()
 var presets: Array[HerdPreset] = HerdPreset.builtins()
 var current_preset: HerdPreset
-var current_preset_index: int = 0
+var current_preset_index: int = 3
 var current_seed: int = DEFAULT_SEED
 var fixture_count: int = 24
 var accumulator: float = 0.0
@@ -38,6 +39,15 @@ var social_slider: HSlider
 var wander_slider: HSlider
 var goal_slider: HSlider
 var memory_slider: HSlider
+var goal_width_slider: HSlider
+var recovery_slider: HSlider
+var blue_sleep_slider: HSlider
+var wake_slider: HSlider
+var mushroom_pull_slider: HSlider
+var energy_rows: Array[Control] = []
+var preset_picker: OptionButton
+var mushroom_nodes: Array[MushroomPatch] = []
+var goal_halo: MeshInstance3D
 var settings_history: Array[Dictionary] = []
 var run_id: String = ""
 var inspected_agent: int = 0
@@ -45,6 +55,7 @@ var saved_select: OptionButton
 var save_name: LineEdit
 var run_notes: LineEdit
 
+var _initial_mode: int = -1
 var _screenshot_path: String = ""
 var _screenshot_delay: float = 1.0
 var _screenshot_elapsed: float = 0.0
@@ -58,6 +69,8 @@ func _ready() -> void:
 	_apply_preset(current_preset_index, false)
 	_reset_run(false)
 	_load_saved_preset_names()
+	if _initial_mode >= 0:
+		lantern.set_mode(_initial_mode as LightField.Mode)
 	if start_top_down:
 		_toggle_top_down()
 	if not _screenshot_path.is_empty():
@@ -112,6 +125,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		panel.visible = debug_visible
 		footprint.visible = debug_visible
 		field_overlay.visible = debug_visible
+		_refresh_preset_visuals()
 	elif event.is_action_pressed("toggle_topdown"):
 		_toggle_top_down()
 	elif event.is_action_pressed("toggle_fullscreen"):
@@ -260,7 +274,7 @@ func _build_ui() -> void:
 
 	panel = PanelContainer.new()
 	panel.position = Vector2(1080.0, 18.0)
-	panel.size = Vector2(336.0, 600.0)
+	panel.size = Vector2(336.0, 782.0)
 	canvas.add_child(panel)
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.055, 0.075, 0.09, 0.93)
@@ -277,29 +291,53 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_top", 14)
 	margin.add_theme_constant_override("margin_bottom", 14)
 	panel.add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(scroll)
 	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 8)
-	margin.add_child(stack)
+	stack.custom_minimum_size.x = 296.0
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.add_theme_constant_override("separation", 7)
+	scroll.add_child(stack)
 	var title := Label.new()
-	title.text = "M0 HERDING LAB"
+	title.text = "M0b · ENERGY LAB"
 	title.add_theme_font_size_override("font_size", 21)
 	stack.add_child(title)
 	preset_label = Label.new()
 	preset_label.add_theme_color_override("font_color", Color("89e4cf"))
 	stack.add_child(preset_label)
+	preset_picker = OptionButton.new()
 	for index: int in presets.size():
-		var button := Button.new()
-		button.text = presets[index].preset_name
-		button.pressed.connect(_apply_preset.bind(index, true))
-		stack.add_child(button)
+		preset_picker.add_item(presets[index].preset_name, index)
+	preset_picker.item_selected.connect(func(index: int) -> void: _apply_preset(index, true))
+	stack.add_child(preset_picker)
 	stack.add_child(HSeparator.new())
 	strength_slider = _add_slider(stack, "Lantern influence", 0.25, 1.5, 1.0, 0.05)
 	social_slider = _add_slider(stack, "Social force", 0.0, 1.8, 1.0, 0.05)
 	wander_slider = _add_slider(stack, "Drift / wander", 0.0, 2.0, 1.0, 0.05)
-	goal_slider = _add_slider(stack, "Goal resistance", 0.0, 2.5, 0.8, 0.1)
+	goal_slider = _add_slider(stack, "Goal resistance", 0.0, 2.5, 0.8, 0.01)
 	memory_slider = _add_slider(stack, "Memory recovery", 0.2, 2.0, 0.85, 0.05)
-	goal_slider.value_changed.connect(_on_tuning_changed)
-	memory_slider.value_changed.connect(_on_tuning_changed)
+	goal_width_slider = _add_slider(stack, "Goal width (m)", 1.0, 7.0, 1.8, 0.1)
+	var energy_title := Label.new()
+	energy_title.text = "Energy experiment · 90% response times"
+	energy_title.add_theme_font_size_override("font_size", 13)
+	stack.add_child(energy_title)
+	energy_rows.append(energy_title)
+	recovery_slider = _add_slider(stack, "Recover (s)", 3.0, 180.0, 30.0, 0.1)
+	blue_sleep_slider = _add_slider(stack, "Blue sleep (s)", 1.0, 40.0, 10.0, 0.1)
+	wake_slider = _add_slider(stack, "Orange wake (s)", 0.1, 8.0, 1.0, 0.01)
+	mushroom_pull_slider = _add_slider(stack, "Mushroom pull", 0.0, 4.0, 1.0, 0.1)
+	for slider: HSlider in [recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider]:
+		energy_rows.append(slider.get_parent())
+
+	recovery_slider.value_changed.connect(_on_tuning_changed.bind(&"energy_recovery_rate"))
+	blue_sleep_slider.value_changed.connect(_on_tuning_changed.bind(&"blue_energy_response"))
+	wake_slider.value_changed.connect(_on_tuning_changed.bind(&"orange_energy_response"))
+	mushroom_pull_slider.value_changed.connect(_on_tuning_changed.bind(&"mushroom_attraction_weight"))
+	goal_width_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_outer_width"))
+	goal_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_strength"))
+	memory_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_response"))
 	strength_slider.value_changed.connect(_on_tuning_changed)
 	social_slider.value_changed.connect(_on_tuning_changed)
 	wander_slider.value_changed.connect(_on_tuning_changed)
@@ -351,7 +389,7 @@ func _build_ui() -> void:
 	run_notes.placeholder_text = "Optional run note (saved on reset / quit)"
 	stack.add_child(run_notes)
 	var note := Label.new()
-	note.text = "Live changes are timestamped in the run record.\nGoal resistance 0 = original control. Memory recovery applies to arousal preset."
+	note.text = "Blue: dormant · green: neutral · yellow/orange: aroused.\nResponse seconds are unopposed at full stimulus. Live changes are recorded; scroll for saves."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.add_theme_font_size_override("font_size", 13)
 	note.add_theme_color_override("font_color", Color("adbfbe"))
@@ -472,7 +510,8 @@ func _update_agent_visuals(alpha: float) -> void:
 		node.visible = true
 		var horizontal := simulation.previous_positions[index].lerp(simulation.positions[index], alpha)
 		var phase := elapsed * (3.0 + simulation.arousals[index] * 3.0) + float(index) * 1.73
-		var height := FlockSimulation.BODY_HEIGHT + sin(phase) * 0.075
+		var activity := smoothstep(0.0, current_preset.energy_neutral_target, simulation.arousals[index]) if current_preset.energy_dynamics else 1.0
+		var height := FlockSimulation.BODY_HEIGHT + sin(phase) * 0.075 * activity
 		if simulation.lifecycles[index] == FlockSimulation.Lifecycle.COMMITTED:
 			height += simulation.lifecycle_times[index] * 0.7
 		elif simulation.lifecycles[index] == FlockSimulation.Lifecycle.ASCENDING:
@@ -481,12 +520,23 @@ func _update_agent_visuals(alpha: float) -> void:
 		var velocity := simulation.velocities[index]
 		if velocity.length_squared() > 0.01:
 			node.rotation.y = atan2(-velocity.x, -velocity.y)
-		var flap := sin(phase * 2.4) * 0.55
+		var flap := sin(phase * 2.4) * 0.55 * activity
 		(node.get_node("WingL") as MeshInstance3D).rotation.z = -0.48 + flap
 		(node.get_node("WingR") as MeshInstance3D).rotation.z = 0.48 - flap
+		if current_preset.energy_dynamics:
+			var color := EnergyVisual.color_for(simulation.arousals[index], current_preset.energy_neutral_target)
+			var body_material := (node.get_node("Body") as MeshInstance3D).material_override as StandardMaterial3D
+			body_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			body_material.albedo_color = color
+			body_material.emission = color
+			body_material.emission_energy_multiplier = 0.3
+			for wing_name: String in ["WingL", "WingR"]:
+				var wing_material := (node.get_node(wing_name) as MeshInstance3D).material_override as StandardMaterial3D
+				wing_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				wing_material.albedo_color = Color(color, 0.72)
 
 func _update_hud() -> void:
-	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider]:
+	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider]:
 		(slider.get_meta("value_label") as Label).text = "%.2f" % slider.value
 	var shutter_text := "CLOSED" if lantern.shutter_openness <= 0.01 else "%d%% OPEN" % roundi(lantern.shutter_openness * 100.0)
 	var pause_text := "  ·  PAUSED" if simulation_paused else ""
@@ -498,7 +548,9 @@ func _update_hud() -> void:
 	if debug_visible and not simulation.positions.is_empty():
 		var i := mini(inspected_agent, simulation.positions.size() - 1)
 		hud_label.text += "\nDisc = arrival target · tiles = sampled influence\nID %d · e %.2f · light %.2f · force (%.2f, %.2f) · %s" % [i, simulation.arousals[i], simulation.exposures[i], simulation.accelerations[i].x, simulation.accelerations[i].y, FlockSimulation.Lifecycle.keys()[simulation.lifecycles[i]]]
-	preset_label.text = "Preset: %s%s" % [current_preset.preset_name, " · modified" if config_changed else ""]
+		if current_preset.energy_dynamics:
+			hud_label.text += "\n%s · mushroom %.2f · blue → green → yellow → orange" % [EnergyVisual.state_name(simulation.arousals[i], current_preset.sleep_threshold), simulation.mushroom_exposures[i]]
+	preset_label.text = "%s%s" % [current_preset.preset_name, " · modified" if config_changed else ""]
 
 func _update_footprint() -> void:
 	var target := light_field.ground_target(FlockSimulation.BODY_HEIGHT)
@@ -519,6 +571,7 @@ func _apply_preset(index: int, restart: bool) -> void:
 		_write_run_record("preset_change")
 	current_preset_index = index
 	current_preset = presets[index].copy_preset()
+	preset_picker.select(index)
 	config_changed = false
 	if strength_slider != null:
 		strength_slider.set_value_no_signal(1.0)
@@ -526,6 +579,7 @@ func _apply_preset(index: int, restart: bool) -> void:
 		wander_slider.set_value_no_signal(1.0)
 		goal_slider.set_value_no_signal(current_preset.goal_repulsion_strength)
 		memory_slider.set_value_no_signal(current_preset.arousal_response)
+		_sync_energy_controls()
 	if restart:
 		_reset_run(false)
 
@@ -533,7 +587,9 @@ func _reset_run(record_previous: bool) -> void:
 	if record_previous and elapsed > 0.1:
 		_write_run_record("reset")
 	current_seed = roundi(seed_box.value) if seed_box != null else current_seed
+	simulation.mushroom_centers = PackedVector2Array(PATCH_CENTERS.slice(0, 1 if fixture_count == 3 else 3)) if current_preset.energy_dynamics else PackedVector2Array()
 	simulation.reset(fixture_count, current_seed, current_preset)
+	_refresh_preset_visuals()
 	_rebuild_agents()
 	accumulator = 0.0
 	elapsed = 0.0
@@ -545,7 +601,7 @@ func _reset_run(record_previous: bool) -> void:
 	run_id = "%s-%d" % [Time.get_datetime_string_from_system(true), Time.get_ticks_usec()]
 	if run_notes != null:
 		run_notes.clear()
-	lantern.set_mode(LightField.Mode.BLUE)
+	lantern.set_mode(LightField.Mode.CLEAR if current_preset.energy_dynamics else LightField.Mode.BLUE)
 	lantern.shutter_openness = 1.0
 	lantern.adjust_shutter(0.0)
 
@@ -557,11 +613,14 @@ func _set_fixture(count: int) -> void:
 func _reset_from_seed_box() -> void:
 	_reset_run(true)
 
-func _on_tuning_changed(_value: float) -> void:
-	current_preset.goal_repulsion_strength = goal_slider.value
-	current_preset.arousal_response = memory_slider.value
-	simulation.preset.goal_repulsion_strength = goal_slider.value
-	simulation.preset.arousal_response = memory_slider.value
+func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
+	if not parameter.is_empty():
+		var coefficient := value
+		if parameter in [&"energy_recovery_rate", &"blue_energy_response", &"orange_energy_response"]:
+			coefficient = log(10.0) / maxf(value, 0.001)
+		current_preset.set(parameter, coefficient)
+		simulation.preset.set(parameter, coefficient)
+	_refresh_preset_visuals()
 	config_changed = true
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
@@ -612,6 +671,8 @@ func _load_named_preset(index: int) -> void:
 	fixture_count = 3 if int(saved.get("fixture_count", fixture_count)) == 3 else 24
 	goal_slider.set_value_no_signal(current_preset.goal_repulsion_strength)
 	memory_slider.set_value_no_signal(current_preset.arousal_response)
+	_sync_energy_controls()
+	preset_picker.select(-1)
 	strength_slider.set_value_no_signal(float(saved.get("lantern_strength", 1.0)))
 	social_slider.set_value_no_signal(float(saved.get("social_multiplier", 1.0)))
 	wander_slider.set_value_no_signal(float(saved.get("wander_multiplier", 1.0)))
@@ -680,6 +741,9 @@ func _parse_arguments() -> void:
 		elif args[index] == "--screenshot-delay" and index + 1 < args.size():
 			_screenshot_delay = maxf(0.15, float(args[index + 1]))
 			index += 2
+		elif args[index] == "--mode" and index + 1 < args.size():
+			_initial_mode = ["clear", "blue", "orange"].find(args[index + 1].to_lower())
+			index += 2
 		elif args[index] == "--top-down":
 			start_top_down = true
 			index += 1
@@ -687,7 +751,7 @@ func _parse_arguments() -> void:
 			fixture_count = 3
 			index += 1
 		elif args[index] == "--preset" and index + 1 < args.size():
-			current_preset_index = clampi(int(args[index + 1]), 0, 2)
+			current_preset_index = clampi(int(args[index + 1]), 0, presets.size() - 1)
 			index += 2
 		else:
 			index += 1
@@ -770,3 +834,40 @@ func _update_field_overlay() -> void:
 				mesh.surface_add_vertex(Vector3(point.x + corner.x, 0.065, point.z + corner.y))
 	if begun:
 		mesh.surface_end()
+
+func _sync_energy_controls() -> void:
+	goal_width_slider.set_value_no_signal(current_preset.goal_repulsion_outer_width)
+	recovery_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.energy_recovery_rate))
+	blue_sleep_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.blue_energy_response))
+	wake_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.orange_energy_response))
+	mushroom_pull_slider.set_value_no_signal(current_preset.mushroom_attraction_weight)
+	memory_slider.get_parent().visible = not current_preset.energy_dynamics
+	for row: Control in energy_rows:
+		row.visible = current_preset.energy_dynamics
+
+func _refresh_preset_visuals() -> void:
+	if goal_halo == null:
+		goal_halo = MeshInstance3D.new()
+		goal_halo.position.y = 0.045
+		var halo_material := _material(Color(0.9, 0.55, 0.25, 0.2), 1.0)
+		halo_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		halo_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		goal_halo.material_override = halo_material
+		goal_halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(goal_halo)
+	var ring := TorusMesh.new()
+	ring.inner_radius = simulation.goal_radius + current_preset.goal_repulsion_outer_width - 0.025
+	ring.outer_radius = ring.inner_radius + 0.05
+	goal_halo.mesh = ring
+	goal_halo.visible = debug_visible and current_preset.goal_repulsion_strength > 0.0
+	if mushroom_nodes.is_empty():
+		for center: Vector2 in PATCH_CENTERS:
+			var patch := MushroomPatch.new()
+			patch.position = Vector3(center.x, 0.0, center.y)
+			add_child(patch)
+			mushroom_nodes.append(patch)
+	for index: int in mushroom_nodes.size():
+		var patch := mushroom_nodes[index]
+		patch.visible = current_preset.energy_dynamics and (fixture_count != 3 or index == 0)
+		patch.set_radius(current_preset.mushroom_radius)
+		patch.show_boundary(debug_visible)

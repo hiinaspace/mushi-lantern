@@ -13,8 +13,8 @@ This is a scope budget, not an automation or a commitment to finish every propos
 
 | Window (Denver) | Evidence gate |
 | --- | --- |
-| Monday–Tuesday | Desktop M0: compare the three small-population presets and choose the simplest enjoyable response. |
-| Wednesday | M1 visibility and sky reveal; early stereo check on sayu. |
+| Monday–Tuesday | M0 accepted as a useful spike; test M0b energy/mushrooms, then a bounded small-3D flight experiment if approved. |
+| Wednesday | Bounded terrain/population trial before M1 visibility and sky reveal; retain an early stereo check on sayu. |
 | Thursday | M2 tracked tool handling; simplify swing/interface if it obstructs steering. |
 | Friday | M3 short complete loop: discovery, guidance, return, acknowledgment. |
 | Saturday–Sunday before 18:00 | Protect time for first-time-player tests, actual target exports, performance fixes, packaging, upload and submission verification. |
@@ -23,6 +23,6 @@ If M0 remains opaque after bounded comparisons, change the response/tool or lean
 
 ## Current boundary
 
-The implementation task is **M0 only**. It can prepare the human gate with reproducible behavior, invariant tests, screenshots and controls, but cannot pass the feel gate by itself. Darkness, virtual adaptation, staff physics, XR and a complete game remain subsequent milestones.
+The current implementation is **M0b energy/mushrooms only**. User approval of its feel precedes the proposed small-3D flight and terrain/population passes; those precede lighting/adaptation. Preserve the release window by bounding or cutting scale experiments. It can prepare the human gate with reproducible behavior, invariant tests, screenshots and controls, but cannot pass the feel gate by itself. Darkness, virtual adaptation, staff physics, XR and a complete game remain subsequent milestones. See [m0b-energy.md](m0b-energy.md) and [scale-feasibility.md](scale-feasibility.md).
 
 The full original planning snapshot is in [charter-2026-09-21.md](charter-2026-09-21.md); the current project tracker lives at `/home/s/org/projects/mushi-lantern.md`.
