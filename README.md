@@ -2,7 +2,7 @@
 
 A bounded, daylight desktop prototype for testing the core lantern-herding feel before darkness or XR work. Three comparison presets drive the same fixed-step, seeded, finite CPU simulation: plain boids, boids with arousal memory, and independent seekers. The intended motion is loose drifting clusters that gather and stretch under the lantern.
 
-The user found M0 a successful spike without selecting a winner. M0b adds two energy/mushroom experiments while preserving all three original presets. The default is Energy recovery.
+The user found M0 a successful spike without selecting a winner. M0b adds two energy/mushroom experiments while preserving all three original presets. The default is Energy recovery. The current follow-up adds arousal-driven scatter and a 60 m square arena with more travel between mushrooms and the goal.
 
 This remains a small, ground-constrained lab. There is no dark adaptation, forest content, tutorial character, staff physics, networking, or headset claim. Automated checks cover correctness boundaries; selecting a ruleset requires the human playtest in [docs/m0-playtest.md](docs/m0-playtest.md).
 
@@ -51,7 +51,7 @@ Run records are JSON Lines at `user://m0_run_records.jsonl`; named presets are a
 ./check.sh
 ```
 
-The suite includes 56 simulation checks and an isolated test of the real UI save/load, configuration history, CLI selection and reset callbacks. The checks cover deterministic reset, finite/capped motion, shutter behavior, angular/radial masking, attraction/repulsion signs, analytic trunk occlusion, stationary blue arrival and moving-target pursuit, local goal resistance, high-speed trunk collision, snapshot neighbor semantics, one-time lifecycle accounting, active-neighbor exclusion, and a short unattended negative control. The energy checks also cover mushroom settling, orange extraction, blue-induced sleep, recovery, energy bounds, and legacy compatibility. These checks do not establish whether herding feels good.
+The suite includes 64 simulation checks and an isolated test of the real UI save/load, configuration history, CLI selection and reset callbacks. The checks cover deterministic reset, finite/capped motion, shutter behavior, angular/radial masking, attraction/repulsion signs, analytic trunk occlusion, stationary blue arrival and moving-target pursuit, local goal resistance, high-speed trunk collision, snapshot neighbor semantics, one-time lifecycle accounting, active-neighbor exclusion, and a short unattended negative control. The energy checks also cover mushroom settling, orange extraction, blue-induced sleep, recovery, energy bounds, and legacy compatibility. These checks do not establish whether herding feels good.
 
 Project and jam scope are recorded in [docs/charter-2026-09-21.md](docs/charter-2026-09-21.md) and [docs/jam-plan.md](docs/jam-plan.md).
 

@@ -2,7 +2,8 @@ extends Node3D
 
 const FIXED_STEP := 1.0 / 60.0
 const DEFAULT_SEED := 40721
-const PATCH_CENTERS := [Vector2(-7.2, -6.6), Vector2(7.3, -6.0), Vector2(7.7, 6.8)]
+const PATCH_CENTERS := [Vector2(-14.4, -13.2), Vector2(14.6, -12.0), Vector2(15.4, 13.6)]
+const ARENA_LAYOUT := "wide-60m-v1"
 const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
 const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
 
@@ -44,6 +45,7 @@ var recovery_slider: HSlider
 var blue_sleep_slider: HSlider
 var wake_slider: HSlider
 var mushroom_pull_slider: HSlider
+var scatter_slider: HSlider
 var energy_rows: Array[Control] = []
 var preset_picker: OptionButton
 var mushroom_nodes: Array[MushroomPatch] = []
@@ -159,13 +161,13 @@ func _build_world() -> void:
 	add_child(sun)
 
 	var floor_material := _material(Color("64706c"), 0.92)
-	_create_box_body("Ground", Vector3(30.0, 0.18, 30.0), Vector3(0.0, -0.1, 0.0), floor_material)
-	_create_box_body("NorthWall", Vector3(30.0, 2.0, 0.35), Vector3(0.0, 1.0, -14.2), _material(Color("475250"), 0.95))
-	_create_box_body("SouthWall", Vector3(30.0, 2.0, 0.35), Vector3(0.0, 1.0, 14.2), _material(Color("475250"), 0.95))
-	_create_box_body("WestWall", Vector3(0.35, 2.0, 30.0), Vector3(-14.2, 1.0, 0.0), _material(Color("475250"), 0.95))
-	_create_box_body("EastWall", Vector3(0.35, 2.0, 30.0), Vector3(14.2, 1.0, 0.0), _material(Color("475250"), 0.95))
+	_create_box_body("Ground", Vector3(60.0, 0.18, 60.0), Vector3(0.0, -0.1, 0.0), floor_material)
+	_create_box_body("NorthWall", Vector3(60.0, 2.0, 0.35), Vector3(0.0, 1.0, -28.4), _material(Color("475250"), 0.95))
+	_create_box_body("SouthWall", Vector3(60.0, 2.0, 0.35), Vector3(0.0, 1.0, 28.4), _material(Color("475250"), 0.95))
+	_create_box_body("WestWall", Vector3(0.35, 2.0, 60.0), Vector3(-28.4, 1.0, 0.0), _material(Color("475250"), 0.95))
+	_create_box_body("EastWall", Vector3(0.35, 2.0, 60.0), Vector3(28.4, 1.0, 0.0), _material(Color("475250"), 0.95))
 
-	var obstacle_positions := PackedVector2Array([Vector2(-2.8, -2.2), Vector2(3.0, 2.0), Vector2(1.0, -7.0)])
+	var obstacle_positions := PackedVector2Array([Vector2(-5.6, -4.4), Vector2(6.0, 4.0), Vector2(2.0, -14.0)])
 	var obstacle_radii := PackedFloat32Array([1.05, 1.2, 0.85])
 	for index: int in obstacle_positions.size():
 		_create_trunk(index, obstacle_positions[index], obstacle_radii[index])
@@ -224,10 +226,10 @@ func _build_world() -> void:
 
 	top_camera = Camera3D.new()
 	top_camera.name = "TopDownCamera"
-	top_camera.position = Vector3(0.0, 26.0, 0.0)
+	top_camera.position = Vector3(0.0, 52.0, 0.0)
 	top_camera.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
 	top_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	top_camera.size = 31.0
+	top_camera.size = 62.0
 	add_child(top_camera)
 
 func _build_player() -> void:
@@ -328,12 +330,14 @@ func _build_ui() -> void:
 	blue_sleep_slider = _add_slider(stack, "Blue sleep (s)", 1.0, 40.0, 10.0, 0.1)
 	wake_slider = _add_slider(stack, "Orange wake (s)", 0.1, 8.0, 1.0, 0.01)
 	mushroom_pull_slider = _add_slider(stack, "Mushroom pull", 0.0, 4.0, 1.0, 0.1)
-	for slider: HSlider in [recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider]:
+	scatter_slider = _add_slider(stack, "Arousal scatter", 0.0, 1.0, 1.0, 0.05)
+	for slider: HSlider in [recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider]:
 		energy_rows.append(slider.get_parent())
 
 	recovery_slider.value_changed.connect(_on_tuning_changed.bind(&"energy_recovery_rate"))
 	blue_sleep_slider.value_changed.connect(_on_tuning_changed.bind(&"blue_energy_response"))
 	wake_slider.value_changed.connect(_on_tuning_changed.bind(&"orange_energy_response"))
+	scatter_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_scatter_strength"))
 	mushroom_pull_slider.value_changed.connect(_on_tuning_changed.bind(&"mushroom_attraction_weight"))
 	goal_width_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_outer_width"))
 	goal_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_strength"))
@@ -536,7 +540,7 @@ func _update_agent_visuals(alpha: float) -> void:
 				wing_material.albedo_color = Color(color, 0.72)
 
 func _update_hud() -> void:
-	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider]:
+	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider]:
 		(slider.get_meta("value_label") as Label).text = "%.2f" % slider.value
 	var shutter_text := "CLOSED" if lantern.shutter_openness <= 0.01 else "%d%% OPEN" % roundi(lantern.shutter_openness * 100.0)
 	var pause_text := "  ·  PAUSED" if simulation_paused else ""
@@ -587,6 +591,8 @@ func _reset_run(record_previous: bool) -> void:
 	if record_previous and elapsed > 0.1:
 		_write_run_record("reset")
 	current_seed = roundi(seed_box.value) if seed_box != null else current_seed
+	simulation.world_limit = 27.0
+	simulation.spawn_centers = PackedVector2Array(PATCH_CENTERS)
 	simulation.mushroom_centers = PackedVector2Array(PATCH_CENTERS.slice(0, 1 if fixture_count == 3 else 3)) if current_preset.energy_dynamics else PackedVector2Array()
 	simulation.reset(fixture_count, current_seed, current_preset)
 	_refresh_preset_visuals()
@@ -594,7 +600,7 @@ func _reset_run(record_previous: bool) -> void:
 	accumulator = 0.0
 	elapsed = 0.0
 	mode_times = PackedFloat32Array([0.0, 0.0, 0.0])
-	player.position = Vector3(-7.2, 0.0, -1.4) if fixture_count == 3 else Vector3(0.0, 0.0, 9.2)
+	player.position = Vector3(PATCH_CENTERS[0].x, 0.0, PATCH_CENTERS[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
 	player.reset_look()
 	inspected_agent = 0
 	settings_history = [{"elapsed_seconds": 0.0, "settings": _current_settings()}]
@@ -625,7 +631,7 @@ func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
 func _current_settings() -> Dictionary:
-	return {"coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
+	return {"arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
 		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value}
 
 func _toggle_top_down() -> void:
@@ -709,6 +715,7 @@ func _write_run_record(reason: String) -> void:
 		"seed": current_seed,
 		"preset": current_preset.preset_name,
 		"fixture_count": fixture_count,
+		"arena_layout": ARENA_LAYOUT,
 		"elapsed_seconds": snappedf(elapsed, 0.001),
 		"returns": simulation.score,
 		"mode_seconds": {
@@ -841,6 +848,7 @@ func _sync_energy_controls() -> void:
 	blue_sleep_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.blue_energy_response))
 	wake_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.orange_energy_response))
 	mushroom_pull_slider.set_value_no_signal(current_preset.mushroom_attraction_weight)
+	scatter_slider.set_value_no_signal(current_preset.arousal_scatter_strength)
 	memory_slider.get_parent().visible = not current_preset.energy_dynamics
 	for row: Control in energy_rows:
 		row.visible = current_preset.energy_dynamics

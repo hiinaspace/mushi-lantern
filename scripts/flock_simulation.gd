@@ -6,6 +6,7 @@ enum Lifecycle { ACTIVE, COMMITTED, ASCENDING, RELEASED }
 const BODY_HEIGHT := 0.42
 const BODY_RADIUS := 0.22
 const WORLD_LIMIT := 13.5
+const DEFAULT_SPAWN_CENTERS := [Vector2(-7.2, -6.6), Vector2(7.3, -6.0), Vector2(7.7, 6.8)]
 
 var seed_value: int = 40721
 var preset: HerdPreset = HerdPreset.new()
@@ -26,6 +27,8 @@ var goal_dwell_seconds: float = 0.45
 var obstacle_centers: PackedVector2Array = PackedVector2Array()
 var obstacle_radii: PackedFloat32Array = PackedFloat32Array()
 var mushroom_centers: PackedVector2Array = PackedVector2Array()
+var spawn_centers: PackedVector2Array = PackedVector2Array(DEFAULT_SPAWN_CENTERS)
+var world_limit: float = WORLD_LIMIT
 var score: int = 0
 var _last_field_mode: int = -1
 var committed_this_step: PackedInt32Array = PackedInt32Array()
@@ -57,7 +60,9 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	rng.seed = new_seed
 	var energy_rng := RandomNumberGenerator.new()
 	energy_rng.seed = new_seed ^ 0x5f3759df
-	var centers: Array[Vector2] = [Vector2(-7.2, -6.6), Vector2(7.3, -6.0), Vector2(7.7, 6.8)]
+	var centers := spawn_centers
+	if centers.is_empty():
+		centers = PackedVector2Array(DEFAULT_SPAWN_CENTERS)
 	for index: int in agent_count:
 		var group: int = 0 if agent_count == 3 else index / 8
 		group = mini(group, centers.size() - 1)
@@ -170,13 +175,32 @@ func _social_force(index: int, snapshot_positions: PackedVector2Array, snapshot_
 	alignment = alignment / float(neighbors) - snapshot_velocities[index]
 	cohesion_center = cohesion_center / float(neighbors)
 	var cohesion := (cohesion_center - snapshot_positions[index]).limit_length(1.0)
-	return separation * preset.separation_weight + alignment * preset.alignment_weight + cohesion * preset.cohesion_weight
+	var social_retention := 1.0 - _arousal_scatter_amount(index) * 0.82
+	return separation * preset.separation_weight + (alignment * preset.alignment_weight + cohesion * preset.cohesion_weight) * social_retention
 
 func _wander_force(index: int, delta: float, multiplier: float) -> Vector2:
 	var phase_speed := 0.52 + float((index * 17) % 9) * 0.035
 	wander_phases[index] = fmod(wander_phases[index] + delta * phase_speed, TAU)
-	var direction := Vector2(cos(wander_phases[index]), sin(wander_phases[index]))
-	return direction * preset.wander_weight * multiplier * lerpf(0.55, 1.45, arousals[index])
+	var heading := wander_phases[index]
+	var scatter := _arousal_scatter_amount(index)
+	if scatter > 0.0:
+		# Seeded, incommensurate harmonics keep excited agents from turning in
+		# synchronous circles while remaining smooth and fixed-step deterministic.
+		var seed_phase := _energy_phases[index]
+		heading += scatter * (
+			sin(_energy_time * 1.73 + seed_phase * 1.31) * 1.05
+			+ sin(_energy_time * 0.47 + seed_phase * 2.17) * 0.62
+		)
+	var direction := Vector2.from_angle(heading)
+	var scatter_gain := 1.0 + scatter * 3.2
+	return direction * preset.wander_weight * multiplier * lerpf(0.55, 1.45, arousals[index]) * scatter_gain
+
+func _arousal_scatter_amount(index: int) -> float:
+	if not preset.energy_dynamics or preset.arousal_scatter_strength <= 0.0:
+		return 0.0
+	var neutral := preset.energy_neutral_target
+	var high_energy := smoothstep(neutral, 1.0, arousals[index])
+	return high_energy * clampf(preset.arousal_scatter_strength, 0.0, 1.0)
 
 func _lantern_force(index: int, position: Vector2, velocity: Vector2, field: LightField, stimulus: float) -> Vector2:
 	if stimulus <= 0.0001 or field.mode == LightField.Mode.CLEAR:
@@ -288,10 +312,10 @@ func _obstacle_force(position: Vector2, velocity: Vector2) -> Vector2:
 
 func _boundary_force(position: Vector2) -> Vector2:
 	var result := Vector2.ZERO
-	if absf(position.x) > WORLD_LIMIT - 1.6:
-		result.x = -signf(position.x) * (absf(position.x) - (WORLD_LIMIT - 1.6)) * 3.2
-	if absf(position.y) > WORLD_LIMIT - 1.6:
-		result.y = -signf(position.y) * (absf(position.y) - (WORLD_LIMIT - 1.6)) * 3.2
+	if absf(position.x) > world_limit - 1.6:
+		result.x = -signf(position.x) * (absf(position.x) - (world_limit - 1.6)) * 3.2
+	if absf(position.y) > world_limit - 1.6:
+		result.y = -signf(position.y) * (absf(position.y) - (world_limit - 1.6)) * 3.2
 	return result
 
 func _update_goal(index: int, position: Vector2, delta: float) -> void:
@@ -366,7 +390,7 @@ func _constrain_motion(start: Vector2, velocity: Vector2, delta: float) -> Array
 		remaining *= 1.0 - first_hit
 		remaining -= hit_normal * minf(remaining.dot(hit_normal), 0.0)
 		velocity -= hit_normal * minf(velocity.dot(hit_normal), 0.0)
-	var limit := WORLD_LIMIT - BODY_RADIUS
+	var limit := world_limit - BODY_RADIUS
 	var bounded := position.clamp(Vector2(-limit, -limit), Vector2(limit, limit))
 	if bounded.x != position.x:
 		velocity.x = 0.0

@@ -10,6 +10,9 @@ func run_checks() -> void:
 	root.add_child(lab)
 	await process_frame
 	assert(lab.current_preset.preset_name == "Arousal memory")
+	assert(lab.simulation.world_limit == 27.0)
+	assert(lab.simulation.spawn_centers[0] == Vector2(-14.4, -13.2))
+	assert(lab.get_node("Ground").get_child(0).mesh.size.x == 60.0)
 	lab.seed_box.value = 12345
 	lab._set_fixture(3)
 	lab.goal_slider.value = 1.5
@@ -39,6 +42,8 @@ func run_checks() -> void:
 	lab.recovery_slider.value = 30.0
 	assert(is_equal_approx(lab.current_preset.energy_recovery_rate, log(10.0) / 30.0))
 	assert(is_equal_approx(lab.simulation.preset.energy_recovery_rate, log(10.0) / 30.0))
+	lab.scatter_slider.value = 0.35
+	assert(is_equal_approx(lab.simulation.preset.arousal_scatter_strength, 0.35))
 	lab.save_name.text = "smoke-saved"
 	lab._save_named_preset()
 	lab._apply_preset(0, true)
@@ -46,6 +51,7 @@ func run_checks() -> void:
 	lab._load_named_preset(1)
 	assert(lab.current_preset.energy_dynamics and lab.simulation.mushroom_centers.size() == 1)
 	assert(is_equal_approx(lab.recovery_slider.value, 30.0))
+	assert(is_equal_approx(lab.scatter_slider.value, 0.35))
 	var blue := EnergyVisual.color_for(0.0)
 	var green := EnergyVisual.color_for(0.45)
 	var yellow := EnergyVisual.color_for(0.75)
@@ -67,5 +73,6 @@ func run_checks() -> void:
 	var record: Dictionary = JSON.parse_string(last_record)
 	assert(record.has("settings_history") and record.has("run_id"))
 	assert(record.get("notes") == "UI persistence check")
+	assert(record.get("arena_layout") == "wide-60m-v1")
 	print("PASS UI: CLI preset, live tuning, config history, named save/load with seed/fixture, camera reset, run record serialization; energy presets, mushroom visibility, independent tuning, energy save/load and color anchors")
 	quit()

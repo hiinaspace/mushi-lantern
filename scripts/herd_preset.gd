@@ -33,6 +33,7 @@ extends Resource
 @export var orange_energy_response: float = 8.0
 @export var sleep_threshold: float = 0.16
 @export var sleep_velocity_damping: float = 7.0
+@export_range(0.0, 1.0, 0.01) var arousal_scatter_strength: float = 0.0
 
 func copy_preset() -> HerdPreset:
 	var result := HerdPreset.new()
@@ -46,7 +47,8 @@ func copy_preset() -> HerdPreset:
 		"energy_individuality", "energy_individuality_rate", "mushroom_radius",
 		"mushroom_attraction_weight", "mushroom_suppression_rate",
 		"blue_energy_target", "blue_energy_response", "orange_energy_target",
-		"orange_energy_response", "sleep_threshold", "sleep_velocity_damping"
+		"orange_energy_response", "sleep_threshold", "sleep_velocity_damping",
+		"arousal_scatter_strength"
 	]:
 		result.set(property, get(property))
 	return result
@@ -85,6 +87,7 @@ func to_dict() -> Dictionary:
 		"orange_energy_response": orange_energy_response,
 		"sleep_threshold": sleep_threshold,
 		"sleep_velocity_damping": sleep_velocity_damping,
+		"arousal_scatter_strength": arousal_scatter_strength,
 	}
 
 static func from_dict(data: Dictionary) -> HerdPreset:
@@ -116,6 +119,7 @@ static func builtins() -> Array[HerdPreset]:
 	energy.baseline_arousal = 0.45
 	energy.goal_repulsion_strength = 0.48
 	energy.goal_repulsion_outer_width = 4.2
+	energy.arousal_scatter_strength = 0.8
 
 	var lingering := energy.copy_preset()
 	lingering.preset_name = "Lingering energy"

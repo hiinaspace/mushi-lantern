@@ -2,6 +2,12 @@
 
 The user judged M0 a successful spike; all three original presets remain useful comparisons. This experiment stays on the same CPU, ground-constrained 3/24-agent fixtures. No terrain, GPU simulation, free flight or XR change is included.
 
+## Arousal and larger arena follow-up
+
+The user approved the static mushroom / dynamic lantern structure and requested stronger scatter at high arousal. The follow-up couples activity above green neutral to stronger irregular wandering and weaker cohesion/alignment; separation remains intact. This is intended to make short orange nudges and recovery toward green useful. The Arousal scatter slider (0–1, default 0.8) disables this coupling at zero. Its influence ramps smoothly above neutral energy; at maximum energy the default gives 3.56× wander strength and retains 34.4% of cohesion/alignment. Seeded smooth heading variation adds irregularity without fresh random jitter each frame. Continuous orange pressure is still allowed; whether it remains too easy needs a human playtest.
+
+The floor is now 60 × 60 m (previously 30 × 30), with wall centers at ±28.4 m and simulation bounds at ±27 m. Mushroom/spawn centers and trunk positions are twice as far from the central goal. Creature size, group spread, mushroom radius, goal radius, lamp range and movement speed remain unchanged. The tiny fixture still starts the player 5.2 m from its mushroom patch. All presets share this larger layout; their original behavior rules remain available. Run records identify layout `wide-60m-v1`; old saved tuning loads into the current layout.
+
 ## Behavior
 
 Blue mushroom patches attract and suppress energy, leaving nearby mushi mostly still. Orange quickly raises energy and weakens mushroom attraction while illuminated, allowing extraction. Blue lantern attraction now progressively suppresses locomotion: an illuminated pursuer can fall asleep before reaching the lamp. Away from suppressing fields, energy returns toward neutral, with a small seeded periodic variation per creature. High orange arousal also returns toward neutral.
@@ -34,3 +40,7 @@ Tests establish bounded behavior and reproducibility, not feel. New M0b human ap
 ## Next gates
 
 After M0b feels useful, try small height-bounded 3D flight at 24/64 agents separately, so vertical steering and swirl can be judged without also changing world scale. Then trial Terrain3D, a wavy heightmap, cylinder trees and measured population scaling before lighting/adaptation. A 256 m square and hundreds/thousands are experiments, not jam promises. See [scale-feasibility.md](scale-feasibility.md).
+
+### Scatter follow-up validation
+
+`./check.sh` now passes 64 simulation checks plus UI smoke. A seeded eight-agent, ten-second fixed-high-energy comparison exceeds the zero-coupling group spread by at least 25%; replay is deterministic. This isolates the coupling, with energy recovery disabled, and does not prove the full herding loop is more interesting. Extraction, sleep and recovery regressions still pass. The UI test covers scatter save/load and the expanded floor/spawn/bounds; the full 24-agent top-down render was inspected. Evidence: `artifacts/m0b-scatter-20260921/check.log` and `wide-arena.png`.

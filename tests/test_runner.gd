@@ -24,6 +24,9 @@ func _ready() -> void:
 	_test_blue_sustains_sleep_at_pursuit_distance()
 	_test_energy_controls_mobility_without_colored_light()
 	_test_energy_goal_resistance_is_wider()
+	_test_arousal_scatter_coupling()
+	_test_arousal_scatter_spreads_a_group()
+	_test_configurable_world_extent()
 	_test_energy_simulation_finite_and_bounded()
 	if failures == 0:
 		print("M0_CHECKS PASS checks=%d failures=0" % checks)
@@ -308,6 +311,87 @@ func _test_energy_goal_resistance_is_wider() -> void:
 	_expect(energy._goal_resistance(wide_point).dot(wide_point.normalized()) > 0.0, "energy preset goal resistance begins farther from the return region")
 	_expect(energy.preset.goal_repulsion_strength < legacy.preset.goal_repulsion_strength, "wider energy goal resistance uses gentler strength")
 
+func _test_arousal_scatter_coupling() -> void:
+	var coupled_preset := HerdPreset.builtins()[3].copy_preset()
+	coupled_preset.energy_recovery_rate = 0.0
+	coupled_preset.energy_individuality = 0.0
+	coupled_preset.separation_weight = 0.0
+	coupled_preset.alignment_weight = 1.0
+	coupled_preset.cohesion_weight = 1.0
+	coupled_preset.wander_weight = 1.0
+	var coupled := _two_agent_sim(coupled_preset)
+	var positions := PackedVector2Array([Vector2.ZERO, Vector2(2.0, 0.0)])
+	var velocities := PackedVector2Array([Vector2.ZERO, Vector2.ZERO])
+	var states := PackedInt32Array([FlockSimulation.Lifecycle.ACTIVE, FlockSimulation.Lifecycle.ACTIVE])
+	coupled.arousals.fill(coupled_preset.energy_neutral_target)
+	var green_social := coupled._social_force(0, positions, velocities, states).length()
+	coupled.arousals.fill(0.96)
+	var hot_social := coupled._social_force(0, positions, velocities, states).length()
+
+	var uncoupled_preset := coupled_preset.copy_preset()
+	uncoupled_preset.arousal_scatter_strength = 0.0
+	var uncoupled := _two_agent_sim(uncoupled_preset)
+	uncoupled.arousals.fill(0.96)
+	var uncoupled_social := uncoupled._social_force(0, positions, velocities, states).length()
+	var coupled_wander := coupled._wander_force(0, 1.0 / 60.0, 1.0).length()
+	var uncoupled_wander := uncoupled._wander_force(0, 1.0 / 60.0, 1.0).length()
+	_expect(hot_social < green_social * 0.5, "high energy weakens alignment/cohesion while green retains flocking")
+	_expect(is_equal_approx(uncoupled_social, green_social), "zero arousal scatter preserves the original social force")
+	_expect(coupled_wander > uncoupled_wander * 2.5, "high energy substantially amplifies individual wander")
+
+	var separation_preset := coupled_preset.copy_preset()
+	separation_preset.separation_weight = 1.0
+	separation_preset.alignment_weight = 0.0
+	separation_preset.cohesion_weight = 0.0
+	var separation_sim := _two_agent_sim(separation_preset)
+	separation_sim.arousals.fill(0.96)
+	positions[1] = Vector2(0.5, 0.0)
+	var hot_separation := separation_sim._social_force(0, positions, velocities, states)
+	separation_sim.arousals.fill(separation_preset.energy_neutral_target)
+	var green_separation := separation_sim._social_force(0, positions, velocities, states)
+	_expect(hot_separation.is_equal_approx(green_separation), "arousal coupling retains collision separation")
+
+func _test_arousal_scatter_spreads_a_group() -> void:
+	var coupled_preset := HerdPreset.builtins()[3].copy_preset()
+	coupled_preset.energy_recovery_rate = 0.0
+	coupled_preset.energy_individuality = 0.0
+	coupled_preset.goal_repulsion_strength = 0.0
+	coupled_preset.mushroom_attraction_weight = 0.0
+	var uncoupled_preset := coupled_preset.copy_preset()
+	uncoupled_preset.arousal_scatter_strength = 0.0
+	var coupled := FlockSimulation.new()
+	var uncoupled := FlockSimulation.new()
+	coupled.world_limit = 40.0
+	uncoupled.world_limit = 40.0
+	coupled.reset(8, 9182, coupled_preset)
+	uncoupled.reset(8, 9182, uncoupled_preset)
+	coupled.arousals.fill(0.96)
+	uncoupled.arousals.fill(0.96)
+	var clear := _clear_field()
+	for _step: int in 600:
+		coupled.step(1.0 / 60.0, clear)
+		uncoupled.step(1.0 / 60.0, clear)
+	var coupled_spread := _mean_distance_from_centroid(coupled.positions)
+	var uncoupled_spread := _mean_distance_from_centroid(uncoupled.positions)
+	_expect(coupled_spread > uncoupled_spread * 1.25, "excited coupling produces a visibly broader group than the zero-coupling control")
+
+	var replay := FlockSimulation.new()
+	replay.world_limit = 40.0
+	replay.reset(8, 9182, coupled_preset)
+	replay.arousals.fill(0.96)
+	for _step: int in 600:
+		replay.step(1.0 / 60.0, clear)
+	_expect(replay.positions == coupled.positions and replay.velocities == coupled.velocities, "seeded irregular arousal wander replays deterministically")
+
+func _test_configurable_world_extent() -> void:
+	var sim := FlockSimulation.new()
+	sim.world_limit = 27.0
+	sim.spawn_centers = PackedVector2Array([Vector2(20.0, 20.0)])
+	sim.reset(3, 901, HerdPreset.builtins()[0])
+	_expect(sim.positions[0].x > 15.0 and sim.positions[0].y > 15.0, "authored spawn centers can use the expanded arena")
+	var constrained := sim._constrain_motion(Vector2(25.0, 0.0), Vector2(10.0, 0.0), 1.0)
+	_expect(constrained[0].x <= 27.0 - FlockSimulation.BODY_RADIUS + 0.0001, "configured world extent bounds swept motion")
+
 func _test_energy_simulation_finite_and_bounded() -> void:
 	for preset_index: int in [3, 4]:
 		var sim := FlockSimulation.new()
@@ -321,6 +405,16 @@ func _test_energy_simulation_finite_and_bounded() -> void:
 				field = _clear_field()
 			sim.step(1.0 / 60.0, field)
 		_expect(sim.is_finite_and_bounded(), "%s keeps position, force, energy, and exposure finite and bounded" % sim.preset.preset_name)
+
+func _mean_distance_from_centroid(points: PackedVector2Array) -> float:
+	var center := Vector2.ZERO
+	for point: Vector2 in points:
+		center += point
+	center /= float(points.size())
+	var total := 0.0
+	for point: Vector2 in points:
+		total += point.distance_to(center)
+	return total / float(points.size())
 
 func _forward_field(mode: LightField.Mode) -> LightField:
 	var field := LightField.new()
