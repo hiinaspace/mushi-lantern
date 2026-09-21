@@ -1,0 +1,5 @@
+.godot/
+*.import
+*.tmp
+screenshots/
+run-records/
