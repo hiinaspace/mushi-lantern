@@ -21,6 +21,8 @@ fi
 "$godot_bin" --headless --path "$project_dir" --scene res://scenes/test_runner.tscn
 
 
+"$godot_bin" --headless --path "$project_dir" --script res://tests/flight_checks.gd
+
 # Exercise the actual UI callbacks without changing the player's saved presets.
 mushi_test_data="$(mktemp -d /tmp/mushi-ui-data.XXXXXX)"
 trap 'rm -r -- "$mushi_test_data"' EXIT

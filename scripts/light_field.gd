@@ -59,3 +59,8 @@ static func _segment_circle_intersects(from: Vector2, to: Vector2, center: Vecto
 	var t := clampf((center - from).dot(segment) / length_squared, 0.0, 1.0)
 	var closest := from + segment * t
 	return closest.distance_squared_to(center) < radius * radius
+
+func flight_target(min_height: float, max_height: float) -> Vector3:
+	var target := source_position + source_direction * 3.0
+	target.y = clampf(target.y, min_height, max_height)
+	return target

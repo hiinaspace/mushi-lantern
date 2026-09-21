@@ -60,6 +60,19 @@ func run_checks() -> void:
 	assert(green.g > green.r and green.g > green.b)
 	assert(yellow.r > 0.8 and yellow.g > 0.7 and yellow.b < 0.3)
 	assert(orange.r > 0.8 and orange.g < 0.5 and orange.b < 0.3)
+	lab.flight_toggle.button_pressed = true
+	lab._set_fixture(64)
+	assert(lab.simulation is FlightSimulation and lab.simulation.positions.size() == 64)
+	lab.save_name.text = "smoke-flight"
+	lab._save_named_preset()
+	lab.flight_toggle.button_pressed = false
+	assert(lab.simulation is FlockSimulation)
+	lab._load_named_preset(1) # Alphabetically smoke-flight before smoke-saved.
+	assert(lab.flight_enabled and lab.flight_toggle.button_pressed)
+	assert(lab.fixture_count == 64 and lab.simulation is FlightSimulation)
+	lab._update_agent_visuals(1.0)
+	assert(lab.agent_nodes[0].position.is_equal_approx(lab.simulation.positions[0]))
+	assert(is_equal_approx(lab.agent_nodes[0].scale.x, 0.45))
 	lab.run_notes.text = "UI persistence check"
 	lab.elapsed = 1.0
 	lab._write_run_record("ui_smoke")
@@ -74,5 +87,6 @@ func run_checks() -> void:
 	assert(record.has("settings_history") and record.has("run_id"))
 	assert(record.get("notes") == "UI persistence check")
 	assert(record.get("arena_layout") == "wide-60m-v1")
+	assert(record.get("flight_enabled") == true and record.get("fixture_count") == 64)
 	print("PASS UI: CLI preset, live tuning, config history, named save/load with seed/fixture, camera reset, run record serialization; energy presets, mushroom visibility, independent tuning, energy save/load and color anchors")
 	quit()

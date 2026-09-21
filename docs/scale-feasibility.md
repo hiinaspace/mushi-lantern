@@ -2,6 +2,10 @@
 
 Research note only, 2026-09-21. No addon was installed and no project or target-device profiling was performed. Godot `latest` documentation can describe behavior newer than the pinned 4.7.2 build, so the later gates require checks in that exact build and on the intended Mobile/XR target.
 
+## Current gate
+
+M0b arousal/scatter and wider arena were approved by the user on 2026-09-21. The small CPU flight spike is now authorized and tracked in [m0c-flight.md](m0c-flight.md). Terrain/population/GPU implementation remains deferred until its feel gate. The research recommendations below describe the original sequence.
+
 ## Recommendation
 
 Finish M0b first at the current ground scale: make energy readable and make blue mushrooms affect the existing loop. Preserve all three successful M0 presets. Every larger implementation below waits for the user's M0b `lgtm`.

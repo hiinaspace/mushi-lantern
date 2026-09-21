@@ -1,3 +1,7 @@
+# Current authorization — M0c flight spike
+
+The user approved the arousal-scatter tension and expanded arena on 2026-09-21 and explicitly requested moving on to small real 3D flight. Implement height-bounded CPU flight at 24/64 agents, retaining the energy/mushroom/lantern behavior and a selectable 2D fallback. Terrain, large population/GPU work and lighting remain later gates. The older M0b scope paragraphs below describe history; this authorization supersedes their flight deferral.
+
 # Mushi Lantern
 
 Hiina <hiina@hiina.space>. New Godot XR jam project, started on laptop `natto` on 2026-09-21. The original charter is `docs/charter-2026-09-21.md`; current state is tracked in `/home/s/org/projects/mushi-lantern.md` when available. See `docs/jam-plan.md` for the verified Sunday September 27, 18:00 Denver deadline.

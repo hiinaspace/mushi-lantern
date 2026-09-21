@@ -21,4 +21,6 @@ if [[ ! -f "$project_dir/.godot/global_script_class_cache.cfg" ]]; then
   "$godot_bin" --headless --path "$project_dir" --editor --quit
 fi
 
-exec "$godot_bin" --path "$project_dir" -- "$@"
+# The laptop desktop session can stall on V-Sync presentation. Bound power use
+# with an explicit 60 FPS cap instead; XR/export timing is a separate gate.
+exec "$godot_bin" --path "$project_dir" --disable-vsync --max-fps 60 -- "$@"

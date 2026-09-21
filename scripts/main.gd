@@ -7,7 +7,12 @@ const ARENA_LAYOUT := "wide-60m-v1"
 const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
 const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
 
-var simulation := FlockSimulation.new()
+var simulation: Variant = FlockSimulation.new()
+var flight_enabled: bool = true
+var flight_toggle: CheckBox
+var flight_marker: MeshInstance3D
+var sim_step_ms: float = 0.0
+var flight_goal_volume: MeshInstance3D
 var light_field := LightField.new()
 var presets: Array[HerdPreset] = HerdPreset.builtins()
 var current_preset: HerdPreset
@@ -76,6 +81,7 @@ func _ready() -> void:
 	if start_top_down:
 		_toggle_top_down()
 	if not _screenshot_path.is_empty():
+		set_process_unhandled_input(false)
 		player.set_process_unhandled_input(false)
 		player.set_physics_process(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -95,7 +101,9 @@ func _process(delta: float) -> void:
 	if not simulation_paused:
 		accumulator = minf(accumulator + delta, FIXED_STEP * 8.0)
 		while accumulator >= FIXED_STEP:
+			var step_start := Time.get_ticks_usec()
 			simulation.step(FIXED_STEP, light_field, social_slider.value, wander_slider.value)
+			sim_step_ms = lerpf(sim_step_ms, float(Time.get_ticks_usec() - step_start) / 1000.0, 0.05)
 			accumulator -= FIXED_STEP
 	_update_agent_visuals(accumulator / FIXED_STEP)
 	_update_hud()
@@ -191,6 +199,19 @@ func _build_world() -> void:
 	goal_material.emission_energy_multiplier = 0.35
 	goal.material_override = goal_material
 	add_child(goal)
+	flight_goal_volume = MeshInstance3D.new()
+	var goal_volume_mesh := CylinderMesh.new()
+	goal_volume_mesh.top_radius = simulation.goal_radius
+	goal_volume_mesh.bottom_radius = simulation.goal_radius
+	goal_volume_mesh.height = 2.8
+	flight_goal_volume.mesh = goal_volume_mesh
+	flight_goal_volume.position.y = 1.4
+	var volume_material := _material(Color(0.29, 0.92, 0.75, 0.045), 1.0)
+	volume_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	volume_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flight_goal_volume.material_override = volume_material
+	flight_goal_volume.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(flight_goal_volume)
 
 	var beacon := MeshInstance3D.new()
 	var torus := TorusMesh.new()
@@ -212,6 +233,13 @@ func _build_world() -> void:
 	footprint.material_override = footprint_material
 	footprint.position.y = 0.045
 	add_child(footprint)
+	flight_marker = MeshInstance3D.new()
+	var marker_mesh := SphereMesh.new()
+	marker_mesh.radius = 0.12
+	marker_mesh.height = 0.24
+	flight_marker.mesh = marker_mesh
+	flight_marker.material_override = footprint_material
+	add_child(flight_marker)
 
 	field_overlay = MeshInstance3D.new()
 	field_overlay.mesh = ImmediateMesh.new()
@@ -303,7 +331,7 @@ func _build_ui() -> void:
 	stack.add_theme_constant_override("separation", 7)
 	scroll.add_child(stack)
 	var title := Label.new()
-	title.text = "M0b · ENERGY LAB"
+	title.text = "M0c · FLIGHT LAB"
 	title.add_theme_font_size_override("font_size", 21)
 	stack.add_child(title)
 	preset_label = Label.new()
@@ -314,6 +342,11 @@ func _build_ui() -> void:
 		preset_picker.add_item(presets[index].preset_name, index)
 	preset_picker.item_selected.connect(func(index: int) -> void: _apply_preset(index, true))
 	stack.add_child(preset_picker)
+	flight_toggle = CheckBox.new()
+	flight_toggle.text = "3D flight (off = ground fallback)"
+	flight_toggle.button_pressed = flight_enabled
+	flight_toggle.toggled.connect(_set_flight)
+	stack.add_child(flight_toggle)
 	stack.add_child(HSeparator.new())
 	strength_slider = _add_slider(stack, "Lantern influence", 0.25, 1.5, 1.0, 0.05)
 	social_slider = _add_slider(stack, "Social force", 0.0, 1.8, 1.0, 0.05)
@@ -355,6 +388,10 @@ func _build_ui() -> void:
 	full.text = "Full · 24"
 	full.pressed.connect(_set_fixture.bind(24))
 	fixture_row.add_child(full)
+	var larger := Button.new()
+	larger.text = "64"
+	larger.pressed.connect(_set_fixture.bind(64))
+	fixture_row.add_child(larger)
 	stack.add_child(fixture_row)
 	var seed_row := HBoxContainer.new()
 	var seed_label := Label.new()
@@ -470,6 +507,7 @@ func _rebuild_agents() -> void:
 func _create_agent_visual(index: int) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Mushi%02d" % index
+	root.scale = Vector3.ONE * (0.45 if flight_enabled else 1.0)
 	var colors: Array[Color] = [Color("a9eff0"), Color("cfb5ff"), Color("ffd39a")]
 	var base_color: Color = colors[simulation.group_ids[index] % colors.size()]
 	var body := MeshInstance3D.new()
@@ -477,9 +515,14 @@ func _create_agent_visual(index: int) -> Node3D:
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.24
 	sphere.height = 0.48
+	if flight_enabled:
+		sphere.radial_segments = 12
+		sphere.rings = 6
 	body.mesh = sphere
 	body.scale = Vector3(1.0, 0.7, 1.45)
-	body.material_override = _emissive_material(base_color, 1.35)
+	body.material_override = _emissive_material(base_color, 0.3 if current_preset.energy_dynamics else 1.35)
+	if current_preset.energy_dynamics:
+		(body.material_override as StandardMaterial3D).shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	root.add_child(body)
 	for side: int in [-1, 1]:
 		var wing := MeshInstance3D.new()
@@ -487,11 +530,17 @@ func _create_agent_visual(index: int) -> Node3D:
 		var wing_mesh := SphereMesh.new()
 		wing_mesh.radius = 0.13
 		wing_mesh.height = 0.26
+		if flight_enabled:
+			wing_mesh.radial_segments = 8
+			wing_mesh.rings = 4
+			wing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		wing.mesh = wing_mesh
 		wing.position = Vector3(0.19 * side, 0.04, 0.02)
 		wing.scale = Vector3(1.2, 0.16, 1.7)
 		var wing_material := _material(Color(base_color, 0.72), 0.4)
 		wing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		if current_preset.energy_dynamics:
+			wing_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		wing.material_override = wing_material
 		root.add_child(wing)
 	var eye := MeshInstance3D.new()
@@ -499,6 +548,10 @@ func _create_agent_visual(index: int) -> Node3D:
 	var eye_mesh := SphereMesh.new()
 	eye_mesh.radius = 0.055
 	eye_mesh.height = 0.11
+	if flight_enabled:
+		eye_mesh.radial_segments = 8
+		eye_mesh.rings = 4
+		eye.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	eye.mesh = eye_mesh
 	eye.position = Vector3(0.0, 0.015, -0.31)
 	eye.material_override = _emissive_material(Color("26313b"), 0.2)
@@ -512,31 +565,36 @@ func _update_agent_visuals(alpha: float) -> void:
 			node.visible = false
 			continue
 		node.visible = true
-		var horizontal := simulation.previous_positions[index].lerp(simulation.positions[index], alpha)
-		var phase := elapsed * (3.0 + simulation.arousals[index] * 3.0) + float(index) * 1.73
-		var activity := smoothstep(0.0, current_preset.energy_neutral_target, simulation.arousals[index]) if current_preset.energy_dynamics else 1.0
-		var height := FlockSimulation.BODY_HEIGHT + sin(phase) * 0.075 * activity
-		if simulation.lifecycles[index] == FlockSimulation.Lifecycle.COMMITTED:
-			height += simulation.lifecycle_times[index] * 0.7
-		elif simulation.lifecycles[index] == FlockSimulation.Lifecycle.ASCENDING:
-			height += simulation.lifecycle_times[index] * 2.5
-		node.position = Vector3(horizontal.x, height, horizontal.y)
-		var velocity := simulation.velocities[index]
-		if velocity.length_squared() > 0.01:
-			node.rotation.y = atan2(-velocity.x, -velocity.y)
+		var phase: float = elapsed * (3.0 + simulation.arousals[index] * 3.0) + float(index) * 1.73
+		var activity: float = smoothstep(0.0, current_preset.energy_neutral_target, simulation.arousals[index]) if current_preset.energy_dynamics else 1.0
+		if flight_enabled:
+			var point: Vector3 = simulation.previous_positions[index].lerp(simulation.positions[index], alpha)
+			var velocity: Vector3 = simulation.velocities[index]
+			node.position = point
+			if velocity.length_squared() > 0.01:
+				node.rotation.y = atan2(-velocity.x, -velocity.z)
+				node.rotation.x = atan2(velocity.y, Vector2(velocity.x, velocity.z).length())
+		else:
+			var horizontal: Vector2 = simulation.previous_positions[index].lerp(simulation.positions[index], alpha)
+			var height := FlockSimulation.BODY_HEIGHT + sin(phase) * 0.075 * activity
+			if simulation.lifecycles[index] == FlockSimulation.Lifecycle.COMMITTED:
+				height += simulation.lifecycle_times[index] * 0.7
+			elif simulation.lifecycles[index] == FlockSimulation.Lifecycle.ASCENDING:
+				height += simulation.lifecycle_times[index] * 2.5
+			node.position = Vector3(horizontal.x, height, horizontal.y)
+			var velocity: Vector2 = simulation.velocities[index]
+			if velocity.length_squared() > 0.01:
+				node.rotation.y = atan2(-velocity.x, -velocity.y)
 		var flap := sin(phase * 2.4) * 0.55 * activity
 		(node.get_node("WingL") as MeshInstance3D).rotation.z = -0.48 + flap
 		(node.get_node("WingR") as MeshInstance3D).rotation.z = 0.48 - flap
 		if current_preset.energy_dynamics:
 			var color := EnergyVisual.color_for(simulation.arousals[index], current_preset.energy_neutral_target)
 			var body_material := (node.get_node("Body") as MeshInstance3D).material_override as StandardMaterial3D
-			body_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			body_material.albedo_color = color
 			body_material.emission = color
-			body_material.emission_energy_multiplier = 0.3
 			for wing_name: String in ["WingL", "WingR"]:
 				var wing_material := (node.get_node(wing_name) as MeshInstance3D).material_override as StandardMaterial3D
-				wing_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 				wing_material.albedo_color = Color(color, 0.72)
 
 func _update_hud() -> void:
@@ -549,14 +607,21 @@ func _update_hud() -> void:
 		lantern.mode_label(), shutter_text, simulation.score, fixture_count,
 		simulation.active_count(), current_preset.preset_name, tuning_text, pause_text
 	]
+	hud_label.text += "\n%s · CPU step %.2f ms · %d FPS" % ["3D flight · ceiling 2.8 m" if flight_enabled else "Ground fallback", sim_step_ms, Engine.get_frames_per_second()]
 	if debug_visible and not simulation.positions.is_empty():
 		var i := mini(inspected_agent, simulation.positions.size() - 1)
-		hud_label.text += "\nDisc = arrival target · tiles = sampled influence\nID %d · e %.2f · light %.2f · force (%.2f, %.2f) · %s" % [i, simulation.arousals[i], simulation.exposures[i], simulation.accelerations[i].x, simulation.accelerations[i].y, FlockSimulation.Lifecycle.keys()[simulation.lifecycles[i]]]
+		hud_label.text += "\nMarker = arrival target · tiles = ground slice\nID %d · e %.2f · light %.2f · force %s · %s" % [i, simulation.arousals[i], simulation.exposures[i], str(simulation.accelerations[i]), FlockSimulation.Lifecycle.keys()[simulation.lifecycles[i]]]
+		if flight_enabled:
+			hud_label.text += "\nFlight height %.2f m" % simulation.positions[i].y
 		if current_preset.energy_dynamics:
 			hud_label.text += "\n%s · mushroom %.2f · blue → green → yellow → orange" % [EnergyVisual.state_name(simulation.arousals[i], current_preset.sleep_threshold), simulation.mushroom_exposures[i]]
 	preset_label.text = "%s%s" % [current_preset.preset_name, " · modified" if config_changed else ""]
 
 func _update_footprint() -> void:
+	flight_marker.visible = debug_visible and flight_enabled
+	footprint.visible = debug_visible and not flight_enabled
+	if flight_enabled:
+		flight_marker.position = light_field.flight_target(simulation.min_height, simulation.max_height)
 	var target := light_field.ground_target(FlockSimulation.BODY_HEIGHT)
 	footprint.position.x = target.x
 	footprint.position.z = target.y
@@ -591,6 +656,12 @@ func _reset_run(record_previous: bool) -> void:
 	if record_previous and elapsed > 0.1:
 		_write_run_record("reset")
 	current_seed = roundi(seed_box.value) if seed_box != null else current_seed
+	if (flight_enabled and not simulation is FlightSimulation) or (not flight_enabled and not simulation is FlockSimulation):
+		var centers: PackedVector2Array = simulation.obstacle_centers
+		var radii: PackedFloat32Array = simulation.obstacle_radii
+		simulation = FlightSimulation.new() if flight_enabled else FlockSimulation.new()
+		simulation.obstacle_centers = centers
+		simulation.obstacle_radii = radii
 	simulation.world_limit = 27.0
 	simulation.spawn_centers = PackedVector2Array(PATCH_CENTERS)
 	simulation.mushroom_centers = PackedVector2Array(PATCH_CENTERS.slice(0, 1 if fixture_count == 3 else 3)) if current_preset.energy_dynamics else PackedVector2Array()
@@ -610,6 +681,11 @@ func _reset_run(record_previous: bool) -> void:
 	lantern.set_mode(LightField.Mode.CLEAR if current_preset.energy_dynamics else LightField.Mode.BLUE)
 	lantern.shutter_openness = 1.0
 	lantern.adjust_shutter(0.0)
+
+func _set_flight(enabled: bool) -> void:
+	_write_run_record("simulation_mode_change")
+	flight_enabled = enabled
+	_reset_run(false)
 
 func _set_fixture(count: int) -> void:
 	_write_run_record("fixture_change")
@@ -631,7 +707,7 @@ func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
 func _current_settings() -> Dictionary:
-	return {"arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
+	return {"flight_enabled": flight_enabled, "arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
 		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value}
 
 func _toggle_top_down() -> void:
@@ -650,6 +726,7 @@ func _save_named_preset() -> void:
 		"base_preset": current_preset.to_dict(),
 		"seed": current_seed,
 		"fixture_count": fixture_count,
+		"flight_enabled": flight_enabled,
 		"notes": run_notes.text.strip_edges() if run_notes != null else "",
 		"lantern_strength": strength_slider.value,
 		"social_multiplier": social_slider.value,
@@ -674,7 +751,11 @@ func _load_named_preset(index: int) -> void:
 	current_preset = HerdPreset.from_dict(saved.get("base_preset", {}))
 	current_preset.preset_name = preset_name
 	seed_box.value = int(saved.get("seed", current_seed))
-	fixture_count = 3 if int(saved.get("fixture_count", fixture_count)) == 3 else 24
+	fixture_count = int(saved.get("fixture_count", 24))
+	if fixture_count not in [3, 24, 64]:
+		fixture_count = 24
+	flight_enabled = bool(saved.get("flight_enabled", false))
+	flight_toggle.set_pressed_no_signal(flight_enabled)
 	goal_slider.set_value_no_signal(current_preset.goal_repulsion_strength)
 	memory_slider.set_value_no_signal(current_preset.arousal_response)
 	_sync_energy_controls()
@@ -715,6 +796,7 @@ func _write_run_record(reason: String) -> void:
 		"seed": current_seed,
 		"preset": current_preset.preset_name,
 		"fixture_count": fixture_count,
+		"flight_enabled": flight_enabled,
 		"arena_layout": ARENA_LAYOUT,
 		"elapsed_seconds": snappedf(elapsed, 0.001),
 		"returns": simulation.score,
@@ -754,6 +836,14 @@ func _parse_arguments() -> void:
 		elif args[index] == "--top-down":
 			start_top_down = true
 			index += 1
+		elif args[index] == "--ground":
+			flight_enabled = false
+			index += 1
+		elif args[index] == "--count" and index + 1 < args.size():
+			fixture_count = int(args[index + 1])
+			if fixture_count not in [3, 24, 64]:
+				fixture_count = 24
+			index += 2
 		elif args[index] == "--tiny":
 			fixture_count = 3
 			index += 1
@@ -854,6 +944,7 @@ func _sync_energy_controls() -> void:
 		row.visible = current_preset.energy_dynamics
 
 func _refresh_preset_visuals() -> void:
+	flight_goal_volume.visible = debug_visible and flight_enabled
 	if goal_halo == null:
 		goal_halo = MeshInstance3D.new()
 		goal_halo.position.y = 0.045
