@@ -94,21 +94,21 @@ func update_swarm(sim: Variant, alpha: float, preset: HerdPreset) -> void:
 		_multimesh.set_instance_custom_data(index, Color(float(posmod(subtype, 3)) / 2.0, seed, heading / TAU + 0.5, half_size))
 
 
-## Local +Y is the head; the quad lies along travel with its normal near world up.
-## Retain resting orientation, and use the previous right axis near vertical flight.
+## Local +Y is the head; the quad stands upright along travel like a fish.
+## Prefer a horizontal normal; preserve its last direction near vertical flight.
 static func heading_basis(velocity: Vector3, previous: Basis) -> Basis:
 	if velocity.length_squared() < 0.0001:
 		return previous
 	var forward := velocity.normalized()
-	var right := forward.cross(Vector3.UP)
-	if right.length_squared() < 0.01:
-		right = previous.x - forward * previous.x.dot(forward)
-		if right.length_squared() < 0.0001:
-			right = forward.cross(Vector3.FORWARD)
-	right = right.normalized()
-	if right.dot(previous.x) < 0.0:
-		right = -right
-	return Basis(right, forward, right.cross(forward).normalized())
+	var normal := forward.cross(Vector3.UP)
+	if normal.length_squared() < 0.01:
+		normal = previous.z - forward * previous.z.dot(forward)
+		if normal.length_squared() < 0.0001:
+			normal = forward.cross(Vector3.FORWARD)
+	normal = normal.normalized()
+	if normal.dot(previous.z) < 0.0:
+		normal = -normal
+	return Basis(forward.cross(normal).normalized(), forward, normal)
 
 func debug_instance_transform(index: int) -> Transform3D:
 	if index < 0 or index >= _multimesh.instance_count:

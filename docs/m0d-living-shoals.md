@@ -37,7 +37,7 @@ Evidence is retained locally under `artifacts/m0d-shoals-20260922/`: `check-fina
 
 ## Heading and height follow-up (2026-09-22)
 
-The user accepted 1024 as sufficient to evaluate behavior and approved patch waking; the composite-animal gestalt remains unachieved. Default glyphs now orient in world space: local head-to-tail follows velocity, with the thin quad generally horizontal during horizontal travel. Resting glyphs retain their orientation; vertical headings use the previous transverse axis to avoid singularities. They are double-sided, but become thin or invisible edge-on. **Camera-facing glyphs** restores the billboard comparison live.
+The user accepted 1024 as sufficient to evaluate behavior and approved patch waking; the composite-animal gestalt remains unachieved. Default glyphs now orient in world space: local head-to-tail follows velocity, with the thin quad upright during horizontal travel and its normal in the XZ plane (side-visible like a fish). Resting glyphs retain their orientation; vertical headings use the previous transverse axis to avoid singularities. They are double-sided, but become thin or invisible edge-on. **Camera-facing glyphs** restores the billboard comparison live.
 
 **Glyph size** is a render-only multiplier, 0.25–2.0, default 0.65 (35% smaller than the first glyph pass). **Max height (m)** is a live 2–8 m ceiling; Living shoals starts at 4.5 m, other presets at the prior 2.8 m. Calm flight remains gently attracted toward roughly 1.5 m while high energy increases vertical wandering and excursion into available headroom. Sleep settling and patch waking remain. All three settings persist in named presets and run history. The goal debug volume follows the ceiling.
 
