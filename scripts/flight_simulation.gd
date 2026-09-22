@@ -51,6 +51,9 @@ var _wake_waits := PackedFloat32Array()
 var _wake_remaining := PackedFloat32Array()
 var _wake_cycles := PackedInt32Array()
 var _neighbor_lists: Array[PackedInt32Array] = []
+var formation_predecessors := PackedInt32Array()
+var formation_successors := PackedInt32Array()
+var _formation_step: int = 0
 
 
 func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
@@ -81,6 +84,9 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	_wake_remaining = PackedFloat32Array()
 	_wake_cycles = PackedInt32Array()
 	_neighbor_lists = []
+	formation_predecessors = PackedInt32Array()
+	formation_successors = PackedInt32Array()
+	_formation_step = 0
 	neighbor_visits = 0
 	_goal_dwells = PackedFloat32Array()
 	_energy_phases = PackedFloat32Array()
@@ -140,6 +146,8 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 		_wake_waits.append(trait_rng.randf_range(preset.spontaneous_wake_min_seconds, preset.spontaneous_wake_max_seconds))
 		_wake_remaining.append(0.0)
 		_wake_cycles.append(0)
+		formation_predecessors.append(-1)
+		formation_successors.append(-1)
 
 
 func step(delta: float, field: LightField, social_multiplier: float = 1.0, wander_multiplier: float = 1.0) -> void:
@@ -158,6 +166,12 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 	var old_lifecycles := lifecycles.duplicate()
 	var old_arousals := arousals.duplicate()
 	_build_neighbor_lists(old_positions, old_lifecycles)
+	if preset.formation_follow_weight > 0.0 and _formation_step % 6 == 0:
+		_refresh_formation_links(old_positions, old_velocities, old_lifecycles, old_arousals)
+	elif preset.formation_follow_weight <= 0.0:
+		formation_predecessors.fill(-1)
+		formation_successors.fill(-1)
+	_formation_step += 1
 	var next_positions := positions.duplicate()
 	var next_velocities := velocities.duplicate()
 	for index: int in positions.size():
@@ -173,7 +187,9 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 		var mushroom_influence := _mushroom_influence(old_positions[index], old_velocities[index])
 		mushroom_exposures[index] = mushroom_influence[0] if preset.energy_dynamics else 0.0
 		_update_arousal(index, field.mode, exposures[index], mushroom_exposures[index], delta, old_arousals)
-		force += _lantern_force(old_positions[index], old_velocities[index], field, exposures[index])
+		var coupled := preset.formation_follow_weight > 0.0 and formation_predecessors[index] >= 0 and old_lifecycles[formation_predecessors[index]] == Lifecycle.ACTIVE
+		var follower_scale := 0.5 if coupled else 1.0
+		force += _lantern_force(old_positions[index], old_velocities[index], field, exposures[index]) * follower_scale
 		if preset.energy_dynamics:
 			var mushroom_force: Vector3 = mushroom_influence[1]
 			mushroom_force *= mushroom_response_factors[index]
@@ -181,7 +197,7 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 				mushroom_force *= 1.0 - exposures[index] * 0.85
 			if _wake_remaining[index] > 0.0:
 				mushroom_force *= 0.05
-			force += mushroom_force
+			force += mushroom_force * follower_scale
 		force += _boundary_force(old_positions[index])
 		force += _flight_band_force(index, old_positions[index])
 		force += _goal_resistance(old_positions[index])
@@ -197,7 +213,10 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 			velocity += applied_force * delta
 			# Sleeping flyers settle instead of remaining suspended.
 			velocity.y -= sleep_amount * 1.25 * delta
-			velocity = velocity.limit_length(preset.max_speed * speed_factors[index] * lerpf(0.06, lerpf(0.88, 1.18, arousals[index]), mobility))
+			var speed_cap := preset.max_speed * speed_factors[index] * lerpf(0.06, lerpf(0.88, 1.18, arousals[index]), mobility)
+			if coupled and mobility > 0.35:
+				speed_cap = minf(maxf(speed_cap, old_velocities[formation_predecessors[index]].length() + 0.35), preset.max_speed * 1.45 * 1.18 + 0.7)
+			velocity = velocity.limit_length(speed_cap)
 		else:
 			velocity = velocity.limit_length(preset.max_speed * speed_factors[index] * lerpf(0.88, 1.18, arousals[index]))
 		accelerations[index] = applied_force
@@ -269,12 +288,76 @@ func _grid_cell(position: Vector3, cell_size: float) -> Vector2i:
 	return Vector2i(floori(position.x / cell_size), floori(position.z / cell_size))
 
 
+func _refresh_formation_links(snapshot_positions: PackedVector3Array, _snapshot_velocities: PackedVector3Array, snapshot_lifecycles: PackedInt32Array, snapshot_arousals: PackedFloat32Array) -> void:
+	# Each role proposes the closest neighbor for each adjacent role. Keep an
+	# existing link while it is nearby; the reciprocal test below makes slots
+	# exclusive without a central group allocator or permanent creature IDs.
+	var count := snapshot_positions.size()
+	var before := PackedInt32Array()
+	var after := PackedInt32Array()
+	before.resize(count)
+	after.resize(count)
+	before.fill(-1)
+	after.fill(-1)
+	for index: int in count:
+		if snapshot_lifecycles[index] != Lifecycle.ACTIVE or snapshot_arousals[index] <= preset.sleep_threshold + 0.04:
+			continue
+		var role := trait_types[index]
+		var old_before := formation_predecessors[index]
+		var old_after := formation_successors[index]
+		if role > 0 and _valid_formation_partner(index, old_before, role - 1, 4.0, snapshot_positions, snapshot_lifecycles, snapshot_arousals):
+			before[index] = old_before
+		if role < 2 and _valid_formation_partner(index, old_after, role + 1, 4.0, snapshot_positions, snapshot_lifecycles, snapshot_arousals):
+			after[index] = old_after
+		var keep_before := before[index] >= 0
+		var keep_after := after[index] >= 0
+		var nearest_before := 3.2 * 3.2
+		var nearest_after := 3.2 * 3.2
+		for other: int in count:
+			if other == index or snapshot_lifecycles[other] != Lifecycle.ACTIVE or snapshot_arousals[other] <= preset.sleep_threshold + 0.04:
+				continue
+			var other_role := trait_types[other]
+			if other_role != role - 1 and other_role != role + 1:
+				continue
+			var occupied := formation_successors[other] if other_role == role - 1 else formation_predecessors[other]
+			if occupied >= 0 and occupied != index and _valid_formation_partner(other, occupied, role, 4.0, snapshot_positions, snapshot_lifecycles, snapshot_arousals):
+				continue
+			var distance_sq := snapshot_positions[index].distance_squared_to(snapshot_positions[other])
+			if not keep_before and other_role == role - 1 and distance_sq < nearest_before:
+				nearest_before = distance_sq
+				before[index] = other
+			if not keep_after and other_role == role + 1 and distance_sq < nearest_after:
+				nearest_after = distance_sq
+				after[index] = other
+	var next_before := PackedInt32Array()
+	var next_after := PackedInt32Array()
+	next_before.resize(count)
+	next_after.resize(count)
+	next_before.fill(-1)
+	next_after.fill(-1)
+	for index: int in count:
+		if before[index] >= 0 and after[before[index]] == index:
+			next_before[index] = before[index]
+		if after[index] >= 0 and before[after[index]] == index:
+			next_after[index] = after[index]
+	formation_predecessors = next_before
+	formation_successors = next_after
+
+
+func _valid_formation_partner(index: int, other: int, target_role: int, radius: float, snapshot_positions: PackedVector3Array, snapshot_lifecycles: PackedInt32Array, snapshot_arousals: PackedFloat32Array) -> bool:
+	return other >= 0 and other < snapshot_positions.size() and snapshot_lifecycles[other] == Lifecycle.ACTIVE and snapshot_arousals[other] > preset.sleep_threshold + 0.04 and trait_types[other] == target_role and snapshot_positions[index].distance_squared_to(snapshot_positions[other]) < radius * radius
+
+
 func _social_force(index: int, snapshot_positions: PackedVector3Array, snapshot_velocities: PackedVector3Array, snapshot_lifecycles: PackedInt32Array) -> Vector3:
 	var separation := Vector3.ZERO
 	var alignment := Vector3.ZERO
 	var cohesion_center := Vector3.ZERO
 	var neighbors := 0
 	var affinity_sum := 0.0
+	var crowded_neighbors := 0
+	var crowded_center := Vector3.ZERO
+	var formation_enabled := preset.formation_follow_weight > 0.0 or preset.cluster_pressure_weight > 0.0
+	var crowd_radius := minf(preset.neighbor_radius, preset.separation_radius * 2.0)
 	var candidates := PackedInt32Array()
 	if _neighbor_lists.size() == snapshot_positions.size():
 		candidates = _neighbor_lists[index]
@@ -287,11 +370,20 @@ func _social_force(index: int, snapshot_positions: PackedVector3Array, snapshot_
 		var distance := offset.length()
 		if distance <= 0.0001 or distance > preset.neighbor_radius:
 			continue
+		var same_trio := false
+		if preset.formation_follow_weight > 0.0:
+			same_trio = other == formation_predecessors[index] or other == formation_successors[index]
+			if formation_predecessors[index] >= 0:
+				same_trio = same_trio or other == formation_predecessors[formation_predecessors[index]]
+			if formation_successors[index] >= 0:
+				same_trio = same_trio or other == formation_successors[formation_successors[index]]
+		if formation_enabled and distance < crowd_radius and not same_trio:
+			crowded_neighbors += 1
+			crowded_center += snapshot_positions[other]
 		var affinity := 1.0
 		var desired_offset := Vector3.ZERO
 		if preset.population_variation > 0.0 and index < trait_types.size() and other < trait_types.size():
-			# A small cyclic preference produces exploratory head/tail strings and
-			# subclusters without assigning fixed leaders.
+			# Small cyclic affinity biases social force without persistent links.
 			var preferred_type := (trait_types[index] + 1) % 3
 			var full_affinity := 1.24 if trait_types[other] == preferred_type else (1.08 if trait_types[other] == trait_types[index] else 0.76)
 			affinity = lerpf(1.0, full_affinity, preset.population_variation)
@@ -301,14 +393,31 @@ func _social_force(index: int, snapshot_positions: PackedVector3Array, snapshot_
 		affinity_sum += affinity
 		alignment += snapshot_velocities[other] * affinity
 		cohesion_center += (snapshot_positions[other] + desired_offset) * affinity
-		if distance < preset.separation_radius:
+		if distance < preset.separation_radius and not same_trio:
 			separation += offset.normalized() * (1.0 - distance / preset.separation_radius)
-	if neighbors == 0:
-		return Vector3.ZERO
-	alignment = alignment / affinity_sum - snapshot_velocities[index]
-	var cohesion := (cohesion_center / affinity_sum - snapshot_positions[index]).limit_length(1.0)
+	var cohesion := Vector3.ZERO
+	if neighbors > 0:
+		alignment = alignment / affinity_sum - snapshot_velocities[index]
+		cohesion = (cohesion_center / affinity_sum - snapshot_positions[index]).limit_length(1.0)
 	var social_retention := 1.0 - _arousal_scatter_amount(index) * 0.82
-	return separation * preset.separation_weight + (alignment * preset.alignment_weight * alignment_factors[index] + cohesion * preset.cohesion_weight * cohesion_factors[index]) * social_retention
+	var formation := Vector3.ZERO
+	if preset.formation_follow_weight > 0.0 and formation_predecessors[index] >= 0 and snapshot_lifecycles[formation_predecessors[index]] == Lifecycle.ACTIVE:
+		var leader := formation_predecessors[index]
+		var leader_velocity := snapshot_velocities[leader]
+		var heading := leader_velocity.normalized() if leader_velocity.length_squared() > 0.01 else Vector3.FORWARD
+		var target := snapshot_positions[leader] - heading * 0.18
+		formation = (target - snapshot_positions[index]).limit_length(2.0) * 4.0 + (leader_velocity - snapshot_velocities[index]) * 2.2
+	var pressure := Vector3.ZERO
+	var target_count := maxi(1, preset.cluster_target_neighbors)
+	if crowded_neighbors > target_count:
+		var away := snapshot_positions[index] - crowded_center / float(crowded_neighbors)
+		if away.length_squared() > 0.0001:
+			pressure = away.normalized() * minf(float(crowded_neighbors - target_count) / float(target_count), 1.5)
+	var broad_cohesion := 1.0 - minf(preset.formation_follow_weight, 1.0) * 0.75
+	var broad_social := separation * preset.separation_weight + pressure * preset.cluster_pressure_weight + (alignment * preset.alignment_weight * alignment_factors[index] + cohesion * preset.cohesion_weight * cohesion_factors[index] * broad_cohesion) * social_retention
+	if preset.formation_follow_weight > 0.0 and formation_predecessors[index] >= 0:
+		broad_social *= 0.18
+	return broad_social + formation * preset.formation_follow_weight
 
 
 func _wander_force(index: int, multiplier: float) -> Vector3:
@@ -321,7 +430,8 @@ func _wander_force(index: int, multiplier: float) -> Vector3:
 	var flow_phase := _energy_time * 0.16 + positions[index].x * 0.035 - positions[index].z * 0.027
 	var direction := Vector3(cos(phase) + sin(flow_phase) * 0.38, vertical, sin(phase) + cos(flow_phase * 1.17) * 0.38).normalized()
 	var wake_boost := 2.6 if index < _wake_remaining.size() and _wake_remaining[index] > 0.0 else 1.0
-	return direction * preset.wander_weight * multiplier * lerpf(0.55, 1.45, arousals[index]) * (1.0 + scatter * 3.2) * wake_boost
+	var follower_scale := 0.35 if preset.formation_follow_weight > 0.0 and formation_predecessors[index] >= 0 and lifecycles[formation_predecessors[index]] == Lifecycle.ACTIVE else 1.0
+	return direction * preset.wander_weight * multiplier * lerpf(0.55, 1.45, arousals[index]) * (1.0 + scatter * 3.2) * wake_boost * follower_scale
 
 
 func _arousal_scatter_amount(index: int) -> float:
@@ -592,7 +702,10 @@ func is_finite_and_bounded() -> bool:
 		if accelerations[index].length() > preset.max_acceleration + 0.001:
 			return false
 		var speed_factor := speed_factors[index] if index < speed_factors.size() else 1.0
-		if lifecycles[index] == Lifecycle.ACTIVE and velocities[index].length() > preset.max_speed * speed_factor * 1.181:
+		var permitted_speed := preset.max_speed * speed_factor * 1.181
+		if preset.formation_follow_weight > 0.0 and formation_predecessors[index] >= 0:
+			permitted_speed = maxf(permitted_speed, preset.max_speed * 1.45 * 1.18 + 0.701)
+		if lifecycles[index] == Lifecycle.ACTIVE and velocities[index].length() > permitted_speed:
 			return false
 	return true
 

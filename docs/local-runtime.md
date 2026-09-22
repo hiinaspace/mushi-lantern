@@ -1,5 +1,7 @@
 # Local development runtime
 
+Sayu performance validation, 2026-09-22: installed `godot`/`godot4` reports **4.7.2.stable.nixpkgs.ed1daf0bf**; rendered checks explicitly use Vulkan/Mobile on **NVIDIA GeForce RTX 4090**, driver **615.71.09**, with Ryzen 7 9800X3D. See [m0e-performance.md](m0e-performance.md) for commands and bounded evidence. This is desktop compute/render validation, not headset or export qualification. Power settings were not changed.
+
 Verified on `natto`, 2026-09-21:
 
 - Ubuntu 26.04.1 LTS; AMD Radeon 780M (RADV PHOENIX), Mesa 26.0.8.

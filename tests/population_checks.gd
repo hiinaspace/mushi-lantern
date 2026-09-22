@@ -21,13 +21,22 @@ func _init() -> void:
 
 func _test_preset_contract() -> void:
 	var presets := HerdPreset.builtins()
-	_expect(presets.size() == 6 and presets[5].preset_name == "Living shoals", "living shoals appends after the five existing presets")
+	_expect(presets.size() == 8 and presets[5].preset_name == "Living shoals" and presets[6].preset_name == "Longer drift" and presets[7].preset_name == "Drifting trains", "new behavior variants follow the historical presets")
 	for index: int in 5:
 		_expect(presets[index].population_variation == 0.0 and presets[index].arousal_contagion_strength == 0.0 and not presets[index].spontaneous_waking_enabled, "preset %d retains disabled ecology defaults" % index)
 	var restored := HerdPreset.from_dict({"preset_name": "old", "max_speed": 1.7})
 	_expect(restored.population_variation == 0.0 and not restored.spontaneous_waking_enabled, "old dictionaries retain compatible ecology defaults")
 	var round_trip := HerdPreset.from_dict(presets[5].to_dict())
 	_expect(round_trip.population_variation == presets[5].population_variation and round_trip.spontaneous_waking_enabled, "ecology controls survive serialization")
+	var longer := presets[6]
+	_expect(is_equal_approx(longer.glyph_render_scale, 0.4) and is_equal_approx(longer.blue_energy_response, 0.365489697300642) and is_equal_approx(longer.orange_energy_response, 1.457332337338), "Longer drift imports the saved response and visual tuning")
+	_expect(is_equal_approx(longer.goal_repulsion_strength, 0.48) and is_equal_approx(longer.goal_repulsion_outer_width, 4.2) and is_equal_approx(longer.arousal_contagion_strength, 0.5), "Longer drift imports the saved movement and social tuning")
+	var longer_round_trip := HerdPreset.from_dict(longer.to_dict())
+	_expect(is_equal_approx(longer_round_trip.glyph_render_scale, longer.glyph_render_scale) and is_equal_approx(longer_round_trip.blue_energy_response, longer.blue_energy_response), "Longer drift snapshot values survive serialization")
+	var trains := presets[7]
+	var trains_round_trip := HerdPreset.from_dict(trains.to_dict())
+	_expect(is_equal_approx(trains.formation_follow_weight, 1.35) and is_equal_approx(trains.cluster_pressure_weight, 1.0) and trains.cluster_target_neighbors == 2, "Drifting trains exposes a separate small-formation experiment")
+	_expect(is_equal_approx(trains_round_trip.formation_follow_weight, trains.formation_follow_weight) and trains_round_trip.cluster_target_neighbors == trains.cluster_target_neighbors, "formation parameters survive preset serialization")
 
 
 func _test_seeded_traits() -> void:

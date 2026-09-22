@@ -9,6 +9,10 @@ const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
 
 var simulation: Variant = FlockSimulation.new()
 var flight_enabled: bool = true
+var simulation_backend: String = "gpu"
+var backend_picker: OptionButton
+var _active_backend: String = "cpu"
+var _backend_notice: String = ""
 var flight_toggle: CheckBox
 var flight_marker: MeshInstance3D
 var sim_step_ms: float = 0.0
@@ -17,9 +21,9 @@ var flight_goal_volume: MeshInstance3D
 var light_field := LightField.new()
 var presets: Array[HerdPreset] = HerdPreset.builtins()
 var current_preset: HerdPreset
-var current_preset_index: int = 5
+var current_preset_index: int = 6
 var current_seed: int = DEFAULT_SEED
-var fixture_count: int = 256
+var fixture_count: int = 1024
 var accumulator: float = 0.0
 var active_step: float = FIXED_STEP
 var simulation_paused: bool = false
@@ -39,6 +43,9 @@ var height_slider: HSlider
 var billboard_toggle: CheckBox
 var variation_slider: HSlider
 var contagion_slider: HSlider
+var formation_follow_slider: HSlider
+var cluster_pressure_slider: HSlider
+var cluster_target_slider: HSlider
 var waking_toggle: CheckBox
 var population_rows: Array[Control] = []
 var field_overlay: MeshInstance3D
@@ -97,6 +104,17 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _process(delta: float) -> void:
+	if _active_backend == "gpu":
+		if not simulation.gpu_error.is_empty():
+			_backend_notice = "GPU unavailable; CPU reference: " + simulation.gpu_error
+			push_warning(_backend_notice)
+			simulation_backend = "cpu"
+			backend_picker.select(0)
+			_reset_run(false)
+		elif not simulation.gpu_ready:
+			_update_hud()
+			hud_label.text += "\nPreparing GPU simulation…"
+			return
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var shutter_delta := Input.get_axis("shutter_close", "shutter_open")
 		if shutter_delta != 0.0:
@@ -160,6 +178,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and is_inside_tree() and elapsed > 0.1:
 		_write_run_record("window_close")
+
+func _exit_tree() -> void:
+	if simulation.has_method("dispose"):
+		simulation.dispose()
 
 func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
@@ -343,7 +365,7 @@ func _build_ui() -> void:
 	stack.add_theme_constant_override("separation", 7)
 	scroll.add_child(stack)
 	var title := Label.new()
-	title.text = "M0d · LIVING SHOALS"
+	title.text = "M0f · DRIFT & FORMATIONS"
 	title.add_theme_font_size_override("font_size", 21)
 	stack.add_child(title)
 	preset_label = Label.new()
@@ -359,6 +381,13 @@ func _build_ui() -> void:
 	flight_toggle.button_pressed = flight_enabled
 	flight_toggle.toggled.connect(_set_flight)
 	stack.add_child(flight_toggle)
+	backend_picker = OptionButton.new()
+	backend_picker.add_item("CPU reference", 0)
+	backend_picker.add_item("GPU compute comparison", 1)
+	backend_picker.select(1 if simulation_backend == "gpu" else 0)
+	backend_picker.item_selected.connect(_set_backend)
+	stack.add_child(backend_picker)
+	population_rows.append(backend_picker)
 	stack.add_child(HSeparator.new())
 	strength_slider = _add_slider(stack, "Lantern influence", 0.25, 1.5, 1.0, 0.05)
 	social_slider = _add_slider(stack, "Social force", 0.0, 1.8, 1.0, 0.05)
@@ -397,6 +426,12 @@ func _build_ui() -> void:
 	variation_slider = _add_slider(stack, "Trait variety", 0.0, 1.0, 0.65, 0.05)
 	variation_slider.tooltip_text = "Changing variety resets the same seed to rebuild individual traits."
 	contagion_slider = _add_slider(stack, "Neighbor arousal", 0.0, 1.0, 0.35, 0.05)
+	formation_follow_slider = _add_slider(stack, "Formation follow", 0.0, 2.0, 0.0, 0.05)
+	cluster_pressure_slider = _add_slider(stack, "Crowd splitting", 0.0, 2.0, 0.0, 0.05)
+	cluster_target_slider = _add_slider(stack, "Crowd threshold", 1.0, 12.0, 6.0, 1.0)
+	cluster_target_slider.tooltip_text = "Number of sampled nearby non-partners before outward pressure starts. Lower splits more; higher keeps larger clumps."
+	for slider: HSlider in [formation_follow_slider, cluster_pressure_slider, cluster_target_slider]:
+		population_rows.append(slider.get_parent())
 	waking_toggle = CheckBox.new()
 	waking_toggle.text = "Occasional waking from patches"
 	stack.add_child(waking_toggle)
@@ -406,6 +441,9 @@ func _build_ui() -> void:
 	variation_slider.value_changed.connect(_on_variation_changed)
 	contagion_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_contagion_strength"))
 	waking_toggle.toggled.connect(_on_waking_changed)
+	formation_follow_slider.value_changed.connect(_on_tuning_changed.bind(&"formation_follow_weight"))
+	cluster_pressure_slider.value_changed.connect(_on_tuning_changed.bind(&"cluster_pressure_weight"))
+	cluster_target_slider.value_changed.connect(_on_tuning_changed.bind(&"cluster_target_neighbors"))
 	goal_width_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_outer_width"))
 	goal_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_strength"))
 	memory_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_response"))
@@ -428,7 +466,7 @@ func _build_ui() -> void:
 	fixture_row.add_child(larger)
 	stack.add_child(fixture_row)
 	var population_row := HBoxContainer.new()
-	for count: int in [256, 512, 1024]:
+	for count: int in [256, 512, 1024, 2048]:
 		var choice := Button.new()
 		choice.text = str(count)
 		choice.pressed.connect(_set_fixture.bind(count))
@@ -651,7 +689,7 @@ func _update_agent_visuals(alpha: float) -> void:
 				wing_material.albedo_color = Color(color, 0.72)
 
 func _update_hud() -> void:
-	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider, variation_slider, contagion_slider, size_slider, height_slider]:
+	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider, variation_slider, contagion_slider, formation_follow_slider, cluster_pressure_slider, cluster_target_slider, size_slider, height_slider]:
 		(slider.get_meta("value_label") as Label).text = "%.2f" % slider.value
 	var shutter_text := "CLOSED" if lantern.shutter_openness <= 0.01 else "%d%% OPEN" % roundi(lantern.shutter_openness * 100.0)
 	var pause_text := "  ·  PAUSED" if simulation_paused else ""
@@ -660,12 +698,19 @@ func _update_hud() -> void:
 		lantern.mode_label(), shutter_text, simulation.score, fixture_count,
 		simulation.active_count(), current_preset.preset_name, tuning_text, pause_text
 	]
-	hud_label.text += "\n%s · %d Hz · CPU step %.2f ms · visuals %.2f ms · %d FPS" % [("3D glyphs · ceiling %.1f m" % current_preset.flight_max_height) if flight_enabled else "Ground fallback", roundi(1.0 / active_step), sim_step_ms, visual_update_ms, Engine.get_frames_per_second()]
+	hud_label.text += "\n%s · %d Hz · %s %.2f ms · visuals %.2f ms · %d FPS" % [("3D glyphs · ceiling %.1f m" % current_preset.flight_max_height) if flight_enabled else "Ground fallback", roundi(1.0 / active_step), "CPU submit" if _active_backend == "gpu" else "CPU step", sim_step_ms, visual_update_ms, Engine.get_frames_per_second()]
+	if _active_backend == "gpu":
+		hud_label.text += "\nGPU comparison · HUD state is delayed"
+	if not _backend_notice.is_empty():
+		hud_label.text += "\n" + _backend_notice
 	if debug_visible and not simulation.positions.is_empty():
 		var i := mini(inspected_agent, simulation.positions.size() - 1)
-		hud_label.text += "\nMarker = arrival target · tiles = ground slice\nID %d · e %.2f · light %.2f · force %s · %s" % [i, simulation.arousals[i], simulation.exposures[i], str(simulation.accelerations[i]), FlockSimulation.Lifecycle.keys()[simulation.lifecycles[i]]]
+		var force_note := "" if _active_backend == "gpu" else " · force %s" % str(simulation.accelerations[i])
+		hud_label.text += "\nMarker = arrival target · tiles = ground slice\nID %d · e %.2f · light %.2f%s · %s" % [i, simulation.arousals[i], simulation.exposures[i], force_note, FlockSimulation.Lifecycle.keys()[simulation.lifecycles[i]]]
 		if flight_enabled:
-			hud_label.text += "\nHeight %.2f m · subtype %d · neighbors visited %d" % [simulation.positions[i].y, simulation.trait_types[i], simulation.neighbor_visits]
+			hud_label.text += "\nHeight %.2f m · subtype %d" % [simulation.positions[i].y, simulation.trait_types[i]]
+			if _active_backend == "cpu":
+				hud_label.text += " · neighbors visited %d" % simulation.neighbor_visits
 		if current_preset.energy_dynamics:
 			hud_label.text += "\n%s · mushroom %.2f · blue → green → yellow → orange" % [EnergyVisual.state_name(simulation.arousals[i], current_preset.sleep_threshold), simulation.mushroom_exposures[i]]
 	preset_label.text = "%s%s" % [current_preset.preset_name, " · modified" if config_changed else ""]
@@ -696,9 +741,10 @@ func _apply_preset(index: int, restart: bool) -> void:
 	preset_picker.select(index)
 	config_changed = false
 	if strength_slider != null:
-		strength_slider.set_value_no_signal(1.0)
-		social_slider.set_value_no_signal(1.0)
-		wander_slider.set_value_no_signal(1.0)
+		var longer_drift_globals := index >= 6 and index <= 7
+		strength_slider.set_value_no_signal(0.8 if longer_drift_globals else 1.0)
+		social_slider.set_value_no_signal(1.4 if longer_drift_globals else 1.0)
+		wander_slider.set_value_no_signal(0.5 if longer_drift_globals else 1.0)
 		goal_slider.set_value_no_signal(current_preset.goal_repulsion_strength)
 		memory_slider.set_value_no_signal(current_preset.arousal_response)
 		_sync_energy_controls()
@@ -714,10 +760,20 @@ func _reset_run(record_previous: bool) -> void:
 		row.visible = flight_enabled
 	active_step = 1.0 / 30.0 if flight_enabled and fixture_count >= 256 else FIXED_STEP
 	current_seed = roundi(seed_box.value) if seed_box != null else current_seed
-	if (flight_enabled and not simulation is FlightSimulation) or (not flight_enabled and not simulation is FlockSimulation):
+	var desired_backend := simulation_backend if flight_enabled else "cpu"
+	if desired_backend == "gpu" and (DisplayServer.get_name() == "headless" or RenderingServer.get_current_rendering_method() == "gl_compatibility"):
+		desired_backend = "cpu"
+		_backend_notice = "This renderer uses the CPU reference"
+	if (flight_enabled and not simulation is FlightSimulation) or (not flight_enabled and not simulation is FlockSimulation) or desired_backend != _active_backend:
 		var centers: PackedVector2Array = simulation.obstacle_centers
 		var radii: PackedFloat32Array = simulation.obstacle_radii
-		simulation = FlightSimulation.new() if flight_enabled else FlockSimulation.new()
+		if simulation.has_method("dispose"):
+			simulation.dispose()
+		if desired_backend == "gpu":
+			simulation = load("res://scripts/gpu_flight_simulation.gd").new()
+		else:
+			simulation = FlightSimulation.new() if flight_enabled else FlockSimulation.new()
+		_active_backend = desired_backend
 		simulation.obstacle_centers = centers
 		simulation.obstacle_radii = radii
 	simulation.world_limit = 27.0
@@ -727,6 +783,8 @@ func _reset_run(record_previous: bool) -> void:
 	_refresh_preset_visuals()
 	_rebuild_agents()
 	accumulator = 0.0
+	sim_step_ms = 0.0
+	visual_update_ms = 0.0
 	elapsed = 0.0
 	mode_times = PackedFloat32Array([0.0, 0.0, 0.0])
 	player.position = Vector3(PATCH_CENTERS[0].x, 0.0, PATCH_CENTERS[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
@@ -758,6 +816,12 @@ func _on_waking_changed(enabled: bool) -> void:
 	config_changed = true
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
+func _set_backend(index: int) -> void:
+	_backend_notice = ""
+	_write_run_record("backend_change")
+	simulation_backend = "gpu" if index == 1 else "cpu"
+	_reset_run(false)
+
 func _set_flight(enabled: bool) -> void:
 	_write_run_record("simulation_mode_change")
 	flight_enabled = enabled
@@ -776,9 +840,11 @@ func _reset_from_seed_box() -> void:
 
 func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
 	if not parameter.is_empty():
-		var coefficient := value
+		var coefficient: Variant = value
 		if parameter in [&"energy_recovery_rate", &"blue_energy_response", &"orange_energy_response"]:
 			coefficient = log(10.0) / maxf(value, 0.001)
+		elif parameter == &"cluster_target_neighbors":
+			coefficient = roundi(value)
 		current_preset.set(parameter, coefficient)
 		simulation.preset.set(parameter, coefficient)
 	_refresh_preset_visuals()
@@ -786,7 +852,7 @@ func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
 func _current_settings() -> Dictionary:
-	return {"simulation_hz": roundi(1.0 / active_step), "flight_enabled": flight_enabled, "arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
+	return {"simulation_backend": _active_backend, "simulation_hz": roundi(1.0 / active_step), "flight_enabled": flight_enabled, "arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
 		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value}
 
 func _toggle_top_down() -> void:
@@ -831,7 +897,7 @@ func _load_named_preset(index: int) -> void:
 	current_preset.preset_name = preset_name
 	seed_box.value = int(saved.get("seed", current_seed))
 	fixture_count = int(saved.get("fixture_count", 24))
-	if fixture_count not in [3, 24, 64, 256, 512, 1024]:
+	if fixture_count not in [3, 24, 64, 256, 512, 1024, 2048]:
 		fixture_count = 24
 	flight_enabled = bool(saved.get("flight_enabled", false))
 	flight_toggle.set_pressed_no_signal(flight_enabled)
@@ -879,6 +945,8 @@ func _write_run_record(reason: String) -> void:
 		"arena_layout": ARENA_LAYOUT,
 		"elapsed_seconds": snappedf(elapsed, 0.001),
 		"returns": simulation.score,
+		"returns_snapshot_delayed": _active_backend == "gpu",
+		"state_snapshot_revision": simulation.snapshot_revision if _active_backend == "gpu" else -1,
 		"mode_seconds": {
 			"clear": snappedf(mode_times[LightField.Mode.CLEAR], 0.001),
 			"blue": snappedf(mode_times[LightField.Mode.BLUE], 0.001),
@@ -886,6 +954,8 @@ func _write_run_record(reason: String) -> void:
 		},
 		"config_modified": config_changed,
 		"simulation_hz": roundi(1.0 / active_step),
+		"simulation_backend": _active_backend,
+		"step_timing_kind": "CPU submission" if _active_backend == "gpu" else "CPU simulation",
 		"diagnostic_step_ema_ms": sim_step_ms,
 		"diagnostic_visual_update_ema_ms": visual_update_ms,
 		"coefficients": current_preset.to_dict(),
@@ -918,12 +988,15 @@ func _parse_arguments() -> void:
 		elif args[index] == "--top-down":
 			start_top_down = true
 			index += 1
+		elif args[index] == "--simulation" and index + 1 < args.size():
+			simulation_backend = "gpu" if args[index + 1] == "gpu" else "cpu"
+			index += 2
 		elif args[index] == "--ground":
 			flight_enabled = false
 			index += 1
 		elif args[index] == "--count" and index + 1 < args.size():
 			fixture_count = int(args[index + 1])
-			if fixture_count not in [3, 24, 64, 256, 512, 1024]:
+			if fixture_count not in [3, 24, 64, 256, 512, 1024, 2048]:
 				fixture_count = 24
 			index += 2
 		elif args[index] == "--tiny":
@@ -1020,6 +1093,9 @@ func _sync_energy_controls() -> void:
 	billboard_toggle.set_pressed_no_signal(current_preset.glyph_billboard)
 	variation_slider.set_value_no_signal(current_preset.population_variation)
 	contagion_slider.set_value_no_signal(current_preset.arousal_contagion_strength)
+	formation_follow_slider.set_value_no_signal(current_preset.formation_follow_weight)
+	cluster_pressure_slider.set_value_no_signal(current_preset.cluster_pressure_weight)
+	cluster_target_slider.set_value_no_signal(current_preset.cluster_target_neighbors)
 	waking_toggle.set_pressed_no_signal(current_preset.spontaneous_waking_enabled)
 	goal_width_slider.set_value_no_signal(current_preset.goal_repulsion_outer_width)
 	recovery_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.energy_recovery_rate))

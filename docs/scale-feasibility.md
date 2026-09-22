@@ -1,5 +1,7 @@
 # Scale feasibility: agents, terrain, and dressing
 
+**2026-09-22 update:** Living shoals behavior is accepted and the bounded GPU performance pass is authorized/implemented in [m0e-performance.md](m0e-performance.md). The earlier gate descriptions below are historical. Terrain3D at the current gameplay scale is next; use its own foliage/instancing before adding another scatter dependency. Coarse collision is sufficient, and co-op remains an optional host-authoritative follow-up.
+
 Research note only, 2026-09-21. No addon was installed and no project or target-device profiling was performed. Godot `latest` documentation can describe behavior newer than the pinned 4.7.2 build, so the later gates require checks in that exact build and on the intended Mobile/XR target.
 
 ## Current gate

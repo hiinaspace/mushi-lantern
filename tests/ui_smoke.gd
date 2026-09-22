@@ -81,6 +81,9 @@ func run_checks() -> void:
 	assert(lab.agent_nodes.is_empty() and lab.glyph_swarm != null)
 	lab.variation_slider.value = 0.4
 	lab.contagion_slider.value = 0.2
+	lab.formation_follow_slider.value = 0.9
+	lab.cluster_pressure_slider.value = 1.0
+	lab.cluster_target_slider.value = 2.0
 	lab.waking_toggle.button_pressed = false
 	lab.size_slider.value = 0.45
 	lab.height_slider.value = 6.5
@@ -94,6 +97,12 @@ func run_checks() -> void:
 	assert(is_equal_approx(lab.current_preset.population_variation, 0.4))
 	assert(is_equal_approx(lab.simulation.preset.arousal_contagion_strength, 0.2))
 	assert(not lab.current_preset.spontaneous_waking_enabled)
+	assert(is_equal_approx(lab.current_preset.formation_follow_weight, 0.9))
+	assert(is_equal_approx(lab.simulation.preset.cluster_pressure_weight, 1.0))
+	assert(lab.current_preset.cluster_target_neighbors == 2)
+	assert(is_equal_approx(lab.formation_follow_slider.value, 0.9))
+	assert(is_equal_approx(lab.cluster_pressure_slider.value, 1.0))
+	assert(is_equal_approx(lab.cluster_target_slider.value, 2.0))
 	assert(lab.simulation.trait_sizes.size() == 1024)
 	assert(is_equal_approx(lab.size_slider.value, 0.45))
 	assert(is_equal_approx(lab.simulation.preset.flight_max_height, 6.5))

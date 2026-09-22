@@ -1,4 +1,22 @@
-# Current authorization — M0d living shoals
+# Particle simulation accepted — next environment checkpoint
+
+On 2026-09-22 the user accepted readable, aesthetic GPU head/body/tail trios and explicitly closed particle-simulation work for now. Their private `loose trains` preset weakens following to permit splitting/recombining; exact verified tuning and launch instructions are in `docs/m0g-trios.md`. Keep the accepted count/appearance and F1 sandbox. Next task is a bounded Terrain3D/environment greybox; fine collision is unnecessary, and CPU/ground modes may be retired. Do not reopen formation research by default. Current task is checkpoint/commit only; environment implementation belongs in the next task.
+
+# Current authorization — M0f small formations
+
+Follow-up: the user still wants readable local head/body/tail groups of three, while keeping the accepted count, glyph size and general aesthetic. A bounded transient local matching experiment is authorized before terrain. On this follow-up the user explicitly dropped the requirement to maintain CPU flight: GPU behavior, invariants, lifecycle and performance are the acceptance surface. Do not spend further effort preserving CPU/GPU trajectory equivalence. The user also permits retiring the 2D/ground simulation to Git history if useful. Neither legacy path constrains this pass; prioritize GPU flight and do not infer a need to support GPU-less systems.
+
+The user confirmed 1024 GPU agents run smoothly and retain the desired behavior. Promote their saved `longer drift` tuning, including its run multipliers and smaller glyph scale, to the default while preserving F1 sandbox controls. Before terrain, implement one bounded comparison seeking smaller groups and directional glyph trains. Aesthetic approximations are allowed; no automated ALife search or full composite-creature system is required. Expose 2048 as an experiment, measure it, and retain the accepted 1024 default. Preserve the host-authoritative path without requiring synchronized persistent bonds. Do not infer visual success from numerical tests.
+
+# Prior authorization — M0e performance comparison
+
+On 2026-09-22 the user accepted living-shoal behavior and authorized a bounded performance implementation: preserve the CPU reference and ground fallback, move display-frame glyph work to shaders, and compare a stock-Godot custom-compute simulation at 256/1024 agents. Sayu PC VR is the target; laptop timings remain diagnostics. Sol/Luna delegation is explicitly requested where useful to conserve quota. No engine patch unless public APIs demonstrably block the prototype. Keep stable IDs, seeded traits, sampled social behavior and one-time return accounting. Coarse rocks/trunks and heightmap clearance are sufficient; fine foliage collision is unnecessary. Preserve a practical host-authoritative 2–4-player path, but prioritize solo VR; networking implementation is not part of this pass. Sequence a small Terrain3D greybox after the backend comparison, using its existing foliage/instancing before adding a separate scatter addon. Darkness, bloom, full XR and terrain integration remain subsequent validation work, not implied by a desktop benchmark.
+
+The user further clarified that old experiments need not remain dynamically selectable when that complicates the implementation; prior commits or isolated worktrees are acceptable comparison surfaces. Prefer a simple winning path after measurement rather than accumulating permanent backend/renderer modes.
+
+The simulation is aesthetic, not a ground-truth model. The user explicitly permits behavioral simplifications and temporal/spatial subsampling (including neighbor excitement) when measurements and feel justify them. Preserve finite state and one-time accounting; distinguish measured approximation from a faithful port and judge longer-run behavior by herding response rather than exact trajectories.
+
+# Prior authorization — M0d living shoals
 
 On 2026-09-22 the user approved 3D/smaller bodies and requested 256–1024 agents, lightweight glowing glyph rendering, seeded heterogeneous traits/social responses, local neighbor arousal and occasional spontaneous waking from mushrooms. Implement this bounded population/behavior pass now. Treat laptop power-mode timings as diagnostics, not target-device viability gates; do not change power settings. Keep prior behavior controls and ground fallback. Terrain and full darkness/bloom/XR remain later milestones. This supersedes older population deferrals below.
 
