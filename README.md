@@ -4,7 +4,7 @@ A bounded, daylight desktop prototype for testing the core lantern-herding feel 
 
 The user found M0 a successful spike without selecting a winner. M0b adds two energy/mushroom experiments while preserving all three original presets. The original energy comparisons remain available. The current follow-up adds arousal-driven scatter and a 60 m square arena with more travel between mushrooms and the goal.
 
-M0b was approved as a useful herding loop. The default is now Living shoals at 256 agents: instanced glyphs, seeded trait variation, neighbor arousal and spontaneous waking, with 512/1024 options and the ground fallback. See [docs/m0d-living-shoals.md](docs/m0d-living-shoals.md). See [docs/m0c-flight.md](docs/m0c-flight.md). There is no dark adaptation, forest content, tutorial character, staff physics, networking, or headset claim. Automated checks cover correctness boundaries; selecting a ruleset requires the human playtest in [docs/m0-playtest.md](docs/m0-playtest.md).
+M0b was approved as a useful herding loop. The default is now Living shoals at 256 agents: heading-oriented instanced glyphs with live size/billboard controls and adjustable ceiling, seeded trait variation, neighbor arousal and spontaneous waking, with 512/1024 options and the ground fallback. See [docs/m0d-living-shoals.md](docs/m0d-living-shoals.md). See [docs/m0c-flight.md](docs/m0c-flight.md). There is no dark adaptation, forest content, tutorial character, staff physics, networking, or headset claim. Automated checks cover correctness boundaries; selecting a ruleset requires the human playtest in [docs/m0-playtest.md](docs/m0-playtest.md).
 
 ## Run
 

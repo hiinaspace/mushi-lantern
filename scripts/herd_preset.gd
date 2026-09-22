@@ -43,6 +43,10 @@ extends Resource
 @export_range(0.0, 1.0, 0.01) var spontaneous_wake_energy: float = 0.54
 @export_range(4, 96, 1) var max_social_neighbors: int = 32
 
+@export_range(2.0, 8.0, 0.1) var flight_max_height: float = 2.8
+@export_range(0.25, 2.0, 0.05) var glyph_render_scale: float = 0.65
+@export var glyph_billboard: bool = false
+
 func copy_preset() -> HerdPreset:
 	var result := HerdPreset.new()
 	for property: StringName in [
@@ -59,7 +63,8 @@ func copy_preset() -> HerdPreset:
 		"arousal_scatter_strength", "population_variation", "arousal_contagion_strength",
 		"spontaneous_waking_enabled", "spontaneous_wake_min_seconds",
 		"spontaneous_wake_max_seconds", "spontaneous_wake_duration",
-		"spontaneous_wake_energy", "max_social_neighbors"
+		"spontaneous_wake_energy", "max_social_neighbors",
+		"flight_max_height", "glyph_render_scale", "glyph_billboard"
 	]:
 		result.set(property, get(property))
 	return result
@@ -107,6 +112,9 @@ func to_dict() -> Dictionary:
 		"spontaneous_wake_duration": spontaneous_wake_duration,
 		"spontaneous_wake_energy": spontaneous_wake_energy,
 		"max_social_neighbors": max_social_neighbors,
+		"flight_max_height": flight_max_height,
+		"glyph_render_scale": glyph_render_scale,
+		"glyph_billboard": glyph_billboard,
 	}
 
 static func from_dict(data: Dictionary) -> HerdPreset:
@@ -146,6 +154,7 @@ static func builtins() -> Array[HerdPreset]:
 
 	var living := energy.copy_preset()
 	living.preset_name = "Living shoals"
+	living.flight_max_height = 4.5
 	living.population_variation = 0.65
 	living.arousal_contagion_strength = 0.35
 	living.spontaneous_waking_enabled = true

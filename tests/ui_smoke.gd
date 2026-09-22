@@ -82,6 +82,9 @@ func run_checks() -> void:
 	lab.variation_slider.value = 0.4
 	lab.contagion_slider.value = 0.2
 	lab.waking_toggle.button_pressed = false
+	lab.size_slider.value = 0.45
+	lab.height_slider.value = 6.5
+	lab.billboard_toggle.button_pressed = true
 	lab.save_name.text = "smoke-flight"
 	lab._save_named_preset()
 	lab._apply_preset(3, true)
@@ -92,6 +95,9 @@ func run_checks() -> void:
 	assert(is_equal_approx(lab.simulation.preset.arousal_contagion_strength, 0.2))
 	assert(not lab.current_preset.spontaneous_waking_enabled)
 	assert(lab.simulation.trait_sizes.size() == 1024)
+	assert(is_equal_approx(lab.size_slider.value, 0.45))
+	assert(is_equal_approx(lab.simulation.preset.flight_max_height, 6.5))
+	assert(lab.billboard_toggle.button_pressed and lab.current_preset.glyph_billboard)
 	lab.run_notes.text = "UI persistence check"
 	lab.elapsed = 1.0
 	lab._write_run_record("ui_smoke")

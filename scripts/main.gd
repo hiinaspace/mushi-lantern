@@ -34,6 +34,9 @@ var lantern: Lantern
 var top_camera: Camera3D
 var agent_nodes: Array[Node3D] = []
 var glyph_swarm: GlyphSwarm
+var size_slider: HSlider
+var height_slider: HSlider
+var billboard_toggle: CheckBox
 var variation_slider: HSlider
 var contagion_slider: HSlider
 var waking_toggle: CheckBox
@@ -381,6 +384,16 @@ func _build_ui() -> void:
 	wake_slider.value_changed.connect(_on_tuning_changed.bind(&"orange_energy_response"))
 	scatter_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_scatter_strength"))
 	mushroom_pull_slider.value_changed.connect(_on_tuning_changed.bind(&"mushroom_attraction_weight"))
+	size_slider = _add_slider(stack, "Glyph size", 0.25, 2.0, 0.65, 0.05)
+	height_slider = _add_slider(stack, "Max height (m)", 2.0, 8.0, 4.5, 0.1)
+	billboard_toggle = CheckBox.new()
+	billboard_toggle.text = "Camera-facing glyphs"
+	stack.add_child(billboard_toggle)
+	for control: Control in [size_slider.get_parent(), height_slider.get_parent(), billboard_toggle]:
+		population_rows.append(control)
+	size_slider.value_changed.connect(_on_tuning_changed.bind(&"glyph_render_scale"))
+	height_slider.value_changed.connect(_on_tuning_changed.bind(&"flight_max_height"))
+	billboard_toggle.toggled.connect(_on_billboard_changed)
 	variation_slider = _add_slider(stack, "Trait variety", 0.0, 1.0, 0.65, 0.05)
 	variation_slider.tooltip_text = "Changing variety resets the same seed to rebuild individual traits."
 	contagion_slider = _add_slider(stack, "Neighbor arousal", 0.0, 1.0, 0.35, 0.05)
@@ -638,7 +651,7 @@ func _update_agent_visuals(alpha: float) -> void:
 				wing_material.albedo_color = Color(color, 0.72)
 
 func _update_hud() -> void:
-	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider, variation_slider, contagion_slider]:
+	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider, variation_slider, contagion_slider, size_slider, height_slider]:
 		(slider.get_meta("value_label") as Label).text = "%.2f" % slider.value
 	var shutter_text := "CLOSED" if lantern.shutter_openness <= 0.01 else "%d%% OPEN" % roundi(lantern.shutter_openness * 100.0)
 	var pause_text := "  ·  PAUSED" if simulation_paused else ""
@@ -647,7 +660,7 @@ func _update_hud() -> void:
 		lantern.mode_label(), shutter_text, simulation.score, fixture_count,
 		simulation.active_count(), current_preset.preset_name, tuning_text, pause_text
 	]
-	hud_label.text += "\n%s · %d Hz · CPU step %.2f ms · visuals %.2f ms · %d FPS" % ["3D glyphs · ceiling 2.8 m" if flight_enabled else "Ground fallback", roundi(1.0 / active_step), sim_step_ms, visual_update_ms, Engine.get_frames_per_second()]
+	hud_label.text += "\n%s · %d Hz · CPU step %.2f ms · visuals %.2f ms · %d FPS" % [("3D glyphs · ceiling %.1f m" % current_preset.flight_max_height) if flight_enabled else "Ground fallback", roundi(1.0 / active_step), sim_step_ms, visual_update_ms, Engine.get_frames_per_second()]
 	if debug_visible and not simulation.positions.is_empty():
 		var i := mini(inspected_agent, simulation.positions.size() - 1)
 		hud_label.text += "\nMarker = arrival target · tiles = ground slice\nID %d · e %.2f · light %.2f · force %s · %s" % [i, simulation.arousals[i], simulation.exposures[i], str(simulation.accelerations[i]), FlockSimulation.Lifecycle.keys()[simulation.lifecycles[i]]]
@@ -732,6 +745,12 @@ func _on_variation_changed(value: float) -> void:
 	current_preset.population_variation = value
 	config_changed = true
 	_reset_run(false)
+
+func _on_billboard_changed(enabled: bool) -> void:
+	current_preset.glyph_billboard = enabled
+	simulation.preset.glyph_billboard = enabled
+	config_changed = true
+	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
 func _on_waking_changed(enabled: bool) -> void:
 	current_preset.spontaneous_waking_enabled = enabled
@@ -996,6 +1015,9 @@ func _update_field_overlay() -> void:
 		mesh.surface_end()
 
 func _sync_energy_controls() -> void:
+	size_slider.set_value_no_signal(current_preset.glyph_render_scale)
+	height_slider.set_value_no_signal(current_preset.flight_max_height)
+	billboard_toggle.set_pressed_no_signal(current_preset.glyph_billboard)
 	variation_slider.set_value_no_signal(current_preset.population_variation)
 	contagion_slider.set_value_no_signal(current_preset.arousal_contagion_strength)
 	waking_toggle.set_pressed_no_signal(current_preset.spontaneous_waking_enabled)
@@ -1010,6 +1032,8 @@ func _sync_energy_controls() -> void:
 		row.visible = current_preset.energy_dynamics
 
 func _refresh_preset_visuals() -> void:
+	(flight_goal_volume.mesh as CylinderMesh).height = current_preset.flight_max_height
+	flight_goal_volume.position.y = current_preset.flight_max_height * 0.5
 	flight_goal_volume.visible = debug_visible and flight_enabled
 	if goal_halo == null:
 		goal_halo = MeshInstance3D.new()

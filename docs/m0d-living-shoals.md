@@ -34,3 +34,13 @@ Validation on natto, 2026-09-22: `./check.sh` passes 64 ground + 18 flight + 24 
 At seed 40721 after 45 simulated seconds with 256 agents and no lantern influence, 233 were sleepy, one was outside mushroom influence at the final sample, and two distinct agents had been observed outside. Most residents remained near their patches while a few departed. Short 12-step CPU diagnostics averaged 4.35 ms at 256 and 18.49 ms at 1024; these exclude rendering and do not establish sustained frame time or target-device readiness.
 
 Evidence is retained locally under `artifacts/m0d-shoals-20260922/`: `check-final.log`, `glyph-checks.log`, `glyph-directions.png`, `living-patch.log`, `living-patch.png`, and the reproducible render/observation scripts. Earlier 1024 render captures predate the final 30 Hz large-population step and must not be treated as final performance results. Human judgment of glyph readability, social patterns and herding remains the next gate.
+
+## Heading and height follow-up (2026-09-22)
+
+The user accepted 1024 as sufficient to evaluate behavior and approved patch waking; the composite-animal gestalt remains unachieved. Default glyphs now orient in world space: local head-to-tail follows velocity, with the thin quad generally horizontal during horizontal travel. Resting glyphs retain their orientation; vertical headings use the previous transverse axis to avoid singularities. They are double-sided, but become thin or invisible edge-on. **Camera-facing glyphs** restores the billboard comparison live.
+
+**Glyph size** is a render-only multiplier, 0.25–2.0, default 0.65 (35% smaller than the first glyph pass). **Max height (m)** is a live 2–8 m ceiling; Living shoals starts at 4.5 m, other presets at the prior 2.8 m. Calm flight remains gently attracted toward roughly 1.5 m while high energy increases vertical wandering and excursion into available headroom. Sleep settling and patch waking remain. All three settings persist in named presets and run history. The goal debug volume follows the ceiling.
+
+Compare steering from different camera angles and compare billboard on/off; try ceilings 2.8, 4.5 and 8 m while energizing a school. These controls do not implement GPU simulation, terrain or new composite formations. Rendered checks and screenshots are under `artifacts/m0d-heading-20260922/`; velocity alignment, camera-independent geometry, size scaling and billboard toggling passed on Vulkan.
+
+Follow-up validation: 112 simulation checks (64 ground, 18 flight, 24 population, 6 height) plus UI saved-setting checks pass. Height checks cover live ceiling reduction and the neutral-versus-energized vertical force; they do not establish a preferred feel. No composite formation or GPU simulation change was made.

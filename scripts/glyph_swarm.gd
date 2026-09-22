@@ -2,17 +2,18 @@ class_name GlyphSwarm
 extends Node3D
 
 ## A deliberately small rendering adapter for dense flight simulations. Every
-## mushi is one camera-facing quad in one MultiMesh draw call; simulation state
+## mushi is one heading-oriented quad in one MultiMesh draw call; simulation state
 ## remains authoritative in FlightSimulation.
 
 const GLYPH_SHADER := preload("res://shaders/mushi_glyph.gdshader")
 const RELEASED := 3
 
-@export var face_camera := true
+@export var face_camera := false
 @export var animate_vertices := true
 @export var glow_strength := 0.72
 
 var instance_count: int = 0
+var _heading_bases: Array[Basis] = []
 var _multimesh := MultiMesh.new()
 var _mesh_instance := MultiMeshInstance3D.new()
 var _material := ShaderMaterial.new()
@@ -28,6 +29,9 @@ func _init() -> void:
 
 func configure(count: int) -> void:
 	instance_count = maxi(0, count)
+	_heading_bases.clear()
+	for index: int in instance_count:
+		_heading_bases.append(heading_basis(Vector3(sin(index * 2.4), 0.0, cos(index * 2.4)), Basis.IDENTITY))
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2.0, 2.0)
 	quad.material = _material
@@ -39,7 +43,7 @@ func configure(count: int) -> void:
 	_multimesh.instance_count = instance_count
 	# The arena is currently bounded to roughly 60 m. An explicit AABB prevents
 	# the whole swarm disappearing while instance transforms are being replaced.
-	_multimesh.custom_aabb = AABB(Vector3(-35.0, -2.0, -35.0), Vector3(70.0, 12.0, 70.0))
+	_multimesh.custom_aabb = AABB(Vector3(-35.0, -2.0, -35.0), Vector3(70.0, 16.0, 70.0))
 	_mesh_instance.multimesh = _multimesh
 
 
@@ -49,6 +53,7 @@ func update_swarm(sim: Variant, alpha: float, preset: HerdPreset) -> void:
 	var count: int = mini(instance_count, sim.positions.size())
 	if _multimesh.instance_count != instance_count:
 		configure(instance_count)
+	face_camera = preset.glyph_billboard
 	_apply_shader_options()
 	var blend := clampf(alpha, 0.0, 1.0)
 	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
@@ -62,7 +67,9 @@ func update_swarm(sim: Variant, alpha: float, preset: HerdPreset) -> void:
 		var point: Vector3 = sim.positions[index]
 		if index < sim.previous_positions.size():
 			point = sim.previous_positions[index].lerp(point, blend)
-		_multimesh.set_instance_transform(index, Transform3D(Basis.IDENTITY, point))
+		var velocity: Vector3 = sim.velocities[index] if index < sim.velocities.size() else Vector3.ZERO
+		_heading_bases[index] = heading_basis(velocity, _heading_bases[index])
+		_multimesh.set_instance_transform(index, Transform3D(_heading_bases[index], point))
 
 		var energy: float = sim.arousals[index] if index < sim.arousals.size() else preset.energy_neutral_target
 		var subtype: int = sim.trait_types[index] if index < sim.trait_types.size() else index % 3
@@ -78,19 +85,30 @@ func update_swarm(sim: Variant, alpha: float, preset: HerdPreset) -> void:
 		var size_factor: float = sim.trait_sizes[index] if index < sim.trait_sizes.size() else 1.0
 		# trait_sizes is a relative phenotype. The base half-size keeps glyphs in
 		# the requested ~0.12-0.25 m range without baking scale into transforms.
-		var half_size := clampf(0.175 * size_factor, 0.12, 0.25)
+		var half_size := clampf(0.175 * size_factor, 0.12, 0.25) * clampf(preset.glyph_render_scale, 0.25, 2.0)
 		var heading := 0.0
-		if index < sim.velocities.size():
-			var velocity: Vector3 = sim.velocities[index]
-			if velocity.length_squared() > 0.0001:
-				if face_camera and camera != null:
-					var view_velocity := camera_basis_inverse * velocity
-					heading = atan2(-view_velocity.x, view_velocity.y)
-				else:
-					heading = atan2(velocity.x, velocity.z)
+		if face_camera and camera != null and velocity.length_squared() > 0.0001:
+			var view_velocity := camera_basis_inverse * velocity
+			heading = atan2(-view_velocity.x, view_velocity.y)
 		var seed := fmod(float(index) * 0.61803398875, 1.0)
 		_multimesh.set_instance_custom_data(index, Color(float(posmod(subtype, 3)) / 2.0, seed, heading / TAU + 0.5, half_size))
 
+
+## Local +Y is the head; the quad lies along travel with its normal near world up.
+## Retain resting orientation, and use the previous right axis near vertical flight.
+static func heading_basis(velocity: Vector3, previous: Basis) -> Basis:
+	if velocity.length_squared() < 0.0001:
+		return previous
+	var forward := velocity.normalized()
+	var right := forward.cross(Vector3.UP)
+	if right.length_squared() < 0.01:
+		right = previous.x - forward * previous.x.dot(forward)
+		if right.length_squared() < 0.0001:
+			right = forward.cross(Vector3.FORWARD)
+	right = right.normalized()
+	if right.dot(previous.x) < 0.0:
+		right = -right
+	return Basis(right, forward, right.cross(forward).normalized())
 
 func debug_instance_transform(index: int) -> Transform3D:
 	if index < 0 or index >= _multimesh.instance_count:

@@ -56,6 +56,7 @@ var _neighbor_lists: Array[PackedInt32Array] = []
 func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	seed_value = new_seed
 	preset = new_preset.copy_preset()
+	_sync_flight_height()
 	positions = PackedVector3Array()
 	previous_positions = PackedVector3Array()
 	velocities = PackedVector3Array()
@@ -142,6 +143,10 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 
 
 func step(delta: float, field: LightField, social_multiplier: float = 1.0, wander_multiplier: float = 1.0) -> void:
+	# The height control is live, so an authored ceiling change does not require
+	# rebuilding the population. Motion constraints bring flyers back inside a
+	# lowered band on this step.
+	_sync_flight_height()
 	_energy_time += delta
 	if _last_field_mode != field.mode:
 		exposures.fill(0.0)
@@ -310,7 +315,8 @@ func _wander_force(index: int, multiplier: float) -> Vector3:
 	var scatter := _arousal_scatter_amount(index)
 	var phase := wander_phases[index] + _energy_time * (0.48 + float((index * 17) % 9) * 0.035)
 	phase += scatter * (sin(_energy_time * 1.73 + _energy_phases[index] * 1.31) * 1.05 + sin(_energy_time * 0.47 + _energy_phases[index] * 2.17) * 0.62)
-	var vertical := sin(_energy_time * (0.63 + float(index % 5) * 0.08) + _vertical_phases[index]) * 0.62
+	var vertical_energy := smoothstep(preset.energy_neutral_target, 1.0, arousals[index]) if preset.energy_dynamics else arousals[index]
+	var vertical := sin(_energy_time * (0.63 + float(index % 5) * 0.08) + _vertical_phases[index]) * 0.62 * lerpf(0.7, 1.65, vertical_energy)
 	# A low-frequency shared curl gives a school a coherent bend without locking individuals together.
 	var flow_phase := _energy_time * 0.16 + positions[index].x * 0.035 - positions[index].z * 0.027
 	var direction := Vector3(cos(phase) + sin(flow_phase) * 0.38, vertical, sin(phase) + cos(flow_phase * 1.17) * 0.38).normalized()
@@ -508,9 +514,20 @@ func _boundary_force(position: Vector3) -> Vector3:
 func _flight_band_force(index: int, position: Vector3) -> Vector3:
 	if preset.energy_dynamics and _energy_mobility(arousals[index]) < 0.08:
 		return Vector3.ZERO
-	var center := lerpf(min_height, max_height, 0.48)
-	var preferred := center + sin(_energy_time * 0.21 + _vertical_phases[index]) * (max_height - min_height) * 0.18
-	return Vector3.UP * clampf((preferred - position.y) * 0.9, -1.4, 1.4)
+	# Keep ordinary schools near standing player height even when the ceiling is
+	# raised. Energy opens a larger, mostly-upward orbit, allowing excited mushi
+	# to use the volume before the gentle reference-height pull brings them back.
+	var player_height := clampf(1.5, min_height + 0.35, max_height - 0.35)
+	var vertical_energy := smoothstep(preset.energy_neutral_target, 1.0, arousals[index]) if preset.energy_dynamics else arousals[index]
+	var headroom := maxf(0.0, max_height - player_height - 0.25)
+	var excursion := headroom * lerpf(0.08, 0.82, vertical_energy)
+	var orbit := sin(_energy_time * lerpf(0.18, 0.34, vertical_energy) + _vertical_phases[index])
+	var preferred := player_height + excursion * (0.25 + orbit * 0.75)
+	return Vector3.UP * clampf((preferred - position.y) * lerpf(0.48, 0.72, vertical_energy), -1.25, 1.25)
+
+
+func _sync_flight_height() -> void:
+	max_height = maxf(min_height + 0.75, preset.flight_max_height)
 
 
 func _goal_resistance(position: Vector3) -> Vector3:
