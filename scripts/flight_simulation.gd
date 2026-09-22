@@ -315,7 +315,7 @@ func _wander_force(index: int, multiplier: float) -> Vector3:
 	var scatter := _arousal_scatter_amount(index)
 	var phase := wander_phases[index] + _energy_time * (0.48 + float((index * 17) % 9) * 0.035)
 	phase += scatter * (sin(_energy_time * 1.73 + _energy_phases[index] * 1.31) * 1.05 + sin(_energy_time * 0.47 + _energy_phases[index] * 2.17) * 0.62)
-	var vertical_energy := smoothstep(preset.energy_neutral_target, 1.0, arousals[index]) if preset.energy_dynamics else arousals[index]
+	var vertical_energy := smoothstep(preset.energy_neutral_target, 1.0, arousals[index])
 	var vertical := sin(_energy_time * (0.63 + float(index % 5) * 0.08) + _vertical_phases[index]) * 0.62 * lerpf(0.7, 1.65, vertical_energy)
 	# A low-frequency shared curl gives a school a coherent bend without locking individuals together.
 	var flow_phase := _energy_time * 0.16 + positions[index].x * 0.035 - positions[index].z * 0.027
@@ -518,7 +518,7 @@ func _flight_band_force(index: int, position: Vector3) -> Vector3:
 	# raised. Energy opens a larger, mostly-upward orbit, allowing excited mushi
 	# to use the volume before the gentle reference-height pull brings them back.
 	var player_height := clampf(1.5, min_height + 0.35, max_height - 0.35)
-	var vertical_energy := smoothstep(preset.energy_neutral_target, 1.0, arousals[index]) if preset.energy_dynamics else arousals[index]
+	var vertical_energy := smoothstep(preset.energy_neutral_target, 1.0, arousals[index])
 	var headroom := maxf(0.0, max_height - player_height - 0.25)
 	var excursion := headroom * lerpf(0.08, 0.82, vertical_energy)
 	var orbit := sin(_energy_time * lerpf(0.18, 0.34, vertical_energy) + _vertical_phases[index])
