@@ -196,7 +196,7 @@ func _test_short_unattended_control() -> void:
 
 func _test_energy_preset_contract_and_compatibility() -> void:
 	var presets := HerdPreset.builtins()
-	_expect(presets.size() == 5 and presets[3].preset_name == "Energy recovery" and presets[4].preset_name == "Lingering energy", "energy variants append after the three original presets")
+	_expect(presets.size() >= 5 and presets[3].preset_name == "Energy recovery" and presets[4].preset_name == "Lingering energy", "energy variants append after the three original presets")
 	_expect(not presets[0].energy_dynamics and presets[0].goal_repulsion_outer_width == 1.8, "legacy preset defaults retain original energy and goal behavior")
 	var old_save := {"preset_name": "Old save", "max_speed": 1.75, "arousal_memory": true}
 	var restored := HerdPreset.from_dict(old_save)

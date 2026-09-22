@@ -23,6 +23,6 @@ If M0 remains opaque after bounded comparisons, change the response/tool or lean
 
 ## Current boundary
 
-M0b energy/scatter is approved. The current implementation scope is **M0c small 3D flight**, with a ground fallback. Its human feel gate precedes terrain/population scale; those passes precede lighting/adaptation. Preserve the release window by bounding or cutting scale experiments. It can prepare the human gate with reproducible behavior, invariant tests, screenshots and controls, but cannot pass the feel gate by itself. Darkness, virtual adaptation, staff physics, XR and a complete game remain subsequent milestones. See [m0b-energy.md](m0b-energy.md) and [scale-feasibility.md](scale-feasibility.md).
+M0b energy/scatter is approved. M0c flight aesthetics are approved. The current implementation scope is **M0d glyphs and living shoals at 256–1024**, with a ground fallback. Its human feel gate precedes terrain integration; those passes precede lighting/adaptation. Preserve the release window by bounding or cutting scale experiments. It can prepare the human gate with reproducible behavior, invariant tests, screenshots and controls, but cannot pass the feel gate by itself. Darkness, virtual adaptation, staff physics, XR and a complete game remain subsequent milestones. See [m0b-energy.md](m0b-energy.md) and [scale-feasibility.md](scale-feasibility.md).
 
 The full original planning snapshot is in [charter-2026-09-21.md](charter-2026-09-21.md); the current project tracker lives at `/home/s/org/projects/mushi-lantern.md`.

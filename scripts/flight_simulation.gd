@@ -20,6 +20,15 @@ var lifecycles := PackedInt32Array()
 var lifecycle_times := PackedFloat32Array()
 var wander_phases := PackedFloat32Array()
 var group_ids := PackedInt32Array()
+var trait_types := PackedInt32Array()
+var trait_sizes := PackedFloat32Array()
+var trait_tints := PackedColorArray()
+var speed_factors := PackedFloat32Array()
+var cohesion_factors := PackedFloat32Array()
+var alignment_factors := PackedFloat32Array()
+var lantern_response_factors := PackedFloat32Array()
+var mushroom_response_factors := PackedFloat32Array()
+var neighbor_visits: int = 0
 var goal_position := Vector2.ZERO
 var goal_radius: float = 2.05
 var goal_dwell_seconds: float = 0.45
@@ -37,6 +46,11 @@ var _energy_phases := PackedFloat32Array()
 var _vertical_phases := PackedFloat32Array()
 var _energy_time: float = 0.0
 var _last_field_mode: int = -1
+var _neutral_offsets := PackedFloat32Array()
+var _wake_waits := PackedFloat32Array()
+var _wake_remaining := PackedFloat32Array()
+var _wake_cycles := PackedInt32Array()
+var _neighbor_lists: Array[PackedInt32Array] = []
 
 
 func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
@@ -53,6 +67,20 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	lifecycle_times = PackedFloat32Array()
 	wander_phases = PackedFloat32Array()
 	group_ids = PackedInt32Array()
+	trait_types = PackedInt32Array()
+	trait_sizes = PackedFloat32Array()
+	trait_tints = PackedColorArray()
+	speed_factors = PackedFloat32Array()
+	cohesion_factors = PackedFloat32Array()
+	alignment_factors = PackedFloat32Array()
+	lantern_response_factors = PackedFloat32Array()
+	mushroom_response_factors = PackedFloat32Array()
+	_neutral_offsets = PackedFloat32Array()
+	_wake_waits = PackedFloat32Array()
+	_wake_remaining = PackedFloat32Array()
+	_wake_cycles = PackedInt32Array()
+	_neighbor_lists = []
+	neighbor_visits = 0
 	_goal_dwells = PackedFloat32Array()
 	_energy_phases = PackedFloat32Array()
 	_vertical_phases = PackedFloat32Array()
@@ -64,6 +92,8 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	rng.seed = new_seed
 	var energy_rng := RandomNumberGenerator.new()
 	energy_rng.seed = new_seed ^ 0x5f3759df
+	var trait_rng := RandomNumberGenerator.new()
+	trait_rng.seed = new_seed ^ 0x2c1b3c6d
 	var centers := spawn_centers
 	if centers.is_empty():
 		centers = PackedVector2Array(DEFAULT_SPAWN_CENTERS)
@@ -94,6 +124,21 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 		_goal_dwells.append(0.0)
 		_energy_phases.append(energy_phase)
 		_vertical_phases.append(rng.randf_range(0.0, TAU))
+		var variation := preset.population_variation
+		var subtype := trait_rng.randi_range(0, 2)
+		trait_types.append(subtype)
+		trait_sizes.append(clampf(1.0 + trait_rng.randfn(0.0, 0.20) * variation, 0.58, 1.48))
+		var subtype_tints := [Color(0.82, 1.0, 0.91), Color(0.88, 0.94, 1.0), Color(1.0, 0.90, 0.82)]
+		trait_tints.append(Color.WHITE.lerp(subtype_tints[subtype], variation * 0.72))
+		speed_factors.append(clampf(1.0 + trait_rng.randfn(0.0, 0.18) * variation, 0.62, 1.45))
+		cohesion_factors.append(clampf(1.0 + trait_rng.randfn(0.0, 0.34) * variation, 0.35, 1.75))
+		alignment_factors.append(clampf(1.0 + trait_rng.randfn(0.0, 0.30) * variation, 0.4, 1.7))
+		lantern_response_factors.append(clampf(1.0 + trait_rng.randfn(0.0, 0.28) * variation, 0.45, 1.65))
+		mushroom_response_factors.append(clampf(1.0 + trait_rng.randfn(0.0, 0.25) * variation, 0.5, 1.6))
+		_neutral_offsets.append(trait_rng.randfn(0.0, 0.09) * variation)
+		_wake_waits.append(trait_rng.randf_range(preset.spontaneous_wake_min_seconds, preset.spontaneous_wake_max_seconds))
+		_wake_remaining.append(0.0)
+		_wake_cycles.append(0)
 
 
 func step(delta: float, field: LightField, social_multiplier: float = 1.0, wander_multiplier: float = 1.0) -> void:
@@ -106,6 +151,8 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 	var old_positions := positions.duplicate()
 	var old_velocities := velocities.duplicate()
 	var old_lifecycles := lifecycles.duplicate()
+	var old_arousals := arousals.duplicate()
+	_build_neighbor_lists(old_positions, old_lifecycles)
 	var next_positions := positions.duplicate()
 	var next_velocities := velocities.duplicate()
 	for index: int in positions.size():
@@ -120,12 +167,15 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 		exposures[index] = move_toward(exposures[index], stimulus, delta * 4.0)
 		var mushroom_influence := _mushroom_influence(old_positions[index], old_velocities[index])
 		mushroom_exposures[index] = mushroom_influence[0] if preset.energy_dynamics else 0.0
-		_update_arousal(index, field.mode, exposures[index], mushroom_exposures[index], delta)
+		_update_arousal(index, field.mode, exposures[index], mushroom_exposures[index], delta, old_arousals)
 		force += _lantern_force(old_positions[index], old_velocities[index], field, exposures[index])
 		if preset.energy_dynamics:
 			var mushroom_force: Vector3 = mushroom_influence[1]
+			mushroom_force *= mushroom_response_factors[index]
 			if field.mode == LightField.Mode.ORANGE:
 				mushroom_force *= 1.0 - exposures[index] * 0.85
+			if _wake_remaining[index] > 0.0:
+				mushroom_force *= 0.05
 			force += mushroom_force
 		force += _boundary_force(old_positions[index])
 		force += _flight_band_force(index, old_positions[index])
@@ -142,9 +192,9 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 			velocity += applied_force * delta
 			# Sleeping flyers settle instead of remaining suspended.
 			velocity.y -= sleep_amount * 1.25 * delta
-			velocity = velocity.limit_length(preset.max_speed * lerpf(0.06, lerpf(0.88, 1.18, arousals[index]), mobility))
+			velocity = velocity.limit_length(preset.max_speed * speed_factors[index] * lerpf(0.06, lerpf(0.88, 1.18, arousals[index]), mobility))
 		else:
-			velocity = velocity.limit_length(preset.max_speed * lerpf(0.88, 1.18, arousals[index]))
+			velocity = velocity.limit_length(preset.max_speed * speed_factors[index] * lerpf(0.88, 1.18, arousals[index]))
 		accelerations[index] = applied_force
 		var constrained := _constrain_motion(old_positions[index], velocity, delta)
 		next_positions[index] = constrained[0]
@@ -154,29 +204,106 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 	velocities = next_velocities
 
 
+func _build_neighbor_lists(snapshot_positions: PackedVector3Array, snapshot_lifecycles: PackedInt32Array) -> void:
+	_neighbor_lists = []
+	_neighbor_lists.resize(snapshot_positions.size())
+	neighbor_visits = 0
+	# Preserve the exact small-population behavior used by the original five presets.
+	if snapshot_positions.size() <= 64:
+		for index: int in snapshot_positions.size():
+			var exact := PackedInt32Array()
+			for other: int in snapshot_positions.size():
+				if other != index and snapshot_lifecycles[other] == Lifecycle.ACTIVE:
+					exact.append(other)
+			_neighbor_lists[index] = exact
+		return
+	var cell_size := maxf(0.25, preset.neighbor_radius)
+	var grid := {}
+	for index: int in snapshot_positions.size():
+		if snapshot_lifecycles[index] != Lifecycle.ACTIVE:
+			continue
+		var cell := _grid_cell(snapshot_positions[index], cell_size)
+		if not grid.has(cell):
+			grid[cell] = PackedInt32Array()
+		var bucket: PackedInt32Array = grid[cell]
+		bucket.append(index)
+		grid[cell] = bucket
+	var cap := maxi(4, preset.max_social_neighbors)
+	# At most two probes per adjacent cell on the first pass, followed by a
+	# deterministic rotated fill. Candidate enumeration itself remains bounded.
+	for index: int in snapshot_positions.size():
+		var selected := PackedInt32Array()
+		if snapshot_lifecycles[index] != Lifecycle.ACTIVE:
+			_neighbor_lists[index] = selected
+			continue
+		var origin := _grid_cell(snapshot_positions[index], cell_size)
+		for sweep: int in 2:
+			for x: int in range(-1, 2):
+				for z: int in range(-1, 2):
+					if selected.size() >= cap:
+						break
+					var cell := origin + Vector2i(x, z)
+					if not grid.has(cell):
+						continue
+					var bucket: PackedInt32Array = grid[cell]
+					if bucket.is_empty():
+						continue
+					var probes := mini(2 if sweep == 0 else 1, bucket.size())
+					var start := posmod(index * 17 + cell.x * 11 + cell.y * 31 + sweep * 7, bucket.size())
+					for probe: int in probes:
+						var other := bucket[(start + probe * maxi(1, bucket.size() / probes)) % bucket.size()]
+						if other != index and not selected.has(other):
+							selected.append(other)
+		_neighbor_lists[index] = selected
+
+
+func _grid_cell(position: Vector3, cell_size: float) -> Vector2i:
+	# The flight band is shorter than a neighbor cell, so XZ buckets plus the
+	# exact 3D distance check cover all neighboring cells with fewer lookups.
+	# Candidate sampling inside those cells is deliberately approximate.
+	return Vector2i(floori(position.x / cell_size), floori(position.z / cell_size))
+
+
 func _social_force(index: int, snapshot_positions: PackedVector3Array, snapshot_velocities: PackedVector3Array, snapshot_lifecycles: PackedInt32Array) -> Vector3:
 	var separation := Vector3.ZERO
 	var alignment := Vector3.ZERO
 	var cohesion_center := Vector3.ZERO
 	var neighbors := 0
-	for other: int in snapshot_positions.size():
-		if other == index or snapshot_lifecycles[other] != Lifecycle.ACTIVE:
-			continue
+	var affinity_sum := 0.0
+	var candidates := PackedInt32Array()
+	if _neighbor_lists.size() == snapshot_positions.size():
+		candidates = _neighbor_lists[index]
+	else:
+		for other: int in snapshot_positions.size():
+			if other != index and snapshot_lifecycles[other] == Lifecycle.ACTIVE:
+				candidates.append(other)
+	for other: int in candidates:
 		var offset := snapshot_positions[index] - snapshot_positions[other]
 		var distance := offset.length()
 		if distance <= 0.0001 or distance > preset.neighbor_radius:
 			continue
+		var affinity := 1.0
+		var desired_offset := Vector3.ZERO
+		if preset.population_variation > 0.0 and index < trait_types.size() and other < trait_types.size():
+			# A small cyclic preference produces exploratory head/tail strings and
+			# subclusters without assigning fixed leaders.
+			var preferred_type := (trait_types[index] + 1) % 3
+			var full_affinity := 1.24 if trait_types[other] == preferred_type else (1.08 if trait_types[other] == trait_types[index] else 0.76)
+			affinity = lerpf(1.0, full_affinity, preset.population_variation)
+			if snapshot_velocities[other].length_squared() > 0.01:
+				desired_offset = -snapshot_velocities[other].normalized() * float(trait_types[index] - 1) * 0.22 * preset.population_variation
 		neighbors += 1
-		alignment += snapshot_velocities[other]
-		cohesion_center += snapshot_positions[other]
+		affinity_sum += affinity
+		alignment += snapshot_velocities[other] * affinity
+		cohesion_center += (snapshot_positions[other] + desired_offset) * affinity
 		if distance < preset.separation_radius:
 			separation += offset.normalized() * (1.0 - distance / preset.separation_radius)
 	if neighbors == 0:
 		return Vector3.ZERO
-	alignment = alignment / float(neighbors) - snapshot_velocities[index]
-	var cohesion := (cohesion_center / float(neighbors) - snapshot_positions[index]).limit_length(1.0)
+	alignment = alignment / affinity_sum - snapshot_velocities[index]
+	var cohesion := (cohesion_center / affinity_sum - snapshot_positions[index]).limit_length(1.0)
 	var social_retention := 1.0 - _arousal_scatter_amount(index) * 0.82
-	return separation * preset.separation_weight + (alignment * preset.alignment_weight + cohesion * preset.cohesion_weight) * social_retention
+	return separation * preset.separation_weight + (alignment * preset.alignment_weight * alignment_factors[index] + cohesion * preset.cohesion_weight * cohesion_factors[index]) * social_retention
 
 
 func _wander_force(index: int, multiplier: float) -> Vector3:
@@ -187,7 +314,8 @@ func _wander_force(index: int, multiplier: float) -> Vector3:
 	# A low-frequency shared curl gives a school a coherent bend without locking individuals together.
 	var flow_phase := _energy_time * 0.16 + positions[index].x * 0.035 - positions[index].z * 0.027
 	var direction := Vector3(cos(phase) + sin(flow_phase) * 0.38, vertical, sin(phase) + cos(flow_phase * 1.17) * 0.38).normalized()
-	return direction * preset.wander_weight * multiplier * lerpf(0.55, 1.45, arousals[index]) * (1.0 + scatter * 3.2)
+	var wake_boost := 2.6 if index < _wake_remaining.size() and _wake_remaining[index] > 0.0 else 1.0
+	return direction * preset.wander_weight * multiplier * lerpf(0.55, 1.45, arousals[index]) * (1.0 + scatter * 3.2) * wake_boost
 
 
 func _arousal_scatter_amount(index: int) -> float:
@@ -219,22 +347,37 @@ func _lantern_force(position: Vector3, velocity: Vector3, field: LightField, sti
 	return (direction * desired_speed - velocity) * preset.light_weight * stimulus
 
 
-func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, mushroom_exposure: float, delta: float) -> void:
+func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, mushroom_exposure: float, delta: float, old_arousals: PackedFloat32Array = PackedFloat32Array()) -> void:
 	if preset.energy_dynamics:
 		var recovery_rate := maxf(0.0, preset.energy_recovery_rate)
 		var total_rate := recovery_rate
-		var weighted_target := recovery_rate * _individual_neutral_target(_energy_phases[index])
-		var mushroom_rate := maxf(0.0, preset.mushroom_suppression_rate) * mushroom_exposure
+		var neutral := _individual_neutral_target(_energy_phases[index])
+		if index < _neutral_offsets.size():
+			neutral = clampf(neutral + _neutral_offsets[index], 0.0, 1.0)
+		var weighted_target := recovery_rate * neutral
+		var mushroom_response := mushroom_response_factors[index] if index < mushroom_response_factors.size() else 1.0
+		var lamp_response := lantern_response_factors[index] if index < lantern_response_factors.size() else 1.0
+		var mushroom_rate := maxf(0.0, preset.mushroom_suppression_rate) * mushroom_exposure * mushroom_response
 		total_rate += mushroom_rate
 		weighted_target += mushroom_rate * preset.blue_energy_target
 		if field_mode == LightField.Mode.BLUE:
-			var blue_rate := maxf(0.0, preset.blue_energy_response) * stimulus
+			var blue_rate := maxf(0.0, preset.blue_energy_response) * stimulus * lamp_response
 			total_rate += blue_rate
 			weighted_target += blue_rate * preset.blue_energy_target
 		elif field_mode == LightField.Mode.ORANGE:
-			var orange_rate := maxf(0.0, preset.orange_energy_response) * stimulus
+			var orange_rate := maxf(0.0, preset.orange_energy_response) * stimulus * lamp_response
 			total_rate += orange_rate
 			weighted_target += orange_rate * preset.orange_energy_target
+		var contagion := _neighbor_arousal(index, old_arousals)
+		if contagion > neutral:
+			var contagion_rate := preset.arousal_contagion_strength * smoothstep(neutral, 1.0, contagion) * 1.35
+			total_rate += contagion_rate
+			weighted_target += contagion_rate * minf(0.78, contagion)
+		_update_spontaneous_wake(index, mushroom_exposure, delta)
+		if _wake_remaining[index] > 0.0:
+			var wake_rate := 2.2
+			total_rate += wake_rate
+			weighted_target += wake_rate * preset.spontaneous_wake_energy
 		if total_rate > 0.00001:
 			arousals[index] = lerpf(arousals[index], weighted_target / total_rate, 1.0 - exp(-delta * total_rate))
 		arousals[index] = clampf(arousals[index], 0.0, 1.0)
@@ -249,6 +392,43 @@ func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, m
 		target = lerpf(target, 0.92, stimulus)
 	var rate := preset.arousal_response if stimulus > 0.02 else preset.arousal_response * 0.32
 	arousals[index] = lerpf(arousals[index], target, 1.0 - exp(-delta * rate))
+
+
+func _neighbor_arousal(index: int, old_arousals: PackedFloat32Array) -> float:
+	if preset.arousal_contagion_strength <= 0.0 or old_arousals.is_empty() or index >= _neighbor_lists.size():
+		return 0.0
+	var strongest := 0.0
+	for other: int in _neighbor_lists[index]:
+		neighbor_visits += 1
+		var distance := positions[index].distance_to(positions[other])
+		if distance > preset.neighbor_radius or distance <= 0.0001:
+			continue
+		var weight := 1.0 - distance / preset.neighbor_radius
+		strongest = maxf(strongest, maxf(0.0, old_arousals[other] - preset.energy_neutral_target) * weight)
+	if strongest <= 0.00001:
+		return 0.0
+	return preset.energy_neutral_target + strongest
+
+
+func _update_spontaneous_wake(index: int, mushroom_exposure: float, delta: float) -> void:
+	if not preset.spontaneous_waking_enabled:
+		_wake_remaining[index] = 0.0
+		return
+	if _wake_remaining[index] > 0.0:
+		_wake_remaining[index] = maxf(0.0, _wake_remaining[index] - delta)
+		return
+	# Timers advance only while actually dormant at a mushroom, preventing a
+	# synchronized global pulse and avoiding surprise wakes during herding.
+	if mushroom_exposure < 0.35 or arousals[index] > preset.sleep_threshold + 0.04:
+		return
+	_wake_waits[index] -= delta
+	if _wake_waits[index] > 0.0:
+		return
+	_wake_remaining[index] = preset.spontaneous_wake_duration
+	_wake_cycles[index] += 1
+	var span := maxf(0.0, preset.spontaneous_wake_max_seconds - preset.spontaneous_wake_min_seconds)
+	var phase := sin(float(seed_value + index * 7919 + _wake_cycles[index] * 104729)) * 0.5 + 0.5
+	_wake_waits[index] = preset.spontaneous_wake_min_seconds + span * phase
 
 
 func _individual_neutral_target(phase: float) -> float:
@@ -394,7 +574,8 @@ func is_finite_and_bounded() -> bool:
 			return false
 		if accelerations[index].length() > preset.max_acceleration + 0.001:
 			return false
-		if lifecycles[index] == Lifecycle.ACTIVE and velocities[index].length() > preset.max_speed * 1.181:
+		var speed_factor := speed_factors[index] if index < speed_factors.size() else 1.0
+		if lifecycles[index] == Lifecycle.ACTIVE and velocities[index].length() > preset.max_speed * speed_factor * 1.181:
 			return false
 	return true
 

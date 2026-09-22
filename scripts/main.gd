@@ -12,14 +12,16 @@ var flight_enabled: bool = true
 var flight_toggle: CheckBox
 var flight_marker: MeshInstance3D
 var sim_step_ms: float = 0.0
+var visual_update_ms: float = 0.0
 var flight_goal_volume: MeshInstance3D
 var light_field := LightField.new()
 var presets: Array[HerdPreset] = HerdPreset.builtins()
 var current_preset: HerdPreset
-var current_preset_index: int = 3
+var current_preset_index: int = 5
 var current_seed: int = DEFAULT_SEED
-var fixture_count: int = 24
+var fixture_count: int = 256
 var accumulator: float = 0.0
+var active_step: float = FIXED_STEP
 var simulation_paused: bool = false
 var top_down: bool = false
 var debug_visible: bool = true
@@ -31,6 +33,11 @@ var player: DesktopPlayer
 var lantern: Lantern
 var top_camera: Camera3D
 var agent_nodes: Array[Node3D] = []
+var glyph_swarm: GlyphSwarm
+var variation_slider: HSlider
+var contagion_slider: HSlider
+var waking_toggle: CheckBox
+var population_rows: Array[Control] = []
 var field_overlay: MeshInstance3D
 var field_overlay_elapsed: float = 0.0
 var start_top_down: bool = false
@@ -99,13 +106,15 @@ func _process(delta: float) -> void:
 	light_field.mode = lantern.mode
 	light_field.mode_strength = strength_slider.value if strength_slider != null else 1.0
 	if not simulation_paused:
-		accumulator = minf(accumulator + delta, FIXED_STEP * 8.0)
-		while accumulator >= FIXED_STEP:
+		accumulator = minf(accumulator + delta, active_step * (4.0 if fixture_count >= 256 else 8.0))
+		while accumulator >= active_step:
 			var step_start := Time.get_ticks_usec()
-			simulation.step(FIXED_STEP, light_field, social_slider.value, wander_slider.value)
+			simulation.step(active_step, light_field, social_slider.value, wander_slider.value)
 			sim_step_ms = lerpf(sim_step_ms, float(Time.get_ticks_usec() - step_start) / 1000.0, 0.05)
-			accumulator -= FIXED_STEP
-	_update_agent_visuals(accumulator / FIXED_STEP)
+			accumulator -= active_step
+	var visual_start := Time.get_ticks_usec()
+	_update_agent_visuals(accumulator / active_step)
+	visual_update_ms = lerpf(visual_update_ms, float(Time.get_ticks_usec() - visual_start) / 1000.0, 0.05)
 	_update_hud()
 	_update_footprint()
 	field_overlay_elapsed += delta
@@ -331,7 +340,7 @@ func _build_ui() -> void:
 	stack.add_theme_constant_override("separation", 7)
 	scroll.add_child(stack)
 	var title := Label.new()
-	title.text = "M0c · FLIGHT LAB"
+	title.text = "M0d · LIVING SHOALS"
 	title.add_theme_font_size_override("font_size", 21)
 	stack.add_child(title)
 	preset_label = Label.new()
@@ -372,6 +381,18 @@ func _build_ui() -> void:
 	wake_slider.value_changed.connect(_on_tuning_changed.bind(&"orange_energy_response"))
 	scatter_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_scatter_strength"))
 	mushroom_pull_slider.value_changed.connect(_on_tuning_changed.bind(&"mushroom_attraction_weight"))
+	variation_slider = _add_slider(stack, "Trait variety", 0.0, 1.0, 0.65, 0.05)
+	variation_slider.tooltip_text = "Changing variety resets the same seed to rebuild individual traits."
+	contagion_slider = _add_slider(stack, "Neighbor arousal", 0.0, 1.0, 0.35, 0.05)
+	waking_toggle = CheckBox.new()
+	waking_toggle.text = "Occasional waking from patches"
+	stack.add_child(waking_toggle)
+	population_rows.append(variation_slider.get_parent())
+	population_rows.append(contagion_slider.get_parent())
+	population_rows.append(waking_toggle)
+	variation_slider.value_changed.connect(_on_variation_changed)
+	contagion_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_contagion_strength"))
+	waking_toggle.toggled.connect(_on_waking_changed)
 	goal_width_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_outer_width"))
 	goal_slider.value_changed.connect(_on_tuning_changed.bind(&"goal_repulsion_strength"))
 	memory_slider.value_changed.connect(_on_tuning_changed.bind(&"arousal_response"))
@@ -385,7 +406,7 @@ func _build_ui() -> void:
 	tiny.pressed.connect(_set_fixture.bind(3))
 	fixture_row.add_child(tiny)
 	var full := Button.new()
-	full.text = "Full · 24"
+	full.text = "24"
 	full.pressed.connect(_set_fixture.bind(24))
 	fixture_row.add_child(full)
 	var larger := Button.new()
@@ -393,6 +414,14 @@ func _build_ui() -> void:
 	larger.pressed.connect(_set_fixture.bind(64))
 	fixture_row.add_child(larger)
 	stack.add_child(fixture_row)
+	var population_row := HBoxContainer.new()
+	for count: int in [256, 512, 1024]:
+		var choice := Button.new()
+		choice.text = str(count)
+		choice.pressed.connect(_set_fixture.bind(count))
+		population_row.add_child(choice)
+	stack.add_child(population_row)
+	population_rows.append(population_row)
 	var seed_row := HBoxContainer.new()
 	var seed_label := Label.new()
 	seed_label.text = "Seed"
@@ -499,6 +528,14 @@ func _rebuild_agents() -> void:
 	for node: Node3D in agent_nodes:
 		node.queue_free()
 	agent_nodes.clear()
+	if glyph_swarm != null:
+		glyph_swarm.queue_free()
+		glyph_swarm = null
+	if flight_enabled:
+		glyph_swarm = GlyphSwarm.new()
+		add_child(glyph_swarm)
+		glyph_swarm.configure(simulation.positions.size())
+		return
 	for index: int in simulation.positions.size():
 		var agent := _create_agent_visual(index)
 		agent_nodes.append(agent)
@@ -559,6 +596,9 @@ func _create_agent_visual(index: int) -> Node3D:
 	return root
 
 func _update_agent_visuals(alpha: float) -> void:
+	if flight_enabled:
+		glyph_swarm.update_swarm(simulation, alpha, current_preset)
+		return
 	for index: int in agent_nodes.size():
 		var node := agent_nodes[index]
 		if simulation.lifecycles[index] == FlockSimulation.Lifecycle.RELEASED:
@@ -598,7 +638,7 @@ func _update_agent_visuals(alpha: float) -> void:
 				wing_material.albedo_color = Color(color, 0.72)
 
 func _update_hud() -> void:
-	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider]:
+	for slider: HSlider in [strength_slider, social_slider, wander_slider, goal_slider, memory_slider, goal_width_slider, recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider, variation_slider, contagion_slider]:
 		(slider.get_meta("value_label") as Label).text = "%.2f" % slider.value
 	var shutter_text := "CLOSED" if lantern.shutter_openness <= 0.01 else "%d%% OPEN" % roundi(lantern.shutter_openness * 100.0)
 	var pause_text := "  ·  PAUSED" if simulation_paused else ""
@@ -607,12 +647,12 @@ func _update_hud() -> void:
 		lantern.mode_label(), shutter_text, simulation.score, fixture_count,
 		simulation.active_count(), current_preset.preset_name, tuning_text, pause_text
 	]
-	hud_label.text += "\n%s · CPU step %.2f ms · %d FPS" % ["3D flight · ceiling 2.8 m" if flight_enabled else "Ground fallback", sim_step_ms, Engine.get_frames_per_second()]
+	hud_label.text += "\n%s · %d Hz · CPU step %.2f ms · visuals %.2f ms · %d FPS" % ["3D glyphs · ceiling 2.8 m" if flight_enabled else "Ground fallback", roundi(1.0 / active_step), sim_step_ms, visual_update_ms, Engine.get_frames_per_second()]
 	if debug_visible and not simulation.positions.is_empty():
 		var i := mini(inspected_agent, simulation.positions.size() - 1)
 		hud_label.text += "\nMarker = arrival target · tiles = ground slice\nID %d · e %.2f · light %.2f · force %s · %s" % [i, simulation.arousals[i], simulation.exposures[i], str(simulation.accelerations[i]), FlockSimulation.Lifecycle.keys()[simulation.lifecycles[i]]]
 		if flight_enabled:
-			hud_label.text += "\nFlight height %.2f m" % simulation.positions[i].y
+			hud_label.text += "\nHeight %.2f m · subtype %d · neighbors visited %d" % [simulation.positions[i].y, simulation.trait_types[i], simulation.neighbor_visits]
 		if current_preset.energy_dynamics:
 			hud_label.text += "\n%s · mushroom %.2f · blue → green → yellow → orange" % [EnergyVisual.state_name(simulation.arousals[i], current_preset.sleep_threshold), simulation.mushroom_exposures[i]]
 	preset_label.text = "%s%s" % [current_preset.preset_name, " · modified" if config_changed else ""]
@@ -655,6 +695,11 @@ func _apply_preset(index: int, restart: bool) -> void:
 func _reset_run(record_previous: bool) -> void:
 	if record_previous and elapsed > 0.1:
 		_write_run_record("reset")
+	if not flight_enabled:
+		fixture_count = mini(fixture_count, 64)
+	for row: Control in population_rows:
+		row.visible = flight_enabled
+	active_step = 1.0 / 30.0 if flight_enabled and fixture_count >= 256 else FIXED_STEP
 	current_seed = roundi(seed_box.value) if seed_box != null else current_seed
 	if (flight_enabled and not simulation is FlightSimulation) or (not flight_enabled and not simulation is FlockSimulation):
 		var centers: PackedVector2Array = simulation.obstacle_centers
@@ -682,6 +727,18 @@ func _reset_run(record_previous: bool) -> void:
 	lantern.shutter_openness = 1.0
 	lantern.adjust_shutter(0.0)
 
+func _on_variation_changed(value: float) -> void:
+	_write_run_record("population_variation_change")
+	current_preset.population_variation = value
+	config_changed = true
+	_reset_run(false)
+
+func _on_waking_changed(enabled: bool) -> void:
+	current_preset.spontaneous_waking_enabled = enabled
+	simulation.preset.spontaneous_waking_enabled = enabled
+	config_changed = true
+	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
+
 func _set_flight(enabled: bool) -> void:
 	_write_run_record("simulation_mode_change")
 	flight_enabled = enabled
@@ -690,6 +747,9 @@ func _set_flight(enabled: bool) -> void:
 func _set_fixture(count: int) -> void:
 	_write_run_record("fixture_change")
 	fixture_count = count
+	if count > 64:
+		flight_enabled = true
+		flight_toggle.set_pressed_no_signal(true)
 	_reset_run(false)
 
 func _reset_from_seed_box() -> void:
@@ -707,7 +767,7 @@ func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
 func _current_settings() -> Dictionary:
-	return {"flight_enabled": flight_enabled, "arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
+	return {"simulation_hz": roundi(1.0 / active_step), "flight_enabled": flight_enabled, "arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
 		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value}
 
 func _toggle_top_down() -> void:
@@ -752,7 +812,7 @@ func _load_named_preset(index: int) -> void:
 	current_preset.preset_name = preset_name
 	seed_box.value = int(saved.get("seed", current_seed))
 	fixture_count = int(saved.get("fixture_count", 24))
-	if fixture_count not in [3, 24, 64]:
+	if fixture_count not in [3, 24, 64, 256, 512, 1024]:
 		fixture_count = 24
 	flight_enabled = bool(saved.get("flight_enabled", false))
 	flight_toggle.set_pressed_no_signal(flight_enabled)
@@ -806,6 +866,9 @@ func _write_run_record(reason: String) -> void:
 			"orange": snappedf(mode_times[LightField.Mode.ORANGE], 0.001),
 		},
 		"config_modified": config_changed,
+		"simulation_hz": roundi(1.0 / active_step),
+		"diagnostic_step_ema_ms": sim_step_ms,
+		"diagnostic_visual_update_ema_ms": visual_update_ms,
 		"coefficients": current_preset.to_dict(),
 		"live_multipliers": {
 			"lantern_strength": strength_slider.value,
@@ -841,7 +904,7 @@ func _parse_arguments() -> void:
 			index += 1
 		elif args[index] == "--count" and index + 1 < args.size():
 			fixture_count = int(args[index + 1])
-			if fixture_count not in [3, 24, 64]:
+			if fixture_count not in [3, 24, 64, 256, 512, 1024]:
 				fixture_count = 24
 			index += 2
 		elif args[index] == "--tiny":
@@ -933,6 +996,9 @@ func _update_field_overlay() -> void:
 		mesh.surface_end()
 
 func _sync_energy_controls() -> void:
+	variation_slider.set_value_no_signal(current_preset.population_variation)
+	contagion_slider.set_value_no_signal(current_preset.arousal_contagion_strength)
+	waking_toggle.set_pressed_no_signal(current_preset.spontaneous_waking_enabled)
 	goal_width_slider.set_value_no_signal(current_preset.goal_repulsion_outer_width)
 	recovery_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.energy_recovery_rate))
 	blue_sleep_slider.set_value_no_signal(log(10.0) / maxf(0.001, current_preset.blue_energy_response))

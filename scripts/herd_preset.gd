@@ -34,6 +34,14 @@ extends Resource
 @export var sleep_threshold: float = 0.16
 @export var sleep_velocity_damping: float = 7.0
 @export_range(0.0, 1.0, 0.01) var arousal_scatter_strength: float = 0.0
+@export_range(0.0, 1.0, 0.01) var population_variation: float = 0.0
+@export_range(0.0, 1.0, 0.01) var arousal_contagion_strength: float = 0.0
+@export var spontaneous_waking_enabled: bool = false
+@export var spontaneous_wake_min_seconds: float = 15.0
+@export var spontaneous_wake_max_seconds: float = 70.0
+@export var spontaneous_wake_duration: float = 4.0
+@export_range(0.0, 1.0, 0.01) var spontaneous_wake_energy: float = 0.54
+@export_range(4, 96, 1) var max_social_neighbors: int = 32
 
 func copy_preset() -> HerdPreset:
 	var result := HerdPreset.new()
@@ -48,7 +56,10 @@ func copy_preset() -> HerdPreset:
 		"mushroom_attraction_weight", "mushroom_suppression_rate",
 		"blue_energy_target", "blue_energy_response", "orange_energy_target",
 		"orange_energy_response", "sleep_threshold", "sleep_velocity_damping",
-		"arousal_scatter_strength"
+		"arousal_scatter_strength", "population_variation", "arousal_contagion_strength",
+		"spontaneous_waking_enabled", "spontaneous_wake_min_seconds",
+		"spontaneous_wake_max_seconds", "spontaneous_wake_duration",
+		"spontaneous_wake_energy", "max_social_neighbors"
 	]:
 		result.set(property, get(property))
 	return result
@@ -88,6 +99,14 @@ func to_dict() -> Dictionary:
 		"sleep_threshold": sleep_threshold,
 		"sleep_velocity_damping": sleep_velocity_damping,
 		"arousal_scatter_strength": arousal_scatter_strength,
+		"population_variation": population_variation,
+		"arousal_contagion_strength": arousal_contagion_strength,
+		"spontaneous_waking_enabled": spontaneous_waking_enabled,
+		"spontaneous_wake_min_seconds": spontaneous_wake_min_seconds,
+		"spontaneous_wake_max_seconds": spontaneous_wake_max_seconds,
+		"spontaneous_wake_duration": spontaneous_wake_duration,
+		"spontaneous_wake_energy": spontaneous_wake_energy,
+		"max_social_neighbors": max_social_neighbors,
 	}
 
 static func from_dict(data: Dictionary) -> HerdPreset:
@@ -125,4 +144,10 @@ static func builtins() -> Array[HerdPreset]:
 	lingering.preset_name = "Lingering energy"
 	lingering.energy_recovery_rate = 0.07
 
-	return [plain, memory, independent, energy, lingering]
+	var living := energy.copy_preset()
+	living.preset_name = "Living shoals"
+	living.population_variation = 0.65
+	living.arousal_contagion_strength = 0.35
+	living.spontaneous_waking_enabled = true
+
+	return [plain, memory, independent, energy, lingering, living]

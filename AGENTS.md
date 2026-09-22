@@ -1,3 +1,7 @@
+# Current authorization — M0d living shoals
+
+On 2026-09-22 the user approved 3D/smaller bodies and requested 256–1024 agents, lightweight glowing glyph rendering, seeded heterogeneous traits/social responses, local neighbor arousal and occasional spontaneous waking from mushrooms. Implement this bounded population/behavior pass now. Treat laptop power-mode timings as diagnostics, not target-device viability gates; do not change power settings. Keep prior behavior controls and ground fallback. Terrain and full darkness/bloom/XR remain later milestones. This supersedes older population deferrals below.
+
 # Current authorization — M0c flight spike
 
 The user approved the arousal-scatter tension and expanded arena on 2026-09-21 and explicitly requested moving on to small real 3D flight. Implement height-bounded CPU flight at 24/64 agents, retaining the energy/mushroom/lantern behavior and a selectable 2D fallback. Terrain, large population/GPU work and lighting remain later gates. The older M0b scope paragraphs below describe history; this authorization supersedes their flight deferral.
