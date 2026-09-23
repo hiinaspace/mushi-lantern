@@ -10,6 +10,8 @@ func _run() -> void:
 	_expect(is_equal_approx(model.target(LightField.Mode.CLEAR, 1.0), 0.0), "open clear adapts toward light")
 	_expect(is_equal_approx(model.target(LightField.Mode.BLUE, 1.0), 0.75), "colored light preserves partial adaptation")
 	_expect(is_equal_approx(model.target(LightField.Mode.ORANGE, 0.0), 1.0), "closed shutter adapts toward darkness")
+	_expect(is_equal_approx(model.target(LightField.Mode.CLEAR, 1.0, 0.0), 1.0), "distant parked clear light permits dark adaptation")
+	_expect(is_equal_approx(model.target(LightField.Mode.CLEAR, 1.0, 0.5), 0.5), "parked exposure blends smoothly with distance")
 	var before := model.night_vision
 	for i in 15:
 		model.advance(0.1, LightField.Mode.CLEAR, 1.0)

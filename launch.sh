@@ -21,6 +21,19 @@ if [[ ! -f "$project_dir/.godot/global_script_class_cache.cfg" ]]; then
   "$godot_bin" --headless --path "$project_dir" --editor --quit
 fi
 
-# The laptop desktop session can stall on V-Sync presentation. Bound power use
-# with an explicit 60 FPS cap instead; XR/export timing is a separate gate.
-exec "$godot_bin" --path "$project_dir" --disable-vsync --max-fps 60 -- "$@"
+# The desktop session can stall on V-Sync presentation. Its 60 FPS cap must not
+# throttle an XR runtime, which paces frames at the headset refresh rate.
+engine_args=(--path "$project_dir" --disable-vsync)
+launch_xr=false
+for launch_arg in "$@"; do
+  if [[ "$launch_arg" == --xr ]]; then
+    launch_xr=true
+    break
+  fi
+done
+if [[ "$launch_xr" == false ]]; then
+  engine_args+=(--xr-mode off --max-fps 60)
+else
+  engine_args+=(--xr-mode on)
+fi
+exec "$godot_bin" "${engine_args[@]}" -- "$@"

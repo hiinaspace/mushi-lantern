@@ -2,6 +2,12 @@
 
 Reviewed plan, updated with user control clarifications on 2026-09-23. This is a small Godot XR jam project with a Sunday September 27, 18:00 Denver submission deadline. The goal is a playable PC VR loop on sayu's Beyond/Monado setup, while keeping flat desktop play. An Astra senior review preceded implementation; the user prefers Sol/Luna agents for implementation. The M1 night grove is checkpointed at `9c0521f`.
 
+## Implementation checkpoint — 2026-09-23
+
+The first implementation slice now has a world-space hanging staff, three XR Tools shaft grab points, damped lantern swing, park/recall states, distance-aware viewer adaptation, two-hand shutter/filter gesture, desktop staff controls, and an OpenXR rig with continuous two-stick movement, floating hands, pointer menu and X/A recall. The menu content is a placeholder. The existing desktop player remains the flat-mode driver because it already supplies reliable movement and mouse input; the XR Tools desktop mode remains available in the vendor tree for a later comparison.
+
+The project imports without parser errors, `check.sh`, `check-gpu.sh`, `check-environment.sh`, the focused staff smoke and adaptation checks pass. A bounded `./launch.sh --xr --count 512` run initialized Monado with a Bigscreen Beyond, both Valve Knuckles and Vulkan Mobile; there were no project script errors. A live headset interaction check is still pending. A `Windows OpenXR` export preset produced a `.pck` containing the Terrain3D Windows x86-64 binary without content conversion errors; an executable and Windows runtime test still require Godot export templates and the target platform. The editor/export process emits shutdown resource warnings. Further human gates are control reach/feel, both-eye rendering, frame delivery, and seated/cliff locomotion. Either-hand one-controller locomotion, final menu content, VRM/IK and art replacement remain follow-ups.
+
 ## Goal and confirmed choices
 
 - A staff held at different points along its shaft carries a lantern on a short, damped hanging joint. Release briefly floats the staff, then it settles upright on nearby safe ground, shutters open, and remains until grabbed or recalled.

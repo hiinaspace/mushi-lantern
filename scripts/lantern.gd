@@ -14,6 +14,11 @@ var _adaptation := NightAdaptation.new()
 var _filter_material: StandardMaterial3D
 var _last_visual_mode: int = -1
 var _last_visual_openness: float = -1.0
+var _requested_mode: LightField.Mode = LightField.Mode.BLUE
+var _transition_phase: int = 0
+var _transition_elapsed: float = 0.0
+var _transition_open: float = 1.0
+const FILTER_HALF_TIME := 0.12
 
 func _ready() -> void:
 	_build_visual()
@@ -72,11 +77,41 @@ func _build_visual() -> void:
 	glow_mesh = filter_mesh
 
 func set_mode(new_mode: LightField.Mode) -> void:
+	_transition_phase = 0
 	mode = new_mode
+	_requested_mode = new_mode
+	_apply_visual()
+	changed.emit()
+
+func request_mode(new_mode: LightField.Mode) -> void:
+	if new_mode == _requested_mode:
+		return
+	_requested_mode = new_mode
+	if _transition_phase == 0:
+		_transition_open = shutter_openness
+	_transition_elapsed = 0.0
+	_transition_phase = 1
+
+func advance_transition(delta: float) -> void:
+	if _transition_phase == 0:
+		return
+	_transition_elapsed += clampf(delta, 0.0, 0.1)
+	var t := clampf(_transition_elapsed / FILTER_HALF_TIME, 0.0, 1.0)
+	if _transition_phase == 1:
+		shutter_openness = _transition_open * (1.0 - t)
+		if t >= 1.0:
+			mode = _requested_mode
+			_transition_phase = 2
+			_transition_elapsed = 0.0
+	else:
+		shutter_openness = _transition_open * t
+		if t >= 1.0:
+			_transition_phase = 0
 	_apply_visual()
 	changed.emit()
 
 func toggle_shutter() -> void:
+	_transition_phase = 0
 	if shutter_openness > 0.02:
 		_last_open = shutter_openness
 		shutter_openness = 0.0
@@ -86,7 +121,21 @@ func toggle_shutter() -> void:
 	changed.emit()
 
 func adjust_shutter(amount: float) -> void:
+	_transition_phase = 0
 	shutter_openness = clampf(shutter_openness + amount, 0.0, 1.0)
+	if shutter_openness > 0.02:
+		_last_open = shutter_openness
+	_apply_visual()
+	changed.emit()
+
+func set_shutter(value: float, cancel_transition: bool = true) -> void:
+	var bounded := clampf(value, 0.0, 1.0)
+	if cancel_transition:
+		_transition_phase = 0
+	elif _transition_phase != 0:
+		_transition_open = bounded
+		return
+	shutter_openness = bounded
 	if shutter_openness > 0.02:
 		_last_open = shutter_openness
 	_apply_visual()
@@ -96,8 +145,8 @@ func forward_direction() -> Vector3:
 	return -global_basis.z.normalized()
 
 
-func advance_adaptation(delta: float) -> void:
-	night_vision = _adaptation.advance(delta, mode, shutter_openness)
+func advance_adaptation(delta: float, viewer_exposure: float = 1.0) -> void:
+	night_vision = _adaptation.advance(delta, mode, shutter_openness, viewer_exposure)
 	_apply_visual()
 
 func mode_label() -> String:

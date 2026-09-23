@@ -5,7 +5,7 @@ godot_bin="${GODOT_BIN:-$(command -v godot4 || command -v godot)}"
 mushi_env_data="$(mktemp -d /tmp/mushi-environment-check.XXXXXX)"
 trap 'rm -r -- "$mushi_env_data"' EXIT
 export XDG_DATA_HOME="$mushi_env_data"
-"$godot_bin" --headless --path "$project_dir" --editor --quit
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --editor --quit
 run_check() {
   local mode="$1" script="$2" marker="$3"
   shift 3
@@ -15,9 +15,9 @@ run_check() {
   export XDG_DATA_HOME="$mushi_env_data/${script##*/}"
   mkdir -p "$XDG_DATA_HOME"
   if [[ "$mode" == headless ]]; then
-    "$godot_bin" --headless --path "$project_dir" --script "$script" > "$mushi_env_data/check.log" 2>&1 || result=$?
+    "$godot_bin" --headless --xr-mode off --path "$project_dir" --script "$script" > "$mushi_env_data/check.log" 2>&1 || result=$?
   else
-    "$godot_bin" --path "$project_dir" --rendering-driver vulkan --rendering-method mobile --disable-vsync --max-fps 60 --quit-after 2400 --script "$script" -- "$@" > "$mushi_env_data/check.log" 2>&1 || result=$?
+    "$godot_bin" --xr-mode off --path "$project_dir" --rendering-driver vulkan --rendering-method mobile --disable-vsync --max-fps 60 --quit-after 2400 --script "$script" -- "$@" > "$mushi_env_data/check.log" 2>&1 || result=$?
   fi
   cat "$mushi_env_data/check.log"
   if (( result != 0 )) || ! rg -q "$marker" "$mushi_env_data/check.log" || rg -q 'ERROR:|SCRIPT ERROR:|FAIL' "$mushi_env_data/check.log"; then

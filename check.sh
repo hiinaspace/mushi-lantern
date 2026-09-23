@@ -17,24 +17,24 @@ else
   exit 127
 fi
 
-"$godot_bin" --headless --path "$project_dir" --editor --quit
-"$godot_bin" --headless --path "$project_dir" --scene res://scenes/test_runner.tscn
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --editor --quit
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --scene res://scenes/test_runner.tscn
 
 
-"$godot_bin" --headless --path "$project_dir" --script res://tests/flight_checks.gd
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --script res://tests/flight_checks.gd
 
-"$godot_bin" --headless --path "$project_dir" --script res://tests/population_checks.gd
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --script res://tests/population_checks.gd
 
-"$godot_bin" --headless --path "$project_dir" --script res://tests/height_checks.gd
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --script res://tests/height_checks.gd
 
-"$godot_bin" --headless --path "$project_dir" --script res://tests/glyph_texture_checks.gd
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --script res://tests/glyph_texture_checks.gd
 
-"$godot_bin" --headless --path "$project_dir" --script res://tests/formation_force_checks.gd
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --script res://tests/formation_force_checks.gd
 
 # Exercise the actual UI callbacks without changing the player's saved presets.
 mushi_test_data="$(mktemp -d /tmp/mushi-ui-data.XXXXXX)"
 trap 'rm -r -- "$mushi_test_data"' EXIT
-ui_output="$(XDG_DATA_HOME="$mushi_test_data" MUSHI_TEST_DATA_ROOT="$mushi_test_data" "$godot_bin" --headless --path "$project_dir" --quit-after 120 --script res://tests/ui_smoke.gd -- --preset 1 2>&1)"
+ui_output="$(XDG_DATA_HOME="$mushi_test_data" MUSHI_TEST_DATA_ROOT="$mushi_test_data" "$godot_bin" --headless --xr-mode off --path "$project_dir" --quit-after 120 --script res://tests/ui_smoke.gd -- --preset 1 2>&1)"
 printf '%s\n' "$ui_output"
 if [[ "$ui_output" != *"PASS UI:"* || "$ui_output" == *"ERROR:"* ]]; then
   exit 1

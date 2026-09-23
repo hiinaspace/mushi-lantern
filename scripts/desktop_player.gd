@@ -1,6 +1,8 @@
 class_name DesktopPlayer
 extends CharacterBody3D
 
+signal lamp_aim_motion(relative: Vector2)
+
 @export var move_speed: float = 5.4
 @export var mouse_sensitivity: float = 0.0022
 
@@ -60,6 +62,9 @@ func _physics_process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and controls_enabled and look_enabled and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			lamp_aim_motion.emit(motion.relative)
+			return
 		rotate_y(-motion.relative.x * mouse_sensitivity)
 		_pitch = clampf(_pitch - motion.relative.y * mouse_sensitivity, -1.3, 1.05)
 		camera.rotation.x = _pitch

@@ -44,6 +44,9 @@ var mode_times: PackedFloat32Array = PackedFloat32Array([0.0, 0.0, 0.0])
 var config_changed: bool = false
 
 var player: DesktopPlayer
+var staff_tool: Variant
+var xr_player: Variant
+var xr_staff_interaction: Variant
 var lantern: Lantern
 var top_camera: Camera3D
 var agent_nodes: Array[Node3D] = []
@@ -95,6 +98,10 @@ var _initial_mode: int = -1
 var _screenshot_path: String = ""
 var _screenshot_delay: float = 1.0
 var _screenshot_elapsed: float = 0.0
+var _want_xr: bool = false
+var _desktop_aim: Vector2 = Vector2.ZERO
+var _desktop_recall_held: bool = false
+var _xr_recall_owner: XRController3D
 
 func _ready() -> void:
 	_setup_input()
@@ -104,6 +111,7 @@ func _ready() -> void:
 	_parse_arguments()
 	if DisplayServer.get_name() == "headless":
 		environment_enabled = false
+		_want_xr = false
 	if environment_enabled and RenderingServer.get_current_rendering_method() == "gl_compatibility":
 		push_error("The terrain scene requires Vulkan Mobile GPU flight. Use --flat-lab for the legacy CPU lab.")
 		get_tree().quit(1)
@@ -115,6 +123,8 @@ func _ready() -> void:
 		world_surface = load("res://scripts/environment_surface.gd").create(terrain_size, DEFAULT_SEED)
 	_build_world()
 	_build_player()
+	if _want_xr:
+		_build_xr_player()
 	_build_ui()
 	panel.visible = debug_visible
 	_apply_preset(current_preset_index, false)
@@ -169,11 +179,12 @@ func _process(delta: float) -> void:
 		var shutter_delta := Input.get_axis("shutter_close", "shutter_open")
 		if shutter_delta != 0.0:
 			lantern.adjust_shutter(shutter_delta * delta * 0.6)
+	_update_staff_pose(delta)
 	if not simulation_paused:
 		elapsed += delta
 		mode_times[int(lantern.mode)] += delta
 		if environment_enabled:
-			lantern.advance_adaptation(delta)
+			lantern.advance_adaptation(delta, _viewer_lantern_exposure())
 	if night_environment != null:
 		NightEnvironment.set_night_vision(night_environment, lantern.night_vision)
 		if terrain_environment != null:
@@ -209,12 +220,40 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if quality_menu != null and quality_menu.is_open():
 		return
+	if (xr_player == null or not xr_player.xr_active) and event is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var mouse := event as InputEventMouseButton
+		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_UP:
+			lantern.adjust_shutter(0.08)
+			get_viewport().set_input_as_handled()
+			return
+		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			lantern.adjust_shutter(-0.08)
+			get_viewport().set_input_as_handled()
+			return
+	if xr_player == null or not xr_player.xr_active:
+		if event.is_action_pressed("staff_drop_pickup"):
+			if staff_tool.placement == StaffTool.Placement.HELD:
+				staff_tool.release_final()
+			elif player.camera.global_position.distance_to(staff_tool.global_position) < 2.5:
+				staff_tool.set_held_world_pose(_desktop_staff_pose())
+			get_viewport().set_input_as_handled()
+			return
+		if event.is_action_pressed("staff_recall"):
+			_desktop_recall_held = true
+			staff_tool.begin_recall(player.camera.global_transform)
+			get_viewport().set_input_as_handled()
+			return
+		if event.is_action_released("staff_recall"):
+			_desktop_recall_held = false
+			staff_tool.end_recall()
+			get_viewport().set_input_as_handled()
+			return
 	if event.is_action_pressed("mode_clear"):
-		lantern.set_mode(LightField.Mode.CLEAR)
+		lantern.request_mode(LightField.Mode.CLEAR)
 	elif event.is_action_pressed("mode_blue"):
-		lantern.set_mode(LightField.Mode.BLUE)
+		lantern.request_mode(LightField.Mode.BLUE)
 	elif event.is_action_pressed("mode_orange"):
-		lantern.set_mode(LightField.Mode.ORANGE)
+		lantern.request_mode(LightField.Mode.ORANGE)
 	elif event.is_action_pressed("shutter_toggle"):
 		lantern.toggle_shutter()
 	elif event.is_action_pressed("reset_run"):
@@ -385,12 +424,98 @@ func _build_player() -> void:
 	camera.position = Vector3(0.0, 1.62, 0.0)
 	camera.current = true
 	player.add_child(camera)
-	lantern = Lantern.new()
-	lantern.name = "OffsetLantern"
-	lantern.position = Vector3(0.72, -0.43, -1.05)
-	lantern.rotation_degrees = Vector3(-18.0, 0.0, 0.0)
-	camera.add_child(lantern)
 	add_child(player)
+	player.lamp_aim_motion.connect(_on_desktop_lamp_aim_motion)
+	staff_tool = load("res://scripts/staff_tool.gd").new()
+	staff_tool.name = "LanternStaff"
+	add_child(staff_tool)
+	staff_tool.set_world_surface(world_surface)
+	lantern = staff_tool.lantern
+	staff_tool.reset_to_pose(_desktop_staff_pose())
+
+
+func _build_xr_player() -> void:
+	var xr_scene: PackedScene = load("res://scenes/xr_player.tscn")
+	xr_player = xr_scene.instantiate()
+	add_child(xr_player)
+	xr_player.set_world_surface(world_surface)
+	xr_player.reset_pose(player.global_position)
+	if not xr_player.xr_active:
+		push_warning("OpenXR did not initialize; continuing in desktop mode")
+		xr_player.queue_free()
+		xr_player = null
+		return
+	player.camera.current = false
+	player.controls_enabled = false
+	player.look_enabled = false
+	player.set_physics_process(false)
+	player.set_process_unhandled_input(false)
+	player.collision_layer = 0
+	player.collision_mask = 0
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	xr_player.recall_requested.connect(_on_xr_recall_requested)
+	xr_player.recall_released.connect(_on_xr_recall_released)
+	staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
+	xr_staff_interaction = load("res://scripts/xr_staff_interaction.gd").new()
+	xr_staff_interaction.configure(staff_tool, xr_player)
+
+
+func _xr_initial_staff_pose() -> Transform3D:
+	var start := Vector2(player.global_position.x + 0.65, player.global_position.z - 0.65)
+	var ground := _ground_height(start)
+	return Transform3D(Basis.IDENTITY, Vector3(start.x, ground + 0.79, start.y))
+
+
+func _desktop_staff_pose() -> Transform3D:
+	var camera := player.camera
+	var aim := _desktop_aim
+	var local_offset := Vector3(0.46 + aim.x * 0.32, -0.75 + aim.y * 0.22, -1.65)
+	var staff_basis := camera.global_basis * Basis.from_euler(Vector3(-0.12 + aim.y * 0.42, aim.x * 0.45, 0.0))
+	return Transform3D(staff_basis.orthonormalized(), camera.global_transform * local_offset)
+
+
+func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
+	if xr_player != null and xr_player.xr_active:
+		return
+	_desktop_aim += Vector2(relative.x * 0.004, -relative.y * 0.004)
+	_desktop_aim.x = clampf(_desktop_aim.x, -1.0, 1.0)
+	_desktop_aim.y = clampf(_desktop_aim.y, -0.8, 0.8)
+
+
+func _update_staff_pose(delta: float) -> void:
+	if staff_tool == null:
+		return
+	if xr_player != null and xr_player.xr_active:
+		if xr_staff_interaction != null:
+			xr_staff_interaction.update(delta)
+		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
+			staff_tool.update_recall(_xr_recall_owner.global_transform, delta)
+	else:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			_desktop_aim = _desktop_aim.lerp(Vector2.ZERO, 1.0 - exp(-delta * 3.5))
+		if _desktop_recall_held:
+			staff_tool.update_recall(player.camera.global_transform, delta)
+		elif staff_tool.placement == StaffTool.Placement.HELD:
+			staff_tool.set_held_world_pose(_desktop_staff_pose())
+	staff_tool.advance(delta)
+
+
+func _viewer_lantern_exposure() -> float:
+	if staff_tool == null or staff_tool.placement == StaffTool.Placement.HELD:
+		return 1.0
+	var eye: Vector3 = xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
+	return 1.0 - smoothstep(3.0, 14.0, eye.distance_to(lantern.global_position))
+
+
+func _on_xr_recall_requested(controller: XRController3D) -> void:
+	_xr_recall_owner = controller
+	staff_tool.begin_recall(controller.global_transform)
+
+
+func _on_xr_recall_released(controller: XRController3D) -> void:
+	if _xr_recall_owner == controller:
+		staff_tool.end_recall()
+		_xr_recall_owner = null
 
 func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
@@ -405,7 +530,7 @@ func _build_ui() -> void:
 	canvas.add_child(hud_label)
 
 	help_label = Label.new()
-	help_label.text = "WASD move · Shift slow · mouse look · 1 clear · 2 blue · 3 orange · F shutter · [ ] openness\nR reset same seed · P pause · T top-down · F1 debug · F2 quality · F11 fullscreen · I inspect next · Esc free mouse"
+	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · R: reset · F1: debug · F2: quality · Esc: free mouse"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
 	help_label.add_theme_color_override("font_color", Color("dceae8"))
@@ -884,6 +1009,16 @@ func _reset_run(record_previous: bool) -> void:
 	player.position = Vector3(active_patches[0].x, 0.0, active_patches[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
 	player.position.y = _ground_height(Vector2(player.position.x, player.position.z)) + (0.05 if environment_enabled else 0.0)
 	player.reset_look()
+	_desktop_aim = Vector2.ZERO
+	_desktop_recall_held = false
+	if xr_player != null and xr_player.xr_active:
+		if xr_staff_interaction != null:
+			xr_staff_interaction.reset_for_run()
+		_xr_recall_owner = null
+		xr_player.reset_pose(player.global_position)
+		staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
+	else:
+		staff_tool.reset_to_pose(_desktop_staff_pose())
 	inspected_agent = 0
 	settings_history = [{"elapsed_seconds": 0.0, "settings": _current_settings()}]
 	run_id = "%s-%d" % [Time.get_datetime_string_from_system(true), Time.get_ticks_usec()]
@@ -957,6 +1092,8 @@ func _current_settings() -> Dictionary:
 		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value, "environment_quality": _quality_settings}
 
 func _toggle_top_down() -> void:
+	if xr_player != null and xr_player.xr_active:
+		return
 	top_down = not top_down
 	top_camera.current = top_down
 	player.camera.current = not top_down
@@ -1077,7 +1214,13 @@ func _parse_arguments() -> void:
 	var args := OS.get_cmdline_user_args()
 	var index := 0
 	while index < args.size():
-		if args[index] == "--flat-lab":
+		if args[index] == "--xr":
+			_want_xr = true
+			index += 1
+		elif args[index] == "--desktop":
+			_want_xr = false
+			index += 1
+		elif args[index] == "--flat-lab":
 			environment_enabled = false
 			index += 1
 		elif args[index] == "--terrain-size" and index + 1 < args.size():
@@ -1145,6 +1288,8 @@ func _setup_input() -> void:
 	_add_key_action("shutter_toggle", KEY_F)
 	_add_key_action("shutter_close", KEY_BRACKETLEFT)
 	_add_key_action("shutter_open", KEY_BRACKETRIGHT)
+	_add_key_action("staff_drop_pickup", KEY_G)
+	_add_key_action("staff_recall", KEY_E)
 	_add_key_action("reset_run", KEY_R)
 	_add_key_action("toggle_pause", KEY_P)
 	_add_key_action("toggle_debug", KEY_F1)
@@ -1284,6 +1429,7 @@ func _on_quality_visibility(open: bool) -> void:
 		simulation_paused = true
 	else:
 		simulation_paused = _menu_was_paused
-	player.controls_enabled = not open
-	player.look_enabled = not open and not top_down
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED
+	if xr_player == null or not xr_player.xr_active:
+		player.controls_enabled = not open
+		player.look_enabled = not open and not top_down
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED

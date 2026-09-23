@@ -1,0 +1,71 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/xr_player.gd" id="1"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/player/player_body.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/functions/movement_direct.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/functions/movement_turn.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/hands/scenes/lowpoly/left_hand_low.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/hands/scenes/lowpoly/right_hand_low.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/functions/function_pointer.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/xr_menu_content.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://addons/godot-xr-tools/functions/function_pickup.tscn" id="10"]
+
+[node name="XRPlayer" type="XROrigin3D"]
+script = ExtResource("1")
+
+[node name="Camera" type="XRCamera3D" parent="."]
+current = true
+
+[node name="LeftController" type="XRController3D" parent="."]
+tracker = &"left_hand"
+
+[node name="MovementDirect" parent="LeftController" instance=ExtResource("3")]
+max_speed = 2.8
+strafe = true
+
+[node name="Hand" parent="LeftController" instance=ExtResource("5")]
+
+[node name="Pointer" parent="LeftController" instance=ExtResource("7")]
+enabled = false
+distance = 4.0
+
+[node name="Pickup" parent="LeftController" instance=ExtResource("10")]
+pickup_axis_action = "grip"
+grab_distance = 0.32
+grab_collision_mask = 4
+ranged_enable = false
+
+[node name="RightController" type="XRController3D" parent="."]
+tracker = &"right_hand"
+
+[node name="MovementTurn" parent="RightController" instance=ExtResource("4")]
+turn_mode = 2
+smooth_turn_speed = 2.0
+step_turn_angle = 30.0
+
+[node name="Hand" parent="RightController" instance=ExtResource("6")]
+
+[node name="Pointer" parent="RightController" instance=ExtResource("7")]
+enabled = false
+distance = 4.0
+
+[node name="Pickup" parent="RightController" instance=ExtResource("10")]
+pickup_axis_action = "grip"
+grab_distance = 0.32
+grab_collision_mask = 4
+ranged_enable = false
+
+[node name="PlayerBody" parent="." instance=ExtResource("2")]
+player_radius = 0.28
+head_behavior_mode = 2
+push_rigid_bodies = false
+
+[node name="MenuSurface" parent="Camera" instance=ExtResource("8")]
+visible = false
+position = Vector3(0, -0.04, -1.35)
+screen_size = Vector2(0.9, 0.55)
+viewport_size = Vector2(900, 550)
+scene = ExtResource("9")
+input_keyboard = false
+unshaded = true

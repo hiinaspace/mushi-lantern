@@ -1,0 +1,36 @@
+[gd_scene load_steps=1 format=3]
+
+[node name="XRMenuContent" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 24
+
+[node name="Contents" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Panel/Margin/Contents"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "Mushi Lantern"
+
+[node name="Description" type="Label" parent="Panel/Margin/Contents"]
+layout_mode = 2
+text = "Y / B: close menu\nLeft stick: move / strafe\nRight stick: smooth turn\nHold X / A: recall staff\nGrip: take or adjust staff"
