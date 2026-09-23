@@ -5,24 +5,28 @@ extends XRToolsPickable
 ## Input drivers own only the held pose. This node owns every unheld pose.
 enum Placement { HELD, FLOATING, SETTLING, PARKED, RECALL_HOVER }
 
-const GRIP_Y := [-0.48, 0.0, 0.46]
-const SHAFT_HALF_LENGTH := 0.77
+const GRIP_Y := [-0.82, -0.62, -0.40, -0.18, 0.08, 0.43]
+const MID_GRIP_INDEX := 3
+const SHAFT_BOTTOM_Y := -1.02
+const SHAFT_TOP_Y := 0.77
 const FLOAT_TIME := 0.38
-const PARK_HEIGHT := 0.79
+const PARK_HEIGHT := 1.04
 const RECALL_SPEED := 8.0
-const RECALL_OFFSET := Vector3(0.18, -0.10, -0.38)
+const RECALL_OFFSET := Vector3(0.18, 0.18, -0.38)
 const SHUTTER_HAND_TRAVEL_M := 0.08
 const SHUTTER_DEAD_ZONE_M := 0.02
 # The grip pose is forward of the wrist. Tracking this point removes most of
 # the apparent vertical motion caused by tilting the controller in place.
 const WRIST_BACK_OFFSET_M := 0.10
-const FILTER_ENTER_YAW := 0.30
-const FILTER_CENTER_YAW := 0.16
+const FILTER_STEP_YAW := 0.30
+const FILTER_ENTER_YAW := 0.17
+const FILTER_EXIT_YAW := 0.13
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
 var world_surface: Variant
-var grip_index: int = 1
+var grip_index: int = MID_GRIP_INDEX
+var _forced_grip_index := -1
 var _swing: Node3D
 var _swing_angle := Vector2.ZERO
 var _swing_velocity := Vector2.ZERO
@@ -38,6 +42,8 @@ var _adjust_yaw_uses_right := false
 var _adjust_origin_y := 0.0
 var _adjust_open := 1.0
 var _last_yaw_detent := 0
+var _adjust_origin_dial := 0.0
+var _adjust_last_dial := 0.0
 var _recall_hand := Transform3D.IDENTITY
 var external_pose_owned := false
 
@@ -62,7 +68,17 @@ func pick_up(by: Node3D) -> void:
 	if not is_picked_up():
 		return
 	var point := get_active_grab_point()
-	var index := 1
+	var index := MID_GRIP_INDEX
+	if _forced_grip_index >= 0:
+		index = clampi(_forced_grip_index, 0, GRIP_Y.size() - 1)
+		for child: Node in get_children():
+			if child is XRToolsGrabPointHand and absf((child as XRToolsGrabPointHand).position.y - GRIP_Y[index]) < 0.02:
+				var grab_point := child as XRToolsGrabPointHand
+				if grab_point.hand == (XRToolsGrabPointHand.Hand.LEFT if by.get_parent().name == "LeftController" else XRToolsGrabPointHand.Hand.RIGHT):
+					switch_active_grab_point(grab_point)
+					break
+		_forced_grip_index = -1
+		point = get_active_grab_point()
 	if point != null:
 		for candidate: int in GRIP_Y.size():
 			if absf(point.position.y - GRIP_Y[candidate]) < 0.02:
@@ -70,21 +86,26 @@ func pick_up(by: Node3D) -> void:
 				break
 	adopt_external_grab(index)
 
+func force_next_grip(index: int) -> void:
+	_forced_grip_index = clampi(index, 0, GRIP_Y.size() - 1) if index >= 0 else -1
+
 func _build_visual() -> void:
 	var collider := CollisionShape3D.new()
 	var shape := CapsuleShape3D.new()
 	shape.radius = 0.08
-	shape.height = SHAFT_HALF_LENGTH * 2.0
+	shape.height = SHAFT_TOP_Y - SHAFT_BOTTOM_Y
 	collider.shape = shape
+	collider.position.y = (SHAFT_TOP_Y + SHAFT_BOTTOM_Y) * 0.5
 	add_child(collider)
 	var shaft := MeshInstance3D.new()
 	shaft.name = "StaffShaft"
 	var shaft_mesh := CylinderMesh.new()
 	shaft_mesh.top_radius = 0.022
 	shaft_mesh.bottom_radius = 0.037
-	shaft_mesh.height = SHAFT_HALF_LENGTH * 2.0
+	shaft_mesh.height = SHAFT_TOP_Y - SHAFT_BOTTOM_Y
 	shaft.mesh = shaft_mesh
-	shaft.material_override = _material(Color("51402b"), 0.75, 0.0)
+	shaft.position.y = (SHAFT_TOP_Y + SHAFT_BOTTOM_Y) * 0.5
+	shaft.material_override = _material(Color("51402b"), 0.75, 0.15)
 	add_child(shaft)
 	for y: float in GRIP_Y:
 		var wrap := MeshInstance3D.new()
@@ -94,7 +115,7 @@ func _build_visual() -> void:
 		wrap_mesh.height = 0.13
 		wrap.mesh = wrap_mesh
 		wrap.position.y = y
-		wrap.material_override = _material(Color("9d7953"), 0.8, 0.0)
+		wrap.material_override = _material(Color("9d7953"), 0.8, 0.08)
 		add_child(wrap)
 	var ferrule := MeshInstance3D.new()
 	var ferrule_mesh := CylinderMesh.new()
@@ -102,23 +123,44 @@ func _build_visual() -> void:
 	ferrule_mesh.bottom_radius = 0.045
 	ferrule_mesh.height = 0.09
 	ferrule.mesh = ferrule_mesh
-	ferrule.position.y = -SHAFT_HALF_LENGTH
+	ferrule.position.y = SHAFT_BOTTOM_Y
 	ferrule.material_override = _material(Color("857f69"), 0.48, 0.0)
 	add_child(ferrule)
 	var arm := MeshInstance3D.new()
 	var arm_mesh := CylinderMesh.new()
 	arm_mesh.top_radius = 0.014
 	arm_mesh.bottom_radius = 0.014
-	arm_mesh.height = 0.31
+	arm_mesh.height = 0.38
 	arm.mesh = arm_mesh
 	arm.rotation.z = PI * 0.5
-	arm.position = Vector3(0.15, 0.68, 0.0)
+	arm.position = Vector3(0.17, 0.75, 0.0)
 	arm.material_override = _material(Color("857f69"), 0.48, 0.0)
 	add_child(arm)
 	_swing = Node3D.new()
 	_swing.name = "DampedLanternJoint"
-	_swing.position = Vector3(0.30, 0.68, 0.0)
+	var crook_tip := MeshInstance3D.new()
+	crook_tip.name = "CrookTip"
+	var crook_mesh := CylinderMesh.new()
+	crook_mesh.top_radius = 0.013
+	crook_mesh.bottom_radius = 0.014
+	crook_mesh.height = 0.11
+	crook_tip.mesh = crook_mesh
+	crook_tip.position = Vector3(0.36, 0.69, 0.0)
+	crook_tip.material_override = _material(Color("857f69"), 0.48, 0.10)
+	add_child(crook_tip)
+	_swing.position = Vector3(0.36, 0.64, 0.0)
 	add_child(_swing)
+	var suspension := MeshInstance3D.new()
+	suspension.name = "SuspensionCord"
+	var cord_mesh := CylinderMesh.new()
+	cord_mesh.top_radius = 0.005
+	cord_mesh.bottom_radius = 0.005
+	cord_mesh.height = 0.13
+	suspension.mesh = cord_mesh
+	suspension.position.y = -0.065
+	suspension.material_override = _material(Color("857f69"), 0.55, 0.08)
+	suspension.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_swing.add_child(suspension)
 	lantern = Lantern.new()
 	lantern.name = "Lantern"
 	lantern.position = Vector3(0.0, -0.39, 0.0)
@@ -149,15 +191,15 @@ func set_world_surface(surface: Variant) -> void:
 	world_surface = surface
 
 func grip_world_position(index: int) -> Vector3:
-	return to_global(Vector3(0.0, GRIP_Y[clampi(index, 0, 2)], 0.0))
+	return to_global(Vector3(0.0, GRIP_Y[clampi(index, 0, GRIP_Y.size() - 1)], 0.0))
 
 func control_world_position() -> Vector3:
-	return lantern.global_position
+	return lantern.to_global(lantern.control_grip_local_position())
 
-func hold(hand_world: Transform3D, index: int = 1) -> void:
+func hold(hand_world: Transform3D, index: int = MID_GRIP_INDEX) -> void:
 	if not _valid_transform(hand_world):
 		return
-	grip_index = clampi(index, 0, 2)
+	grip_index = clampi(index, 0, GRIP_Y.size() - 1)
 	placement = Placement.HELD
 	external_pose_owned = false
 	var basis := hand_world.basis.orthonormalized()
@@ -174,12 +216,12 @@ func set_held_world_pose(staff_world: Transform3D) -> void:
 	_rebase_swing_if_jump()
 	_capture_aim()
 
-func transfer(hand_world: Transform3D, index: int = 1) -> void:
+func transfer(hand_world: Transform3D, index: int = MID_GRIP_INDEX) -> void:
 	# A hand swap is atomic. It never passes through gameplay release.
 	hold(hand_world, index)
 
-func adopt_external_grab(index: int = 1) -> void:
-	grip_index = clampi(index, 0, 2)
+func adopt_external_grab(index: int = MID_GRIP_INDEX) -> void:
+	grip_index = clampi(index, 0, GRIP_Y.size() - 1)
 	placement = Placement.HELD
 	external_pose_owned = true
 	_rebase_swing_if_jump()
@@ -212,7 +254,7 @@ func release_final() -> void:
 		return
 	_adjusting = false
 	external_pose_owned = false
-	lantern.set_shutter(1.0)
+	lantern.end_dial_preview()
 	_capture_aim()
 	_float_origin = global_transform
 	_float_elapsed = 0.0
@@ -253,8 +295,12 @@ func begin_adjust(hand_world: Transform3D) -> void:
 	_adjust_yaw_uses_right = absf(_adjust_reference.z.y) > 0.8
 	_adjust_origin_y = _adjust_wrist_height(hand_local)
 	_adjust_open = lantern.shutter_openness
-	_last_yaw_detent = 0
+	_last_yaw_detent = _mode_detent(lantern.mode)
+	_adjust_origin_dial = float(_last_yaw_detent) * FILTER_STEP_YAW
+	_adjust_last_dial = _adjust_origin_dial
 	_swing_velocity *= 0.2
+	lantern.begin_dial_preview()
+	lantern.set_dial_preview(_adjust_origin_dial)
 
 func update_adjust(hand_world: Transform3D) -> void:
 	if not _adjusting or not _valid_transform(hand_world):
@@ -275,32 +321,42 @@ func update_adjust(hand_world: Transform3D) -> void:
 		reference_axis = reference_axis.normalized()
 		current_axis = current_axis.normalized()
 		var yaw := atan2(-reference_axis.cross(current_axis).y, reference_axis.dot(current_axis))
+		_adjust_last_dial = clampf(_adjust_origin_dial + yaw, -FILTER_STEP_YAW, FILTER_STEP_YAW)
+		lantern.set_dial_preview(_adjust_last_dial)
 		var detent := _last_yaw_detent
-		if yaw < (-FILTER_ENTER_YAW if detent == 0 else -0.19):
+		if _adjust_last_dial < (-FILTER_ENTER_YAW if detent == 0 else -FILTER_EXIT_YAW):
 			detent = -1
-		elif yaw > (FILTER_ENTER_YAW if detent == 0 else 0.19):
+		elif _adjust_last_dial > (FILTER_ENTER_YAW if detent == 0 else FILTER_EXIT_YAW):
 			detent = 1
-		elif absf(yaw) < FILTER_CENTER_YAW:
+		elif absf(_adjust_last_dial) < FILTER_EXIT_YAW:
 			detent = 0
 		if detent != _last_yaw_detent:
 			_last_yaw_detent = detent
 			lantern.set_mode(LightField.Mode.CLEAR if detent == 0 else LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE)
 
 func end_adjust() -> void:
+	if _adjusting:
+		var final_detent := -1 if _adjust_last_dial < -FILTER_STEP_YAW * 0.5 else 1 if _adjust_last_dial > FILTER_STEP_YAW * 0.5 else 0
+		lantern.set_mode(LightField.Mode.CLEAR if final_detent == 0 else LightField.Mode.BLUE if final_detent < 0 else LightField.Mode.ORANGE)
 	_adjusting = false
+	lantern.end_dial_preview()
+
+func _mode_detent(value: LightField.Mode) -> int:
+	return -1 if value == LightField.Mode.BLUE else 1 if value == LightField.Mode.ORANGE else 0
 
 func _adjust_wrist_height(hand_world: Transform3D) -> float:
 	return (hand_world.origin + hand_world.basis.orthonormalized() * Vector3(0.0, 0.0, WRIST_BACK_OFFSET_M)).y
 
 func _adjust_frame() -> Transform3D:
-	var forward := lantern.forward_direction()
+	# Use the shaft yaw so pendulum motion cannot turn the dial reference.
+	var forward := -global_basis.z
 	forward.y = 0.0
 	if forward.length_squared() < 0.001:
 		forward = _last_horizontal_aim
 	forward = forward.normalized()
 	var z_axis := -forward
 	var x_axis := Vector3.UP.cross(z_axis).normalized()
-	return Transform3D(Basis(x_axis, Vector3.UP, z_axis), lantern.global_position)
+	return Transform3D(Basis(x_axis, Vector3.UP, z_axis), control_world_position())
 
 func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = true) -> void:
 	if not _valid_transform(staff_world):
@@ -309,6 +365,7 @@ func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = 
 	placement = Placement.HELD if held else Placement.PARKED
 	external_pose_owned = false
 	_adjusting = false
+	lantern.end_dial_preview()
 	_float_elapsed = 0.0
 	_swing_angle = Vector2.ZERO
 	_swing_velocity = Vector2.ZERO
@@ -334,8 +391,6 @@ func advance(delta: float) -> void:
 		if global_position.distance_to(_park_target.origin) < 0.018:
 			global_transform = _park_target
 			placement = Placement.PARKED
-	elif placement == Placement.RECALL_HOVER:
-		update_recall(_recall_hand, dt)
 	_update_swing(dt)
 	lantern.advance_flame(dt)
 	lantern.advance_transition(dt)
@@ -397,16 +452,23 @@ func _update_swing(dt: float) -> void:
 		velocity = Vector3.ZERO
 		_previous_velocity = Vector3.ZERO
 	var acceleration := (velocity - _previous_velocity) / dt
-	var local_accel := global_basis.inverse() * acceleration
-	var resting_pitch := -0.25 if placement == Placement.PARKED or placement == Placement.SETTLING else 0.0
-	var target := Vector2(clampf(-local_accel.z * 0.023, -0.29, 0.29) + resting_pitch, clampf(local_accel.x * 0.023, -0.29, 0.29))
+	# A hanging lantern seeks world down, even when the staff rolls. Acceleration
+	# briefly tilts the effective gravity vector and injects a visible pendulum swing.
+	var effective_down := Vector3.DOWN * 9.81 - acceleration * 0.35
+	var local_down := global_basis.inverse() * effective_down.normalized()
+	var parked_pitch := -0.25 if placement == Placement.PARKED or placement == Placement.SETTLING else 0.0
+	var target := Vector2(
+		clampf(atan2(-local_down.z, -local_down.y) + parked_pitch, -1.6, 1.6),
+		clampf(atan2(local_down.x, Vector2(local_down.y, local_down.z).length()), -1.6, 1.6)
+	)
 	if _adjusting:
 		target = _swing_angle
-	_swing_velocity += (target - _swing_angle) * (24.0 * dt)
-	_swing_velocity *= exp(-4.2 * dt)
+		_swing_velocity = Vector2.ZERO
+	_swing_velocity += (target - _swing_angle) * (19.0 * dt)
+	_swing_velocity *= exp(-2.25 * dt)
 	_swing_angle += _swing_velocity * dt
-	_swing_angle.x = clampf(_swing_angle.x, -0.52, 0.45)
-	_swing_angle.y = clampf(_swing_angle.y, -0.43, 0.43)
+	_swing_angle.x = clampf(_swing_angle.x, -1.6, 1.6)
+	_swing_angle.y = clampf(_swing_angle.y, -1.6, 1.6)
 	_swing.rotation = Vector3(_swing_angle.x, 0.0, _swing_angle.y)
 	_previous_position = attachment_position
 	_previous_velocity = velocity

@@ -3,7 +3,8 @@ extends RefCounted
 
 ## Gives the lantern control zone priority over XR Tools shaft pickup.
 ## XR Tools owns the staff pose while grabbed; StaffTool owns it otherwise.
-const CONTROL_RADIUS := 0.34
+const CONTROL_RADIUS := 0.23
+const RECALL_GRAB_RADIUS := 0.55
 const GRIP_THRESHOLD := 0.65
 const HIGHLIGHT_RING := preload("res://addons/godot-xr-tools/objects/highlight/highlight_ring.tscn")
 
@@ -78,6 +79,17 @@ func update(_delta: float) -> void:
 		var grip_down := tracked and controller.get_float("grip") > GRIP_THRESHOLD
 		if not grip_down:
 			_consumed_grip[index] = false
+		# XR Tools' probe can miss the shaft while it follows the recall hand.
+		# A held recall button makes a nearby grip an explicit mid-shaft pickup.
+		if grip_down and not rig.is_menu_open() and staff.placement == StaffTool.Placement.RECALL_HOVER and rig._recall_active.has(controller) and pickup.picked_up_object == null:
+			if controller.global_position.distance_to(staff.grip_world_position(StaffTool.MID_GRIP_INDEX)) <= RECALL_GRAB_RADIUS:
+				pickup.enabled = true
+				pickup.grip_pressed = true
+				pickup.picked_up_ranged = false
+				staff.force_next_grip(StaffTool.MID_GRIP_INDEX)
+				pickup._pick_up_object(staff)
+				if pickup.picked_up_object != staff:
+					staff.force_next_grip(-1)
 		var is_shaft_owner := pickup.picked_up_object == staff
 		var near_control := tracked and not rig.is_menu_open() and not is_shaft_owner and controller.global_position.distance_to(staff.control_world_position()) <= CONTROL_RADIUS
 		if controller == _adjust_owner:
