@@ -1,3 +1,31 @@
+# Current follow-up — richer adapted sky
+
+The user accepted soft cliff descent and requested a much denser starfield at high night vision, a possible Milky Way band, and gentle bright-star bloom/twinkle. Preserve the sparse starting appearance while removing visible zenith pinching and uniform grid-like reveal. Keep this a bounded visual shader change with desktop render checks; headset appearance and performance remain separate validation.
+
+# Current follow-up — smooth flight over cliffs
+
+The user accepted the lighting/foliage pass and requested that mushi spill over cliffs naturally. Replace the terrain-relative hard upper-height clamp with soft descent through the existing flight forces, retaining ground clearance, finite bounded state and the accepted GPU behavior elsewhere.
+
+# Current follow-up — foliage luminescence and bloom
+
+The user requested faint luminescent spots on grass and tree foliage visible only near maximum night vision, plus slight bloom. They clarified global image-space bloom is acceptable: tune it so mushi mostly drive the glow, allow other bright objects to spill, and permit slightly HDR/paler mushi cores with colored glow. No selective-object bloom pipeline is needed.
+
+# Current follow-up — artificial night adaptation
+
+The user accepted the night aesthetic and requested a roughly 110-degree lantern cone, brighter/farther clear navigation light, artificial mode/shutter-driven night vision controlling star visibility and perceived lantern brightness, and debanding. Preserve lantern shadows at default/high quality. This is visual adaptation rather than automatic exposure or a change to behavioral light strength; align the widened colored cone with the simulation.
+
+# Current follow-up — initial night lighting
+
+The user accepted the revised terrain layout and authorized mixing in the next lighting milestone: a green goal beam visible above the landscape, a starfield sky, very low ambient illumination and the lantern as the main light, with directional shadows disabled. Terrain performance/functionality is accepted as a greybox; this is an initial nighttime orientation/visibility pass, not final aesthetic or headset qualification.
+
+# Current follow-up — M1 terrain gameplay
+
+The user accepted the initial environment greybox and requested more mushroom patches with fewer starting agents per patch, roughly 10% free mushi, a goal clearing 2–3 times smaller, and varied terrain with one-way drop-offs and walkable detours. Break up sightlines to the center and perimeter; preserve 128/256 m options, accepted simulation tuning and total population.
+
+# Current authorization — M1 environment implementation
+
+On 2026-09-22 the user approved `docs/m1-environment-plan.md` and authorized implementation, preferring subagents to conserve quota. Build the bounded Terrain3D basin, terrain-relative GPU simulation, coarse static obstacle avoidance, representative foliage/rocks/trees and persistent quality settings. Start 128 m with a 256 m comparison. Preserve accepted 1024 GPU trios/F1, with an explicit 512-agent lower-cost setting. Target PC VR 90 Hz with headroom on midrange hardware; sayu alone does not certify that. Final art direction is dark nighttime; static calm trees/foliage suffice, no wind/skinning needed. Use actual range/culling/detail controls rather than assuming darkness reduces rendering cost. No Quest/mobile/Steam Frame compatibility requirement. Plan details and validation boundaries are in the approved document. This authorization supersedes the historical checkpoint-only text below.
+
 # Particle simulation accepted — next environment checkpoint
 
 On 2026-09-22 the user accepted readable, aesthetic GPU head/body/tail trios and explicitly closed particle-simulation work for now. Their private `loose trains` preset weakens following to permit splitting/recombining; exact verified tuning and launch instructions are in `docs/m0g-trios.md`. Keep the accepted count/appearance and F1 sandbox. Next task is a bounded Terrain3D/environment greybox; fine collision is unnecessary, and CPU/ground modes may be retired. Do not reopen formation research by default. Current task is checkpoint/commit only; environment implementation belongs in the next task.

@@ -25,7 +25,7 @@ run_gpu_check() {
   local output_file="$mushi_gpu_data/check.log"
   local result=0
   "$godot_bin" --path "$project_dir" --rendering-driver vulkan --rendering-method mobile \
-    --disable-vsync --max-fps 60 --quit-after 1800 --script "$script" >"$output_file" 2>&1 || result=$?
+    --disable-vsync --max-fps 60 --quit-after 1800 --script "$script" -- --flat-lab >"$output_file" 2>&1 || result=$?
   cat "$output_file"
   if (( result != 0 )) || ! grep -q "$marker" "$output_file" || grep -Eq 'ERROR:|SCRIPT ERROR:|FAIL|leaked' "$output_file"; then
     return 1

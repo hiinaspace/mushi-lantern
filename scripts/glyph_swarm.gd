@@ -12,7 +12,9 @@ const RELEASED := 3
 @export var face_camera := false
 @export var animate_vertices := true
 @export var glow_strength := 0.72
+@export var bloom_hdr_gain := 1.0
 
+var world_bounds := AABB(Vector3(-35.0, -2.0, -35.0), Vector3(70.0, 16.0, 70.0))
 var instance_count: int = 0
 var _multimesh := MultiMesh.new()
 var _mesh_instance := MultiMeshInstance3D.new()
@@ -47,7 +49,7 @@ func configure(count: int) -> void:
 	_multimesh.instance_count = instance_count
 	# POSITION is built in the vertex shader, so the static identity transforms
 	# still need an explicit conservative world-space culling bound.
-	_multimesh.custom_aabb = AABB(Vector3(-35.0, -2.0, -35.0), Vector3(70.0, 16.0, 70.0))
+	_multimesh.custom_aabb = world_bounds
 	for index: int in instance_count:
 		_multimesh.set_instance_transform(index, Transform3D.IDENTITY)
 		_multimesh.set_instance_color(index, Color.WHITE)
@@ -180,3 +182,9 @@ func _apply_shader_options() -> void:
 	_material.set_shader_parameter("face_camera", face_camera)
 	_material.set_shader_parameter("animate_vertices", animate_vertices)
 	_material.set_shader_parameter("glow_strength", glow_strength)
+	_material.set_shader_parameter("bloom_hdr_gain", clampf(bloom_hdr_gain, 1.0, 2.0))
+
+
+func set_world_bounds(bounds: AABB) -> void:
+	world_bounds = bounds
+	_multimesh.custom_aabb = bounds

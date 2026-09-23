@@ -9,6 +9,11 @@ var _last_open: float = 1.0
 var spot: SpotLight3D
 var glow_mesh: MeshInstance3D
 var filter_mesh: MeshInstance3D
+var night_vision: float = 1.0
+var _adaptation := NightAdaptation.new()
+var _filter_material: StandardMaterial3D
+var _last_visual_mode: int = -1
+var _last_visual_openness: float = -1.0
 
 func _ready() -> void:
 	_build_visual()
@@ -18,9 +23,11 @@ func _build_visual() -> void:
 	spot = SpotLight3D.new()
 	spot.name = "VisibleBeam"
 	spot.spot_range = 10.5
-	spot.spot_angle = 38.0
+	# Godot's angle is the cone radius: 55 degrees makes a 110 degree beam.
+	spot.spot_angle = 55.0
+	spot.spot_angle_attenuation = 0.25
 	spot.shadow_enabled = true
-	spot.light_energy = 5.0
+	spot.light_energy = 0.0
 	spot.light_volumetric_fog_energy = 0.0
 	add_child(spot)
 
@@ -53,6 +60,9 @@ func _build_visual() -> void:
 	filter_mesh.mesh = filter_sphere
 	filter_mesh.scale = Vector3(1.0, 0.72, 1.0)
 	filter_mesh.position = Vector3(0.0, 0.0, -0.2)
+	_filter_material = _material(Color("f8e5b2"), 0.0)
+	_filter_material.emission_enabled = true
+	filter_mesh.material_override = _filter_material
 	add_child(filter_mesh)
 
 	# The emitter is inside this proxy housing; it must not shadow its own beam.
@@ -85,6 +95,11 @@ func adjust_shutter(amount: float) -> void:
 func forward_direction() -> Vector3:
 	return -global_basis.z.normalized()
 
+
+func advance_adaptation(delta: float) -> void:
+	night_vision = _adaptation.advance(delta, mode, shutter_openness)
+	_apply_visual()
+
 func mode_label() -> String:
 	match mode:
 		LightField.Mode.BLUE:
@@ -98,18 +113,28 @@ func _apply_visual() -> void:
 	if spot == null:
 		return
 	var color := Color("f8e5b2")
-	var base_energy := 6.0
+	var base_energy := 10.0
+	var range_m := 20.0
 	if mode == LightField.Mode.BLUE:
 		color = Color("65c8ff")
 		base_energy = 3.4
+		range_m = 10.5
 	elif mode == LightField.Mode.ORANGE:
 		color = Color("ff9852")
 		base_energy = 3.8
-	spot.light_color = color
-	spot.light_energy = base_energy * shutter_openness
-	spot.visible = shutter_openness > 0.01
-	filter_mesh.material_override = _material(color, 1.5 + shutter_openness * 2.5)
-	filter_mesh.scale = Vector3.ONE * lerpf(0.65, 1.0, shutter_openness)
+		range_m = 10.5
+	if _last_visual_mode != int(mode):
+		spot.light_color = color
+		spot.spot_range = range_m
+		_filter_material.albedo_color = color
+		_filter_material.emission = color
+		_last_visual_mode = int(mode)
+	spot.light_energy = base_energy * shutter_openness * _adaptation.lantern_gain()
+	if _last_visual_openness != shutter_openness:
+		spot.visible = shutter_openness > 0.01
+		_filter_material.emission_energy_multiplier = (1.5 + shutter_openness * 2.5) * shutter_openness
+		filter_mesh.scale = Vector3.ONE * lerpf(0.65, 1.0, shutter_openness)
+		_last_visual_openness = shutter_openness
 
 func _material(color: Color, emission_energy: float) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()

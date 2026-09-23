@@ -15,6 +15,9 @@ layout(set = 0, binding = 6, rgba32f) uniform writeonly image2D state_image;
 layout(set = 0, binding = 7, std430) buffer CellCounts { uint cell_counts[]; };
 layout(set = 0, binding = 8, std430) buffer CellIds { uint cell_ids[]; };
 layout(set = 0, binding = 9, std430) buffer FormationChoices { ivec2 formation_choices[]; };
+layout(set = 0, binding = 10, r32f) uniform readonly image2D terrain_height;
+layout(set = 0, binding = 11, std430) readonly buffer TerrainObstacles { vec4 terrain_obstacles[]; };
+layout(set = 0, binding = 12, std430) readonly buffer TerrainObstacleIndex { int terrain_obstacle_index[]; };
 layout(push_constant, std430) uniform Phase { uint phase; } pc;
 
 const int ACTIVE = 0;
@@ -37,6 +40,33 @@ vec2 limited2(vec2 v, float maxlen) { float n = length(v); return n > maxlen && 
 vec3 safe_normal(vec3 v) { float n = length(v); return n > 0.000001 ? v / n : vec3(0.0); }
 vec2 safe_normal2(vec2 v) { float n = length(v); return n > 0.000001 ? v / n : vec2(0.0); }
 float move_towards(float a, float b, float step_size) { return a + clamp(b - a, -step_size, step_size); }
+float ground_height(vec2 xz) {
+    if (pf(74) < 0.5) return 0.0;
+    ivec2 size = imageSize(terrain_height);
+    vec2 uv = clamp((xz + vec2(pf(75) * 0.5)), vec2(0.0), vec2(float(size.x - 1), float(size.y - 1)));
+    ivec2 lo = ivec2(floor(uv));
+    ivec2 hi = min(lo + ivec2(1), size - ivec2(1));
+    vec2 t = fract(uv);
+    float a = imageLoad(terrain_height, lo).r;
+    float b = imageLoad(terrain_height, ivec2(hi.x, lo.y)).r;
+    float c = imageLoad(terrain_height, ivec2(lo.x, hi.y)).r;
+    float d = imageLoad(terrain_height, hi).r;
+    return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
+}
+int obstacle_cell_base(vec2 xz) {
+    vec2 cell = floor((xz + vec2(pf(75) * 0.5)) * (32.0 / pf(75)));
+    ivec2 xy = clamp(ivec2(cell), ivec2(0), ivec2(31));
+    return (xy.y * 32 + xy.x) * 65;
+}
+bool obstacle_at_height(vec4 obs, float top, float y) {
+    return y + 0.12 >= obs.w && y - 0.12 <= top;
+}
+float basin_margin(vec2 xz) {
+    vec2 scaled = vec2(xz.x * 1.07, xz.y * 0.97);
+    float angle = atan(scaled.y, scaled.x);
+    float irregularity = 1.0 + 0.075 * sin(angle * 3.0 + 0.3) + 0.055 * cos(angle * 7.0 - 0.4) + 0.025 * sin(angle * 11.0 + 1.0);
+    return pf(75) * 0.36 - length(scaled) / irregularity;
+}
 float mobility(float e) { return smoothstep(pf(43), max(pf(43) + 0.001, pf(32)), e); }
 float scatter(float e) { return pf(31) > 0.5 ? smoothstep(pf(32), 1.0, e) * saturate(pf(45)) : 0.0; }
 
@@ -199,6 +229,21 @@ float light_sample(vec3 xyz) {
         vec4 obstacle = sources[16 + i];
         if (segment_circle(source.xz, xyz.xz, obstacle.xy, obstacle.z)) return 0.0;
     }
+    // Four midpoint samples cover nearby coarse trunks without a full ray query.
+    // Height-aware occlusion keeps low rocks from shadowing a light above them.
+    if (pf(74) > 0.5) {
+        for (int step = 1; step <= 4; step++) {
+            float t = float(step) / 5.0;
+            vec3 point = mix(source, xyz, t);
+            if (point.y < ground_height(point.xz) + 0.04) return 0.0;
+            int base = obstacle_cell_base(point.xz);
+            for (int j = 0; j < min(terrain_obstacle_index[base], 64); j++) {
+                int i = terrain_obstacle_index[base + 1 + j];
+                vec4 obs = terrain_obstacles[i * 2];
+                if (obstacle_at_height(obs, terrain_obstacles[i * 2 + 1].x, point.y) && segment_circle(source.xz, xyz.xz, obs.xy, obs.z)) return 0.0;
+            }
+        }
+    }
     return saturate(pf(13) * angular * (1.0 - smoothstep(0.18, 1.0, distance / pf(7))));
 }
 
@@ -209,7 +254,8 @@ void mushroom_field(vec3 xyz, vec3 velocity, out float exposure, out vec3 force)
     float total = 0.0;
     vec3 weighted = vec3(0.0);
     for (int i = 0; i < int(pf(65)); i++) {
-        vec3 cap = vec3(sources[32 + i].x, 0.45, sources[32 + i].y);
+        vec2 mushroom_xz = sources[32 + i].xy;
+        vec3 cap = vec3(mushroom_xz.x, ground_height(mushroom_xz) + 0.45, mushroom_xz.y);
         float d = length(xyz - cap);
         if (d >= pf(36)) continue;
         float weight = 1.0 - smoothstep(pf(36) * 0.18, pf(36), d);
@@ -326,7 +372,8 @@ vec3 lantern_force(vec3 xyz, vec3 velocity, float stimulus) {
     if (stimulus <= 0.0001 || int(pf(3)) == 0) return vec3(0.0);
     vec3 source = vec3(pf(4), pf(5), pf(6));
     vec3 target = source + vec3(pf(8), pf(9), pf(10)) * 3.0;
-    target.y = clamp(target.y, pf(57), pf(58));
+    float target_ground = ground_height(target.xz);
+    target.y = clamp(target.y, target_ground + pf(57), target_ground + pf(58));
     if (int(pf(3)) == 2) target = source;
     vec3 to_target = target - xyz;
     float distance = length(to_target);
@@ -359,6 +406,22 @@ vec3 obstacle_force(vec3 xyz, vec3 velocity) {
         if (ahead_distance < obs.z + 0.4 && ahead_distance > 0.001)
             result.xz += ahead_offset / ahead_distance * pf(25) * 0.75;
     }
+    if (pf(74) > 0.5) {
+        int base = obstacle_cell_base(xyz.xz);
+        for (int j = 0; j < min(terrain_obstacle_index[base], 64); j++) {
+            int i = terrain_obstacle_index[base + 1 + j];
+            vec4 obs = terrain_obstacles[i * 2];
+            float top = terrain_obstacles[i * 2 + 1].x;
+            if (!obstacle_at_height(obs, top, xyz.y)) continue;
+            vec2 offset = xyz.xz - obs.xy;
+            float distance = length(offset);
+            float safe_radius = obs.z + 0.8;
+            if (distance < safe_radius) result.xz += (distance > 0.001 ? offset / distance : vec2(1.0, 0.0)) * pf(25) * pow(1.0 - distance / safe_radius, 2.0);
+            vec2 ahead_offset = ahead - obs.xy;
+            float ahead_distance = length(ahead_offset);
+            if (ahead_distance < obs.z + 0.4) result.xz += (ahead_distance > 0.001 ? ahead_offset / ahead_distance : vec2(1.0, 0.0)) * pf(25) * 0.75;
+        }
+    }
     return result;
 }
 
@@ -367,16 +430,25 @@ vec3 boundary_force(vec3 xyz) {
     float margin = pf(56) - 1.6;
     if (abs(xyz.x) > margin) result.x = -sign(xyz.x) * (abs(xyz.x) - margin) * 3.2;
     if (abs(xyz.z) > margin) result.z = -sign(xyz.z) * (abs(xyz.z) - margin) * 3.2;
-    if (xyz.y < pf(57) + 0.45) result.y += (pf(57) + 0.45 - xyz.y) * 2.4;
-    else if (xyz.y > pf(58) - 0.45) result.y -= (xyz.y - (pf(58) - 0.45)) * 2.4;
+    float floor_y = ground_height(xyz.xz);
+    if (xyz.y < floor_y + pf(57) + 0.45) result.y += (floor_y + pf(57) + 0.45 - xyz.y) * 2.4;
+    else if (xyz.y > floor_y + pf(58) - 0.45) result.y -= (xyz.y - (floor_y + pf(58) - 0.45)) * 2.4;
+    if (pf(74) > 0.5) {
+        float margin = basin_margin(xyz.xz);
+        if (margin < 4.0) result.xz -= safe_normal2(xyz.xz) * (4.0 - margin) * 3.2;
+        vec2 grade = vec2(ground_height(xyz.xz + vec2(1.0, 0.0)) - ground_height(xyz.xz - vec2(1.0, 0.0)), ground_height(xyz.xz + vec2(0.0, 1.0)) - ground_height(xyz.xz - vec2(0.0, 1.0)));
+        float steep = length(grade);
+        if (steep > 0.9) result.xz -= grade * min((steep - 0.9) * 2.0, 4.0);
+    }
     return result;
 }
 
 vec3 flight_band_force(vec3 xyz, float e, float vertical_phase) {
     if (pf(31) > 0.5 && mobility(e) < 0.08) return vec3(0.0);
-    float player_height = clamp(1.5, pf(57) + 0.35, pf(58) - 0.35);
+    float floor_y = ground_height(xyz.xz);
+    float player_height = floor_y + clamp(1.5, pf(57) + 0.35, pf(58) - 0.35);
     float vertical_energy = smoothstep(pf(32), 1.0, e);
-    float headroom = max(0.0, pf(58) - player_height - 0.25);
+    float headroom = max(0.0, floor_y + pf(58) - player_height - 0.25);
     float excursion = headroom * mix(0.08, 0.82, vertical_energy);
     float orbit = sin(pf(2) * mix(0.18, 0.34, vertical_energy) + vertical_phase);
     float preferred = player_height + excursion * (0.25 + orbit * 0.75);
@@ -407,14 +479,54 @@ void constrain_motion(vec3 start, inout vec3 velocity, inout vec3 position) {
             velocity.xz -= normal * min(dot(velocity.xz, normal), 0.0);
         }
     }
+    if (pf(74) > 0.5) {
+        int base = obstacle_cell_base(position.xz);
+        for (int j = 0; j < min(terrain_obstacle_index[base], 64); j++) {
+            int i = terrain_obstacle_index[base + 1 + j];
+            vec4 obs = terrain_obstacles[i * 2];
+            float top = terrain_obstacles[i * 2 + 1].x;
+            if (!obstacle_at_height(obs, top, position.y)) continue;
+            vec2 offset = position.xz - obs.xy;
+            float distance = length(offset);
+            float radius = obs.z + 0.10;
+            bool crossed = segment_circle(start.xz, position.xz, obs.xy, radius);
+            if (distance < radius || crossed) {
+                vec2 from_start = start.xz - obs.xy;
+                vec2 normal = crossed && length(from_start) >= radius ? safe_normal2(from_start) : (distance > 0.001 ? offset / distance : vec2(1.0, 0.0));
+                position.xz = obs.xy + normal * radius;
+                velocity.xz -= normal * min(dot(velocity.xz, normal), 0.0);
+            }
+        }
+    }
     float horizontal_limit = pf(56) - 0.10;
     vec2 bounded = clamp(position.xz, vec2(-horizontal_limit), vec2(horizontal_limit));
     if (bounded.x != position.x) velocity.x = 0.0;
     if (bounded.y != position.z) velocity.z = 0.0;
     position.xz = bounded;
-    float height = clamp(position.y, pf(57), pf(58));
-    if (height != position.y) velocity.y = 0.0;
-    position.y = height;
+    if (pf(74) > 0.5 && basin_margin(position.xz) < 0.35) {
+        vec2 outward = safe_normal2(position.xz);
+        position.xz -= outward * (0.35 - basin_margin(position.xz));
+        velocity.xz -= outward * max(0.0, dot(velocity.xz, outward));
+    }
+    float floor_y = ground_height(position.xz);
+    if (pf(74) > 0.5) {
+        // A descending flyer retains altitude over a cliff. Local band forces
+        // steer it down at its speed limit; only ground clearance is hard.
+        if (position.y < floor_y + pf(57)) {
+            position.y = floor_y + pf(57);
+            velocity.y = max(velocity.y, 0.0);
+        }
+        // This global ceiling is an emergency finite guard, far above normal
+        // flight; it cannot snap a flyer to a newly lower local ceiling.
+        if (position.y > pf(77)) {
+            position.y = pf(77);
+            velocity.y = min(velocity.y, 0.0);
+        }
+    } else {
+        float height = clamp(position.y, pf(57), pf(58));
+        if (height != position.y) velocity.y = 0.0;
+        position.y = height;
+    }
 }
 
 void main() {
@@ -450,7 +562,7 @@ void main() {
         next_vel = vec3(0.0);
         if (aux.z >= 0.22) { aux.x = float(ASCENDING); aux.z = 0.0; }
     } else if (lifecycle == ASCENDING) {
-        vec3 target = vec3(pf(59), pf(58) + 1.0, pf(60));
+        vec3 target = vec3(pf(59), ground_height(vec2(pf(59), pf(60))) + pf(58) + 1.0, pf(60));
         next_pos = mix(xyz, target, 1.0 - exp(-dt * 2.2));
         next_vel = vec3(0.0, 1.0, 0.0);
         if (aux.z >= 2.35) { aux.x = float(RELEASED); aux.z = 0.0; }

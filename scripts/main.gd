@@ -7,6 +7,16 @@ const ARENA_LAYOUT := "wide-60m-v1"
 const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
 const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
 
+var environment_enabled: bool = true
+var terrain_size: int = 128
+var world_surface: Variant
+var terrain_environment: Node3D
+var quality_menu: CanvasLayer
+var sun_light: DirectionalLight3D
+var night_environment: Environment
+var _quality_settings: Dictionary = {}
+var _menu_was_paused: bool = false
+
 var simulation: Variant = FlockSimulation.new()
 var flight_enabled: bool = true
 var simulation_backend: String = "gpu"
@@ -79,6 +89,8 @@ var saved_select: OptionButton
 var save_name: LineEdit
 var run_notes: LineEdit
 
+var _saved_preset_arg: String = ""
+var _count_override: int = -1
 var _initial_mode: int = -1
 var _screenshot_path: String = ""
 var _screenshot_delay: float = 1.0
@@ -86,13 +98,46 @@ var _screenshot_elapsed: float = 0.0
 
 func _ready() -> void:
 	_setup_input()
+	quality_menu = load("res://scripts/environment_settings.gd").new()
+	_quality_settings = quality_menu.get_settings()
+	fixture_count = int(_quality_settings.get("population", 1024))
 	_parse_arguments()
+	if DisplayServer.get_name() == "headless":
+		environment_enabled = false
+	if environment_enabled and RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		push_error("The terrain scene requires Vulkan Mobile GPU flight. Use --flat-lab for the legacy CPU lab.")
+		get_tree().quit(1)
+		return
+	if environment_enabled:
+		debug_visible = false
+		flight_enabled = true
+		simulation_backend = "gpu"
+		world_surface = load("res://scripts/environment_surface.gd").create(terrain_size, DEFAULT_SEED)
 	_build_world()
 	_build_player()
 	_build_ui()
+	panel.visible = debug_visible
 	_apply_preset(current_preset_index, false)
 	_reset_run(false)
 	_load_saved_preset_names()
+	if not _saved_preset_arg.is_empty():
+		var found := false
+		for saved_index: int in range(1, saved_select.item_count):
+			if saved_select.get_item_text(saved_index) == _saved_preset_arg:
+				_load_named_preset(saved_index)
+				found = true
+				break
+		if not found:
+			push_warning("Saved preset not found: " + _saved_preset_arg)
+		if _count_override > 0 and fixture_count != _count_override:
+			fixture_count = _count_override
+			_reset_run(false)
+	add_child(quality_menu)
+	quality_menu.settings_changed.connect(_apply_quality)
+	quality_menu.population_reset_requested.connect(_set_fixture)
+	quality_menu.panel_visibility_changed.connect(_on_quality_visibility)
+	quality_menu.sync_population(fixture_count)
+	_apply_quality(_quality_settings)
 	if _initial_mode >= 0:
 		lantern.set_mode(_initial_mode as LightField.Mode)
 	if start_top_down:
@@ -106,6 +151,11 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if _active_backend == "gpu":
 		if not simulation.gpu_error.is_empty():
+			if environment_enabled:
+				_backend_notice = "Terrain requires GPU flight: " + simulation.gpu_error
+				simulation_paused = true
+				_update_hud()
+				return
 			_backend_notice = "GPU unavailable; CPU reference: " + simulation.gpu_error
 			push_warning(_backend_notice)
 			simulation_backend = "cpu"
@@ -122,9 +172,18 @@ func _process(delta: float) -> void:
 	if not simulation_paused:
 		elapsed += delta
 		mode_times[int(lantern.mode)] += delta
+		if environment_enabled:
+			lantern.advance_adaptation(delta)
+	if night_environment != null:
+		NightEnvironment.set_night_vision(night_environment, lantern.night_vision)
+		if terrain_environment != null:
+			terrain_environment.set_night_vision(lantern.night_vision)
 	light_field.update_transform(lantern.global_position, lantern.forward_direction())
 	light_field.shutter_openness = lantern.shutter_openness
 	light_field.mode = lantern.mode
+	if environment_enabled:
+		light_field.half_angle_degrees = lantern.spot.spot_angle
+		light_field.range_m = lantern.spot.spot_range
 	light_field.mode_strength = strength_slider.value if strength_slider != null else 1.0
 	if not simulation_paused:
 		accumulator = minf(accumulator + delta, active_step * (4.0 if fixture_count >= 256 else 8.0))
@@ -148,6 +207,8 @@ func _process(delta: float) -> void:
 			_capture_and_quit()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if quality_menu != null and quality_menu.is_open():
+		return
 	if event.is_action_pressed("mode_clear"):
 		lantern.set_mode(LightField.Mode.CLEAR)
 	elif event.is_action_pressed("mode_blue"):
@@ -192,31 +253,42 @@ func _build_world() -> void:
 	environment.ambient_light_color = Color("b9cad5")
 	environment.ambient_light_energy = 0.62
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	if environment_enabled:
+		NightEnvironment.configure(environment)
+		night_environment = environment
 	environment_node.environment = environment
 	add_child(environment_node)
 
 	var sun := DirectionalLight3D.new()
+	sun_light = sun
 	sun.rotation_degrees = Vector3(-54.0, -28.0, 0.0)
 	sun.light_color = Color("f4e8cf")
-	sun.light_energy = 1.25
-	sun.shadow_enabled = true
+	sun.light_energy = 0.0 if environment_enabled else 1.25
+	sun.shadow_enabled = not environment_enabled
 	add_child(sun)
 
-	var floor_material := _material(Color("64706c"), 0.92)
-	_create_box_body("Ground", Vector3(60.0, 0.18, 60.0), Vector3(0.0, -0.1, 0.0), floor_material)
-	_create_box_body("NorthWall", Vector3(60.0, 2.0, 0.35), Vector3(0.0, 1.0, -28.4), _material(Color("475250"), 0.95))
-	_create_box_body("SouthWall", Vector3(60.0, 2.0, 0.35), Vector3(0.0, 1.0, 28.4), _material(Color("475250"), 0.95))
-	_create_box_body("WestWall", Vector3(0.35, 2.0, 60.0), Vector3(-28.4, 1.0, 0.0), _material(Color("475250"), 0.95))
-	_create_box_body("EastWall", Vector3(0.35, 2.0, 60.0), Vector3(28.4, 1.0, 0.0), _material(Color("475250"), 0.95))
+	if environment_enabled:
+		terrain_environment = load("res://scripts/terrain_environment.gd").new()
+		add_child(terrain_environment)
+		terrain_environment.build(world_surface)
+		light_field.world_surface = world_surface
+		light_field.environment_obstacles = world_surface.get_obstacles()
+	else:
+		var floor_material := _material(Color("64706c"), 0.92)
+		_create_box_body("Ground", Vector3(60.0, 0.18, 60.0), Vector3(0.0, -0.1, 0.0), floor_material)
+		_create_box_body("NorthWall", Vector3(60.0, 2.0, 0.35), Vector3(0.0, 1.0, -28.4), _material(Color("475250"), 0.95))
+		_create_box_body("SouthWall", Vector3(60.0, 2.0, 0.35), Vector3(0.0, 1.0, 28.4), _material(Color("475250"), 0.95))
+		_create_box_body("WestWall", Vector3(0.35, 2.0, 60.0), Vector3(-28.4, 1.0, 0.0), _material(Color("475250"), 0.95))
+		_create_box_body("EastWall", Vector3(0.35, 2.0, 60.0), Vector3(28.4, 1.0, 0.0), _material(Color("475250"), 0.95))
 
-	var obstacle_positions := PackedVector2Array([Vector2(-5.6, -4.4), Vector2(6.0, 4.0), Vector2(2.0, -14.0)])
-	var obstacle_radii := PackedFloat32Array([1.05, 1.2, 0.85])
-	for index: int in obstacle_positions.size():
-		_create_trunk(index, obstacle_positions[index], obstacle_radii[index])
-	simulation.obstacle_centers = obstacle_positions
-	simulation.obstacle_radii = obstacle_radii
-	light_field.obstacle_centers = obstacle_positions
-	light_field.obstacle_radii = obstacle_radii
+		var obstacle_positions := PackedVector2Array([Vector2(-5.6, -4.4), Vector2(6.0, 4.0), Vector2(2.0, -14.0)])
+		var obstacle_radii := PackedFloat32Array([1.05, 1.2, 0.85])
+		for index: int in obstacle_positions.size():
+			_create_trunk(index, obstacle_positions[index], obstacle_radii[index])
+		simulation.obstacle_centers = obstacle_positions
+		simulation.obstacle_radii = obstacle_radii
+		light_field.obstacle_centers = obstacle_positions
+		light_field.obstacle_radii = obstacle_radii
 
 	var goal := MeshInstance3D.new()
 	goal.name = "ReturnCircle"
@@ -225,7 +297,7 @@ func _build_world() -> void:
 	goal_mesh.bottom_radius = simulation.goal_radius
 	goal_mesh.height = 0.035
 	goal.mesh = goal_mesh
-	goal.position = Vector3(0.0, 0.025, 0.0)
+	goal.position = Vector3(0.0, _ground_height(Vector2.ZERO) + 0.025, 0.0)
 	var goal_material := _material(Color(0.29, 0.92, 0.75, 0.32), 0.42)
 	goal_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	goal_material.emission_enabled = true
@@ -252,9 +324,11 @@ func _build_world() -> void:
 	torus.inner_radius = simulation.goal_radius - 0.13
 	torus.outer_radius = simulation.goal_radius
 	beacon.mesh = torus
-	beacon.position = Vector3(0.0, 0.06, 0.0)
+	beacon.position = Vector3(0.0, _ground_height(Vector2.ZERO) + 0.06, 0.0)
 	beacon.material_override = _material(Color("78ffd8"), 0.45)
 	add_child(beacon)
+	if environment_enabled:
+		load("res://scripts/night_environment.gd").add_beacon(self, _ground_height(Vector2.ZERO))
 
 	footprint = MeshInstance3D.new()
 	var footprint_mesh := CylinderMesh.new()
@@ -288,15 +362,16 @@ func _build_world() -> void:
 
 	top_camera = Camera3D.new()
 	top_camera.name = "TopDownCamera"
-	top_camera.position = Vector3(0.0, 52.0, 0.0)
+	top_camera.position = Vector3(0.0, float(terrain_size) if environment_enabled else 52.0, 0.0)
 	top_camera.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
 	top_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	top_camera.size = 62.0
+	top_camera.size = float(terrain_size) if environment_enabled else 62.0
 	add_child(top_camera)
 
 func _build_player() -> void:
 	player = DesktopPlayer.new()
 	player.name = "DesktopPlayer"
+	player.world_surface = world_surface
 	player.position = Vector3(0.0, 0.0, 9.2)
 	var collision := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
@@ -330,7 +405,7 @@ func _build_ui() -> void:
 	canvas.add_child(hud_label)
 
 	help_label = Label.new()
-	help_label.text = "WASD move · Shift slow · mouse look · 1 clear · 2 blue · 3 orange · F shutter · [ ] openness\nR reset same seed · P pause · T top-down · F1 debug · F11 fullscreen · I inspect next · Esc free mouse"
+	help_label.text = "WASD move · Shift slow · mouse look · 1 clear · 2 blue · 3 orange · F shutter · [ ] openness\nR reset same seed · P pause · T top-down · F1 debug · F2 quality · F11 fullscreen · I inspect next · Esc free mouse"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
 	help_label.add_theme_color_override("font_color", Color("dceae8"))
@@ -365,7 +440,7 @@ func _build_ui() -> void:
 	stack.add_theme_constant_override("separation", 7)
 	scroll.add_child(stack)
 	var title := Label.new()
-	title.text = "M0f · DRIFT & FORMATIONS"
+	title.text = "M1 · ENVIRONMENT SANDBOX" if environment_enabled else "M0f · DRIFT & FORMATIONS"
 	title.add_theme_font_size_override("font_size", 21)
 	stack.add_child(title)
 	preset_label = Label.new()
@@ -381,6 +456,7 @@ func _build_ui() -> void:
 	flight_toggle.button_pressed = flight_enabled
 	flight_toggle.toggled.connect(_set_flight)
 	stack.add_child(flight_toggle)
+	flight_toggle.visible = not environment_enabled
 	backend_picker = OptionButton.new()
 	backend_picker.add_item("CPU reference", 0)
 	backend_picker.add_item("GPU compute comparison", 1)
@@ -388,6 +464,7 @@ func _build_ui() -> void:
 	backend_picker.item_selected.connect(_set_backend)
 	stack.add_child(backend_picker)
 	population_rows.append(backend_picker)
+	backend_picker.visible = not environment_enabled
 	stack.add_child(HSeparator.new())
 	strength_slider = _add_slider(stack, "Lantern influence", 0.25, 1.5, 1.0, 0.05)
 	social_slider = _add_slider(stack, "Social force", 0.0, 1.8, 1.0, 0.05)
@@ -584,8 +661,11 @@ func _rebuild_agents() -> void:
 		glyph_swarm = null
 	if flight_enabled:
 		glyph_swarm = GlyphSwarm.new()
+		glyph_swarm.bloom_hdr_gain = 1.4 if environment_enabled else 1.0
 		add_child(glyph_swarm)
 		glyph_swarm.configure(simulation.positions.size())
+		if environment_enabled:
+			glyph_swarm.set_world_bounds(AABB(Vector3(-terrain_size * 0.5 - 2.0, -5.0, -terrain_size * 0.5 - 2.0), Vector3(terrain_size + 4.0, 90.0, terrain_size + 4.0)))
 		return
 	for index: int in simulation.positions.size():
 		var agent := _create_agent_visual(index)
@@ -700,7 +780,9 @@ func _update_hud() -> void:
 	]
 	hud_label.text += "\n%s · %d Hz · %s %.2f ms · visuals %.2f ms · %d FPS" % [("3D glyphs · ceiling %.1f m" % current_preset.flight_max_height) if flight_enabled else "Ground fallback", roundi(1.0 / active_step), "CPU submit" if _active_backend == "gpu" else "CPU step", sim_step_ms, visual_update_ms, Engine.get_frames_per_second()]
 	if _active_backend == "gpu":
-		hud_label.text += "\nGPU comparison · HUD state is delayed"
+		hud_label.text += "\nGPU flight · HUD state is delayed"
+	if environment_enabled:
+		hud_label.text += " · %dm basin" % terrain_size
 	if not _backend_notice.is_empty():
 		hud_label.text += "\n" + _backend_notice
 	if debug_visible and not simulation.positions.is_empty():
@@ -719,10 +801,13 @@ func _update_footprint() -> void:
 	flight_marker.visible = debug_visible and flight_enabled
 	footprint.visible = debug_visible and not flight_enabled
 	if flight_enabled:
-		flight_marker.position = light_field.flight_target(simulation.min_height, simulation.max_height)
+		var aim := light_field.source_position + light_field.source_direction * 3.0
+		var target_ground := _ground_height(Vector2(aim.x, aim.z))
+		flight_marker.position = light_field.flight_target(simulation.min_height + target_ground, simulation.max_height + target_ground)
 	var target := light_field.ground_target(FlockSimulation.BODY_HEIGHT)
 	footprint.position.x = target.x
 	footprint.position.z = target.y
+	footprint.position.y = _ground_height(target) + 0.045
 	var footprint_material := footprint.material_override as StandardMaterial3D
 	var color := Color(0.95, 0.84, 0.52, 0.15)
 	if lantern.mode == LightField.Mode.BLUE:
@@ -756,8 +841,12 @@ func _reset_run(record_previous: bool) -> void:
 		_write_run_record("reset")
 	if not flight_enabled:
 		fixture_count = mini(fixture_count, 64)
+	_quality_settings["population"] = fixture_count
+	if quality_menu != null:
+		quality_menu.sync_population(fixture_count)
 	for row: Control in population_rows:
 		row.visible = flight_enabled
+	backend_picker.visible = not environment_enabled
 	active_step = 1.0 / 30.0 if flight_enabled and fixture_count >= 256 else FIXED_STEP
 	current_seed = roundi(seed_box.value) if seed_box != null else current_seed
 	var desired_backend := simulation_backend if flight_enabled else "cpu"
@@ -776,9 +865,14 @@ func _reset_run(record_previous: bool) -> void:
 		_active_backend = desired_backend
 		simulation.obstacle_centers = centers
 		simulation.obstacle_radii = radii
-	simulation.world_limit = 27.0
-	simulation.spawn_centers = PackedVector2Array(PATCH_CENTERS)
-	simulation.mushroom_centers = PackedVector2Array(PATCH_CENTERS.slice(0, 1 if fixture_count == 3 else 3)) if current_preset.energy_dynamics else PackedVector2Array()
+	simulation.world_limit = float(terrain_size) * 0.5 if environment_enabled else 27.0
+	if environment_enabled and simulation.has_method("configure_environment"):
+		simulation.configure_environment(world_surface)
+	var active_patches := _patch_centers()
+	simulation.spawn_centers = active_patches
+	simulation.mushroom_centers = active_patches.slice(0, 1) if fixture_count == 3 else active_patches.duplicate()
+	if not current_preset.energy_dynamics:
+		simulation.mushroom_centers = PackedVector2Array()
 	simulation.reset(fixture_count, current_seed, current_preset)
 	_refresh_preset_visuals()
 	_rebuild_agents()
@@ -787,7 +881,8 @@ func _reset_run(record_previous: bool) -> void:
 	visual_update_ms = 0.0
 	elapsed = 0.0
 	mode_times = PackedFloat32Array([0.0, 0.0, 0.0])
-	player.position = Vector3(PATCH_CENTERS[0].x, 0.0, PATCH_CENTERS[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
+	player.position = Vector3(active_patches[0].x, 0.0, active_patches[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
+	player.position.y = _ground_height(Vector2(player.position.x, player.position.z)) + (0.05 if environment_enabled else 0.0)
 	player.reset_look()
 	inspected_agent = 0
 	settings_history = [{"elapsed_seconds": 0.0, "settings": _current_settings()}]
@@ -817,12 +912,16 @@ func _on_waking_changed(enabled: bool) -> void:
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
 func _set_backend(index: int) -> void:
+	if environment_enabled:
+		return
 	_backend_notice = ""
 	_write_run_record("backend_change")
 	simulation_backend = "gpu" if index == 1 else "cpu"
 	_reset_run(false)
 
 func _set_flight(enabled: bool) -> void:
+	if environment_enabled:
+		return
 	_write_run_record("simulation_mode_change")
 	flight_enabled = enabled
 	_reset_run(false)
@@ -830,6 +929,8 @@ func _set_flight(enabled: bool) -> void:
 func _set_fixture(count: int) -> void:
 	_write_run_record("fixture_change")
 	fixture_count = count
+	if quality_menu != null:
+		quality_menu.sync_population(count)
 	if count > 64:
 		flight_enabled = true
 		flight_toggle.set_pressed_no_signal(true)
@@ -852,8 +953,8 @@ func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
 	settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
 
 func _current_settings() -> Dictionary:
-	return {"simulation_backend": _active_backend, "simulation_hz": roundi(1.0 / active_step), "flight_enabled": flight_enabled, "arena_layout": ARENA_LAYOUT, "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
-		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value}
+	return {"simulation_backend": _active_backend, "simulation_hz": roundi(1.0 / active_step), "flight_enabled": flight_enabled, "arena_layout": _arena_layout(), "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
+		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value, "environment_quality": _quality_settings}
 
 func _toggle_top_down() -> void:
 	top_down = not top_down
@@ -899,7 +1000,7 @@ func _load_named_preset(index: int) -> void:
 	fixture_count = int(saved.get("fixture_count", 24))
 	if fixture_count not in [3, 24, 64, 256, 512, 1024, 2048]:
 		fixture_count = 24
-	flight_enabled = bool(saved.get("flight_enabled", false))
+	flight_enabled = true if environment_enabled else bool(saved.get("flight_enabled", false))
 	flight_toggle.set_pressed_no_signal(flight_enabled)
 	goal_slider.set_value_no_signal(current_preset.goal_repulsion_strength)
 	memory_slider.set_value_no_signal(current_preset.arousal_response)
@@ -942,7 +1043,7 @@ func _write_run_record(reason: String) -> void:
 		"preset": current_preset.preset_name,
 		"fixture_count": fixture_count,
 		"flight_enabled": flight_enabled,
-		"arena_layout": ARENA_LAYOUT,
+		"arena_layout": _arena_layout(),
 		"elapsed_seconds": snappedf(elapsed, 0.001),
 		"returns": simulation.score,
 		"returns_snapshot_delayed": _active_backend == "gpu",
@@ -976,7 +1077,13 @@ func _parse_arguments() -> void:
 	var args := OS.get_cmdline_user_args()
 	var index := 0
 	while index < args.size():
-		if args[index] == "--screenshot" and index + 1 < args.size():
+		if args[index] == "--flat-lab":
+			environment_enabled = false
+			index += 1
+		elif args[index] == "--terrain-size" and index + 1 < args.size():
+			terrain_size = 256 if int(args[index + 1]) == 256 else 128
+			index += 2
+		elif args[index] == "--screenshot" and index + 1 < args.size():
 			_screenshot_path = args[index + 1]
 			index += 2
 		elif args[index] == "--screenshot-delay" and index + 1 < args.size():
@@ -994,10 +1101,14 @@ func _parse_arguments() -> void:
 		elif args[index] == "--ground":
 			flight_enabled = false
 			index += 1
+		elif args[index] == "--saved-preset" and index + 1 < args.size():
+			_saved_preset_arg = args[index + 1]
+			index += 2
 		elif args[index] == "--count" and index + 1 < args.size():
 			fixture_count = int(args[index + 1])
 			if fixture_count not in [3, 24, 64, 256, 512, 1024, 2048]:
 				fixture_count = 24
+			_count_override = fixture_count
 			index += 2
 		elif args[index] == "--tiny":
 			fixture_count = 3
@@ -1072,6 +1183,7 @@ func _update_field_overlay() -> void:
 	for x: int in range(-13, 14):
 		for z: int in range(-13, 14):
 			var point := Vector3(light_field.source_position.x + x * 0.8, FlockSimulation.BODY_HEIGHT, light_field.source_position.z + z * 0.8)
+			point.y += _ground_height(Vector2(point.x, point.z))
 			var sample := light_field.sample(point)
 			if sample < 0.035:
 				continue
@@ -1083,7 +1195,7 @@ func _update_field_overlay() -> void:
 				color = Color(1.0, 0.45, 0.15, sample * 0.5)
 			mesh.surface_set_color(color)
 			for corner: Vector2 in [Vector2(-0.18,-0.18), Vector2(0.18,-0.18), Vector2(0.18,0.18), Vector2(-0.18,-0.18), Vector2(0.18,0.18), Vector2(-0.18,0.18)]:
-				mesh.surface_add_vertex(Vector3(point.x + corner.x, 0.065, point.z + corner.y))
+				mesh.surface_add_vertex(Vector3(point.x + corner.x, _ground_height(Vector2(point.x + corner.x, point.z + corner.y)) + 0.065, point.z + corner.y))
 	if begun:
 		mesh.surface_end()
 
@@ -1109,11 +1221,11 @@ func _sync_energy_controls() -> void:
 
 func _refresh_preset_visuals() -> void:
 	(flight_goal_volume.mesh as CylinderMesh).height = current_preset.flight_max_height
-	flight_goal_volume.position.y = current_preset.flight_max_height * 0.5
+	flight_goal_volume.position.y = _ground_height(Vector2.ZERO) + current_preset.flight_max_height * 0.5
 	flight_goal_volume.visible = debug_visible and flight_enabled
 	if goal_halo == null:
 		goal_halo = MeshInstance3D.new()
-		goal_halo.position.y = 0.045
+		goal_halo.position.y = _ground_height(Vector2.ZERO) + 0.045
 		var halo_material := _material(Color(0.9, 0.55, 0.25, 0.2), 1.0)
 		halo_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		halo_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -1126,9 +1238,9 @@ func _refresh_preset_visuals() -> void:
 	goal_halo.mesh = ring
 	goal_halo.visible = debug_visible and current_preset.goal_repulsion_strength > 0.0
 	if mushroom_nodes.is_empty():
-		for center: Vector2 in PATCH_CENTERS:
+		for center: Vector2 in _patch_centers():
 			var patch := MushroomPatch.new()
-			patch.position = Vector3(center.x, 0.0, center.y)
+			patch.position = Vector3(center.x, _ground_height(center), center.y)
 			add_child(patch)
 			mushroom_nodes.append(patch)
 	for index: int in mushroom_nodes.size():
@@ -1136,3 +1248,42 @@ func _refresh_preset_visuals() -> void:
 		patch.visible = current_preset.energy_dynamics and (fixture_count != 3 or index == 0)
 		patch.set_radius(current_preset.mushroom_radius)
 		patch.show_boundary(debug_visible)
+
+
+func _patch_centers() -> PackedVector2Array:
+	return world_surface.patch_centers if world_surface != null else PackedVector2Array(PATCH_CENTERS)
+
+
+func _ground_height(point: Vector2) -> float:
+	return float(world_surface.get_height_at(point)) if world_surface != null else 0.0
+
+
+func _arena_layout() -> String:
+	return "basin-%dm-v2" % terrain_size if environment_enabled else ARENA_LAYOUT
+
+
+func _apply_quality(settings: Dictionary) -> void:
+	_quality_settings = settings.duplicate()
+	get_viewport().scaling_3d_scale = float(settings.get("render_scale", 1.0))
+	var high_shadows := str(settings.get("shadows", "high")) == "high"
+	if night_environment != null:
+		night_environment.glow_enabled = bool(settings.get("bloom", true))
+	if sun_light != null:
+		sun_light.directional_shadow_max_distance = 65.0 if high_shadows else 28.0
+	if lantern != null and lantern.spot != null:
+		lantern.spot.shadow_enabled = high_shadows
+	if terrain_environment != null and terrain_environment.has_method("apply_quality"):
+		terrain_environment.apply_quality(settings)
+	if current_preset != null and elapsed > 0.0:
+		settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
+
+
+func _on_quality_visibility(open: bool) -> void:
+	if open:
+		_menu_was_paused = simulation_paused
+		simulation_paused = true
+	else:
+		simulation_paused = _menu_was_paused
+	player.controls_enabled = not open
+	player.look_enabled = not open and not top_down
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED

@@ -3,6 +3,9 @@ extends RefCounted
 
 enum Mode { CLEAR, BLUE, ORANGE }
 
+var world_surface: Variant
+var environment_obstacles: Array[Dictionary] = []
+
 var source_position: Vector3 = Vector3.ZERO
 var source_direction: Vector3 = Vector3(0.0, -0.35, -0.94).normalized()
 var mode: Mode = Mode.CLEAR
@@ -41,7 +44,10 @@ func sample(world_position: Vector3) -> float:
 		return 0.0
 	var normalized_distance := distance / range_m
 	var radial := 1.0 - smoothstep(0.18, 1.0, normalized_distance)
-	if is_occluded(Vector2(source_position.x, source_position.z), Vector2(world_position.x, world_position.z)):
+	if world_surface != null:
+		if environment_occluded(source_position, world_position):
+			return 0.0
+	elif is_occluded(Vector2(source_position.x, source_position.z), Vector2(world_position.x, world_position.z)):
 		return 0.0
 	return clampf(mode_strength * shutter_openness * angular * radial, 0.0, 1.0)
 
@@ -64,3 +70,21 @@ func flight_target(min_height: float, max_height: float) -> Vector3:
 	var target := source_position + source_direction * 3.0
 	target.y = clampf(target.y, min_height, max_height)
 	return target
+
+
+func environment_occluded(from: Vector3, to: Vector3) -> bool:
+	# Debug overlay only; GPU flight independently samples the shared surface.
+	var from_xz := Vector2(from.x, from.z)
+	var segment := Vector2(to.x - from.x, to.z - from.z)
+	var length_sq := segment.length_squared()
+	for obstacle: Dictionary in environment_obstacles:
+		var t := clampf((obstacle.center - from_xz).dot(segment) / maxf(length_sq, 0.000001), 0.0, 1.0)
+		var nearest := from_xz + segment * t
+		var y := lerpf(from.y, to.y, t)
+		if nearest.distance_squared_to(obstacle.center) < float(obstacle.radius) * float(obstacle.radius) and y >= float(obstacle.bottom) and y <= float(obstacle.top):
+			return true
+	for step: int in range(1, 13):
+		var p := from.lerp(to, float(step) / 13.0)
+		if p.y < float(world_surface.get_height_at(Vector2(p.x, p.z))) + 0.04:
+			return true
+	return false

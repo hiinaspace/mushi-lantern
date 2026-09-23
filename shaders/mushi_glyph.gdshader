@@ -9,6 +9,7 @@ uniform float glyph_render_scale : hint_range(0.25, 2.0) = 1.0;
 uniform bool face_camera = false;
 uniform bool animate_vertices = true;
 uniform float glow_strength : hint_range(0.0, 3.0) = 0.72;
+uniform float bloom_hdr_gain : hint_range(1.0, 2.0) = 1.0;
 
 varying flat float glyph_type;
 varying flat float glyph_seed;
@@ -132,6 +133,10 @@ void fragment() {
 	}
 	vec3 color = glyph_color.rgb;
 	ALBEDO = color * (0.72 + ring * 0.38);
-	EMISSION = color * glow_strength * (0.35 + ring * 0.95);
+	// Keep the accepted flat-lab appearance at gain 1. In the night scene a
+	// restrained near-white ring lifts all energy hues over Mobile's low HDR
+	// glow threshold while the broad interior retains its original color.
+	float hot_ring = clamp((bloom_hdr_gain - 1.0) * 0.625, 0.0, 0.25) * ring;
+	EMISSION = mix(color, vec3(1.0), hot_ring) * glow_strength * (0.35 + ring * 0.95) * bloom_hdr_gain;
 	ALPHA = alpha * glyph_color.a;
 }

@@ -10,7 +10,10 @@ const PARAM_WORDS := 128
 const MAX_AGENTS := 2048
 const GRID_SIDE := 32
 const MAX_OBSTACLES := 16
-const MAX_MUSHROOMS := 16
+const MAX_MUSHROOMS := 32
+const MAX_TERRAIN_OBSTACLES := 1024
+const OBSTACLE_GRID_SIDE := 32
+const OBSTACLES_PER_CELL := 64
 const SHADER_PATH := "res://shaders/flight_compute.glsl"
 
 var state_texture: Texture2DRD = Texture2DRD.new()
@@ -39,6 +42,17 @@ var _sources_buffer: RID
 var _cell_counts_buffer: RID
 var _cell_ids_buffer: RID
 var _formation_choices_buffer: RID
+var _height_texture: RID
+var _terrain_obstacles_buffer: RID
+var _obstacle_index_buffer: RID
+var _environment: RefCounted
+var _terrain_obstacle_count: int = 0
+var _terrain_obstacle_bytes := PackedByteArray()
+var _obstacle_index_bytes := PackedByteArray()
+var _height_bytes := PackedByteArray()
+var _height_side: int = 1
+var _terrain_peak_height: float = 0.0
+var _environment_error: String = ""
 var _texture: RID
 var _uniform_sets: Array[RID] = []
 var _read_slot: int = 0
@@ -51,13 +65,84 @@ var _committed_ids: Dictionary = {}
 var _last_gpu_field_mode: int = -1
 
 
+func configure_environment(surface: RefCounted) -> void:
+	# The surface is immutable for a running population. Call reset after changing it.
+	_environment = surface
+	_terrain_obstacle_count = 0
+	_environment_error = ""
+	if surface == null:
+		_height_side = 1
+		_terrain_peak_height = 0.0
+		var flat := Image.create(1, 1, false, Image.FORMAT_RF)
+		flat.set_pixel(0, 0, Color(0.0, 0.0, 0.0))
+		_height_bytes = flat.get_data()
+		_terrain_obstacle_bytes = PackedFloat32Array().to_byte_array()
+		_obstacle_index_bytes = PackedInt32Array().to_byte_array()
+		return
+	var image: Image = surface.get_height_image()
+	_height_side = image.get_width()
+	_height_bytes = image.get_data()
+	_terrain_peak_height = -INF
+	for height: float in surface.height_samples:
+		_terrain_peak_height = maxf(_terrain_peak_height, height)
+	var obstacles: Array[Dictionary] = surface.get_obstacles()
+	if obstacles.size() > MAX_TERRAIN_OBSTACLES:
+		_environment_error = "Terrain has %d coarse obstacles; GPU capacity is %d" % [obstacles.size(), MAX_TERRAIN_OBSTACLES]
+		push_error(_environment_error)
+		return
+	_terrain_obstacle_count = obstacles.size()
+	var records := PackedFloat32Array()
+	records.resize(MAX_TERRAIN_OBSTACLES * 8)
+	var index := PackedInt32Array()
+	index.resize(OBSTACLE_GRID_SIDE * OBSTACLE_GRID_SIDE * (OBSTACLES_PER_CELL + 1))
+	var cell_size := float(surface.size_m) / float(OBSTACLE_GRID_SIDE)
+	for i: int in obstacles.size():
+		var record: Dictionary = obstacles[i]
+		var center: Vector2 = record.center
+		var radius: float = record.radius
+		var k := i * 8
+		records[k] = center.x
+		records[k + 1] = center.y
+		records[k + 2] = radius
+		records[k + 3] = record.bottom
+		records[k + 4] = record.top
+		# Insert across covered cells, including flight lookahead and body clearance.
+		var reach := radius + 1.8
+		var low := Vector2i(clampi(floori((center.x - reach + surface.size_m * 0.5) / cell_size), 0, OBSTACLE_GRID_SIDE - 1), clampi(floori((center.y - reach + surface.size_m * 0.5) / cell_size), 0, OBSTACLE_GRID_SIDE - 1))
+		var high := Vector2i(clampi(floori((center.x + reach + surface.size_m * 0.5) / cell_size), 0, OBSTACLE_GRID_SIDE - 1), clampi(floori((center.y + reach + surface.size_m * 0.5) / cell_size), 0, OBSTACLE_GRID_SIDE - 1))
+		for z: int in range(low.y, high.y + 1):
+			for x: int in range(low.x, high.x + 1):
+				var base := (z * OBSTACLE_GRID_SIDE + x) * (OBSTACLES_PER_CELL + 1)
+				var count := index[base]
+				if count >= OBSTACLES_PER_CELL:
+					_environment_error = "Terrain obstacle cell %d,%d exceeds %d proxies" % [x, z, OBSTACLES_PER_CELL]
+					push_error(_environment_error)
+					continue
+				index[base] = count + 1
+				index[base + 1 + count] = i
+	_terrain_obstacle_bytes = records.to_byte_array()
+	_obstacle_index_bytes = index.to_byte_array()
+
+
 func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	# A fixed-size population avoids rendering a texture still referenced by a
 	# previous frame. RenderingServer owns the actual RID lifetime.
 	dispose()
 	super.reset(agent_count, new_seed, new_preset)
+	if _height_bytes.is_empty():
+		configure_environment(null)
+	if _environment != null:
+		for i: int in positions.size():
+			var at := positions[i]
+			at.y += _environment.get_height_at(Vector2(at.x, at.z))
+			positions[i] = at
+			previous_positions[i] = at
+		_distribute_terrain_spawn(new_seed)
 	if agent_count < 1 or agent_count > MAX_AGENTS:
 		gpu_error = "GPU flight supports 1–2048 agents"
+		return
+	if not _environment_error.is_empty():
+		gpu_error = _environment_error
 		return
 	if obstacle_centers.size() > MAX_OBSTACLES or mushroom_centers.size() > MAX_MUSHROOMS:
 		gpu_error = "GPU flight fixture exceeds the bounded source count"
@@ -83,6 +168,84 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	RenderingServer.call_on_render_thread(_create_gpu.bind(epoch, spirv, initial, traits, pixels, agent_count))
 
 
+func _distribute_terrain_spawn(new_seed: int) -> void:
+	# Preserve stable IDs and base trait seeding. Every tenth agent is a free,
+	# initially awake flyer; the rest remain evenly assigned to authored patches.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = new_seed ^ 0x53704157
+	var obstacles: Array[Dictionary] = _environment.get_obstacles()
+	var centers := spawn_centers if not spawn_centers.is_empty() else PackedVector2Array(DEFAULT_SPAWN_CENTERS)
+	var half: float = _environment.size_m * 0.5
+	var patch_ordinal := 0
+	for i: int in positions.size():
+		if i % 10 == 9:
+			var found := false
+			for attempt: int in 128:
+				var candidate := Vector2(rng.randf_range(-half, half), rng.randf_range(-half, half))
+				if not _environment.is_playable(candidate, 5.0):
+					continue
+				if candidate.distance_to(goal_position) < goal_radius + 3.0:
+					continue
+				var near_patch := false
+				for center: Vector2 in centers:
+					if candidate.distance_to(center) < maxf(5.0, preset.mushroom_radius + 2.0):
+						near_patch = true
+						break
+				if near_patch:
+					continue
+				var blocked := false
+				for obstacle: Dictionary in obstacles:
+					if candidate.distance_to(obstacle.center) < float(obstacle.radius) + 0.45:
+						blocked = true
+						break
+				if blocked:
+					continue
+				var at := positions[i]
+				at.x = candidate.x
+				at.z = candidate.y
+				at.y = _environment.get_height_at(candidate) + rng.randf_range(0.8, 1.5)
+				positions[i] = at
+				previous_positions[i] = at
+				group_ids[i] = -1
+				found = true
+				break
+			if not found:
+				_environment_error = "Could not place free terrain agent %d away from patches and props" % i
+				return
+			mushroom_exposures[i] = 0.0
+			arousals[i] = clampf(maxf(preset.energy_neutral_target, preset.sleep_threshold + 0.18), 0.0, 1.0)
+		else:
+			# Free-ID selection has a period of ten. Assign patches from a
+			# separate ordinal so 18 patches do not favor odd-numbered groups.
+			var group := patch_ordinal % centers.size()
+			patch_ordinal += 1
+			var previous_group: int = group_ids[i]
+			var at := positions[i]
+			var offset := Vector2(at.x, at.z) - centers[previous_group]
+			var xz := centers[group] + offset
+			var previous_ground: float = _environment.get_height_at(Vector2(at.x, at.z))
+			at = Vector3(xz.x, _environment.get_height_at(xz) + at.y - previous_ground, xz.y)
+			positions[i] = at
+			previous_positions[i] = at
+			group_ids[i] = group
+			if preset.energy_dynamics:
+				var exposure := _terrain_mushroom_exposure(at)
+				mushroom_exposures[i] = exposure
+				arousals[i] = clampf(lerpf(_individual_neutral_target(_energy_phases[i]), preset.blue_energy_target, smoothstep(0.0, 0.7, exposure)), 0.0, 1.0)
+
+
+func _terrain_mushroom_exposure(position: Vector3) -> float:
+	if preset.mushroom_radius <= 0.001:
+		return 0.0
+	var total := 0.0
+	for center: Vector2 in mushroom_centers:
+		var cap := Vector3(center.x, _environment.get_height_at(center) + 0.45, center.y)
+		var distance := position.distance_to(cap)
+		if distance < preset.mushroom_radius:
+			total += 1.0 - smoothstep(preset.mushroom_radius * 0.18, preset.mushroom_radius, distance)
+	return clampf(total, 0.0, 1.0)
+
+
 func dispose() -> void:
 	_epoch += 1
 	gpu_ready = false
@@ -91,6 +254,24 @@ func dispose() -> void:
 	_pending_readback = false
 	state_texture.texture_rd_rid = RID()
 	RenderingServer.call_on_render_thread(_dispose_gpu)
+
+
+func is_finite_and_bounded() -> bool:
+	if _environment == null:
+		return super.is_finite_and_bounded()
+	for i: int in positions.size():
+		var at := positions[i]
+		if not at.is_finite() or not velocities[i].is_finite() or not is_finite(arousals[i]):
+			return false
+		if arousals[i] < 0.0 or arousals[i] > 1.0:
+			return false
+		if absf(at.x) > world_limit + 0.01 or absf(at.z) > world_limit + 0.01:
+			return false
+		if lifecycles[i] == Lifecycle.ACTIVE:
+			var ground: float = _environment.get_height_at(Vector2(at.x, at.z))
+			if at.y < ground + min_height - 0.02 or at.y > _terrain_peak_height + max_height + 8.02:
+				return false
+	return true
 
 
 func step(delta: float, field: LightField, social_multiplier: float = 1.0, wander_multiplier: float = 1.0) -> void:
@@ -269,6 +450,10 @@ func _encode_params(delta: float, field: LightField, social_multiplier: float, w
 	p[71] = preset.cluster_pressure_weight
 	p[72] = float(preset.cluster_target_neighbors)
 	p[73] = 0.0
+	p[74] = 1.0 if _environment != null else 0.0
+	p[75] = float(_environment.size_m) if _environment != null else 1.0
+	p[76] = float(_terrain_obstacle_count)
+	p[77] = _terrain_peak_height + max_height + 8.0
 	# Sources live in separate, fixed-size GPU storage buffer and can be moved
 	# without rebuilding pipeline/uniform sets.
 	return p.to_byte_array()
@@ -320,6 +505,17 @@ func _create_gpu(epoch: int, spirv: RDShaderSPIRV, initial: PackedByteArray, tra
 	_cell_counts_buffer = _rd.storage_buffer_create(GRID_SIDE * GRID_SIDE * 4, PackedByteArray())
 	_cell_ids_buffer = _rd.storage_buffer_create(GRID_SIDE * GRID_SIDE * MAX_AGENTS * 4, PackedByteArray())
 	_formation_choices_buffer = _rd.storage_buffer_create(count * 8, PackedByteArray())
+	_terrain_obstacles_buffer = _rd.storage_buffer_create(MAX_TERRAIN_OBSTACLES * 8 * 4, _terrain_obstacle_bytes if not _terrain_obstacle_bytes.is_empty() else PackedByteArray())
+	_obstacle_index_buffer = _rd.storage_buffer_create(OBSTACLE_GRID_SIDE * OBSTACLE_GRID_SIDE * (OBSTACLES_PER_CELL + 1) * 4, _obstacle_index_bytes if not _obstacle_index_bytes.is_empty() else PackedByteArray())
+	var height_format := RDTextureFormat.new()
+	height_format.width = _height_side
+	height_format.height = _height_side
+	height_format.format = RenderingDevice.DATA_FORMAT_R32_SFLOAT
+	height_format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
+	_height_texture = _rd.texture_create(height_format, RDTextureView.new(), [_height_bytes])
+	if not _height_texture.is_valid():
+		call_deferred("_creation_failed", epoch, "Could not create terrain height texture")
+		return
 	var texture_format := RDTextureFormat.new()
 	texture_format.width = count
 	texture_format.height = 3
@@ -341,6 +537,9 @@ func _create_gpu(epoch: int, spirv: RDShaderSPIRV, initial: PackedByteArray, tra
 		uniforms.append(_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 7, _cell_counts_buffer))
 		uniforms.append(_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 8, _cell_ids_buffer))
 		uniforms.append(_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 9, _formation_choices_buffer))
+		uniforms.append(_uniform(RenderingDevice.UNIFORM_TYPE_IMAGE, 10, _height_texture))
+		uniforms.append(_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 11, _terrain_obstacles_buffer))
+		uniforms.append(_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 12, _obstacle_index_buffer))
 		_uniform_sets.append(_rd.uniform_set_create(uniforms, _shader, 0))
 		if not _uniform_sets[-1].is_valid():
 			call_deferred("_creation_failed", epoch, "Could not create compute uniform set")
@@ -509,19 +708,19 @@ func _apply_events_readback(bytes: PackedByteArray, epoch: int) -> void:
 			score += 1
 
 
-func _free_gpu(rd: RenderingDevice, shader: RID, pipeline: RID, states: Array, params: RID, events: RID, traits: RID, sources: RID, counts: RID, cell_ids: RID, choices: RID, texture: RID, sets: Array) -> void:
+func _free_gpu(rd: RenderingDevice, shader: RID, pipeline: RID, states: Array, params: RID, events: RID, traits: RID, sources: RID, counts: RID, cell_ids: RID, choices: RID, texture: RID, height_texture: RID, terrain_obstacles: RID, obstacle_index: RID, sets: Array) -> void:
 	for rid: RID in sets:
 		if rid.is_valid(): rd.free_rid(rid)
 	for rid: RID in states:
 		if rid.is_valid(): rd.free_rid(rid)
-	for rid: RID in [params, events, traits, sources, counts, cell_ids, choices, texture, pipeline, shader]:
+	for rid: RID in [params, events, traits, sources, counts, cell_ids, choices, texture, height_texture, terrain_obstacles, obstacle_index, pipeline, shader]:
 		if rid.is_valid(): rd.free_rid(rid)
 
 
 func _dispose_gpu() -> void:
 	if _rd == null:
 		return
-	_free_gpu(_rd, _shader, _pipeline, _state_buffers, _params_buffer, _events_buffer, _traits_buffer, _sources_buffer, _cell_counts_buffer, _cell_ids_buffer, _formation_choices_buffer, _texture, _uniform_sets)
+	_free_gpu(_rd, _shader, _pipeline, _state_buffers, _params_buffer, _events_buffer, _traits_buffer, _sources_buffer, _cell_counts_buffer, _cell_ids_buffer, _formation_choices_buffer, _texture, _height_texture, _terrain_obstacles_buffer, _obstacle_index_buffer, _uniform_sets)
 	_rd = null
 	_shader = RID()
 	_pipeline = RID()
@@ -534,4 +733,7 @@ func _dispose_gpu() -> void:
 	_cell_ids_buffer = RID()
 	_formation_choices_buffer = RID()
 	_texture = RID()
+	_height_texture = RID()
+	_terrain_obstacles_buffer = RID()
+	_obstacle_index_buffer = RID()
 	_uniform_sets.clear()
