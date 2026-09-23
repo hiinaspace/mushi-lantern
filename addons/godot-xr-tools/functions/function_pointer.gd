@@ -535,7 +535,7 @@ func _visible_miss() -> void:
 	_update_laser_active_material(false)
 
 	# Hide laser if not set to show always
-	$Laser.visible = show_laser == LaserShow.SHOW
+	$Laser.visible = enabled and show_laser == LaserShow.SHOW
 
 	# Restore laser length if set to collide-length
 	$Laser.mesh.size.z = distance

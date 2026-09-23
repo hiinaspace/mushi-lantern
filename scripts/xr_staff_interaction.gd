@@ -5,6 +5,18 @@ extends RefCounted
 ## XR Tools owns the staff pose while grabbed; StaffTool owns it otherwise.
 const CONTROL_RADIUS := 0.34
 const GRIP_THRESHOLD := 0.65
+const HIGHLIGHT_RING := preload("res://addons/godot-xr-tools/objects/highlight/highlight_ring.tscn")
+
+class ControlHighlight extends Node3D:
+	signal highlight_updated(pickable: Node3D, enabled: bool)
+
+	var hovered := false
+
+	func set_hovered(on: bool) -> void:
+		if hovered == on:
+			return
+		hovered = on
+		highlight_updated.emit(self, on)
 
 var staff: StaffTool
 var rig: MushiXRPlayer
@@ -17,7 +29,9 @@ var _last_shaft_owner: XRController3D
 var _pending_drop: bool = false
 var _tracking_suspended: bool = false
 var _saved_hand_pose: Transform3D = Transform3D.IDENTITY
-var _hint: MeshInstance3D
+var _hint: ControlHighlight
+var _shaft_ring: XRToolsHighlightRing
+var _shaft_highlight_requested := false
 
 
 func configure(tool: StaffTool, player_rig: MushiXRPlayer) -> void:
@@ -26,21 +40,19 @@ func configure(tool: StaffTool, player_rig: MushiXRPlayer) -> void:
 	_controllers = [rig.left_controller, rig.right_controller]
 	_pickups = [rig.left_pickup, rig.right_pickup]
 	staff.dropped.connect(_on_staff_dropped)
-	_hint = MeshInstance3D.new()
+	_shaft_ring = HIGHLIGHT_RING.instantiate() as XRToolsHighlightRing
+	_shaft_ring.name = "ShaftGripHighlight"
+	_shaft_ring.mesh = _shaft_ring.mesh.duplicate()
+	(_shaft_ring.mesh as QuadMesh).size = Vector2(0.17, 0.17)
+	staff.add_child(_shaft_ring)
+	staff.highlight_updated.connect(_on_shaft_highlight_updated)
+	_hint = ControlHighlight.new()
 	_hint.name = "LanternControlGripHint"
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.045
-	mesh.height = 0.09
-	_hint.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(0.34, 0.9, 0.85, 0.8)
-	mat.emission_enabled = true
-	mat.emission = Color(0.34, 0.9, 0.85)
-	mat.emission_energy_multiplier = 0.55
-	_hint.material_override = mat
-	_hint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_hint.visible = false
+	var control_ring := HIGHLIGHT_RING.instantiate() as XRToolsHighlightRing
+	control_ring.name = "ControlGripHighlight"
+	control_ring.mesh = control_ring.mesh.duplicate()
+	(control_ring.mesh as QuadMesh).size = Vector2(0.13, 0.13)
+	_hint.add_child(control_ring)
 	rig.add_child(_hint)
 
 
@@ -93,9 +105,14 @@ func update(_delta: float) -> void:
 		_was_gripped[index] = grip_down
 	if staff.is_picked_up():
 		_last_shaft_owner = staff.get_picked_up_by_controller()
-	_hint.visible = show_hint and _adjust_owner == null
-	if _hint.visible:
+	_hint.set_hovered(show_hint and _adjust_owner == null)
+	if _hint.hovered:
 		_hint.global_position = staff.control_world_position()
+	_shaft_ring.visible = _shaft_highlight_requested and not rig.is_menu_open() and not show_hint and _adjust_owner == null
+
+
+func _on_shaft_highlight_updated(_pickable: XRToolsPickable, enabled: bool) -> void:
+	_shaft_highlight_requested = enabled
 
 
 func _snap_hand(controller: XRController3D) -> void:
@@ -145,3 +162,7 @@ func reset_for_run() -> void:
 	_consumed_grip = [false, false]
 	if rig != null:
 		rig.set_pickups_enabled(true)
+	if _hint != null:
+		_hint.set_hovered(false)
+	if _shaft_ring != null:
+		_shaft_ring.visible = false

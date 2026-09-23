@@ -11,7 +11,13 @@ const FLOAT_TIME := 0.38
 const PARK_HEIGHT := 0.79
 const RECALL_SPEED := 8.0
 const RECALL_OFFSET := Vector3(0.18, -0.10, -0.38)
-const SHUTTER_HAND_TRAVEL_M := 0.10
+const SHUTTER_HAND_TRAVEL_M := 0.08
+const SHUTTER_DEAD_ZONE_M := 0.02
+# The grip pose is forward of the wrist. Tracking this point removes most of
+# the apparent vertical motion caused by tilting the controller in place.
+const WRIST_BACK_OFFSET_M := 0.10
+const FILTER_ENTER_PITCH := 0.30
+const FILTER_CENTER_PITCH := 0.16
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -241,7 +247,7 @@ func begin_adjust(hand_world: Transform3D) -> void:
 		return
 	_adjusting = true
 	_adjust_reference = hand_world.basis.orthonormalized()
-	_adjust_origin_y = hand_world.origin.y
+	_adjust_origin_y = _adjust_wrist_height(hand_world)
 	_adjust_open = lantern.shutter_openness
 	_last_pitch_detent = 0
 	_swing_velocity *= 0.2
@@ -253,13 +259,15 @@ func update_adjust(hand_world: Transform3D) -> void:
 	# Angles come from the captured relative basis, avoiding Euler subtraction at wrap.
 	var pitch := atan2(-relative.z.y, relative.z.z)
 	# Raise/lower the adjusting hand for aperture; pitch now only selects a filter.
-	lantern.set_shutter(clampf(_adjust_open + (hand_world.origin.y - _adjust_origin_y) / SHUTTER_HAND_TRAVEL_M, 0.0, 1.0))
+	var height_delta := _adjust_wrist_height(hand_world) - _adjust_origin_y
+	var shutter_motion := signf(height_delta) * maxf(absf(height_delta) - SHUTTER_DEAD_ZONE_M, 0.0)
+	lantern.set_shutter(clampf(_adjust_open + shutter_motion / SHUTTER_HAND_TRAVEL_M, 0.0, 1.0))
 	var detent := _last_pitch_detent
-	if pitch < (-0.30 if detent == 0 else -0.19):
+	if pitch < (-FILTER_ENTER_PITCH if detent == 0 else -0.19):
 		detent = -1
-	elif pitch > (0.30 if detent == 0 else 0.19):
+	elif pitch > (FILTER_ENTER_PITCH if detent == 0 else 0.19):
 		detent = 1
-	elif absf(pitch) < 0.16:
+	elif absf(pitch) < FILTER_CENTER_PITCH:
 		detent = 0
 	if detent != _last_pitch_detent:
 		_last_pitch_detent = detent
@@ -267,6 +275,9 @@ func update_adjust(hand_world: Transform3D) -> void:
 
 func end_adjust() -> void:
 	_adjusting = false
+
+func _adjust_wrist_height(hand_world: Transform3D) -> float:
+	return (hand_world.origin + hand_world.basis.orthonormalized() * Vector3(0.0, 0.0, WRIST_BACK_OFFSET_M)).y
 
 func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = true) -> void:
 	if not _valid_transform(staff_world):
