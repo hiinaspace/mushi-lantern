@@ -33,4 +33,4 @@ text = "Mushi Lantern"
 
 [node name="Description" type="Label" parent="Panel/Margin/Contents"]
 layout_mode = 2
-text = "Y / B: close menu\nLeft stick: move / strafe\nRight stick: smooth turn\nHold X / A: recall staff\nGrip: take or adjust staff"
+text = "Y / B: close menu\nLeft stick: move / strafe\nRight stick: smooth turn\nHold X / A: recall staff\nGrip shaft: take staff\nGrip lantern: raise/lower hand for shutter; tilt for color"

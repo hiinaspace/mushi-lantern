@@ -11,6 +11,7 @@ const FLOAT_TIME := 0.38
 const PARK_HEIGHT := 0.79
 const RECALL_SPEED := 8.0
 const RECALL_OFFSET := Vector3(0.18, -0.10, -0.38)
+const SHUTTER_HAND_TRAVEL_M := 0.10
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -27,10 +28,10 @@ var _park_target := Transform3D.IDENTITY
 var _last_horizontal_aim := Vector3.FORWARD
 var _adjusting := false
 var _adjust_reference := Basis.IDENTITY
+var _adjust_origin_y := 0.0
 var _adjust_open := 1.0
-var _last_roll_detent := 0
+var _last_pitch_detent := 0
 var _recall_hand := Transform3D.IDENTITY
-var _recall_return := Transform3D.IDENTITY
 var external_pose_owned := false
 
 func _ready() -> void:
@@ -214,7 +215,6 @@ func release_final() -> void:
 func begin_recall(hand_world: Transform3D) -> void:
 	if placement == Placement.HELD or not _valid_transform(hand_world):
 		return
-	_recall_return = _park_target if placement != Placement.PARKED else global_transform
 	_recall_hand = hand_world
 	placement = Placement.RECALL_HOVER
 
@@ -232,7 +232,8 @@ func end_recall() -> void:
 		return
 	_float_origin = global_transform
 	_float_elapsed = 0.0
-	_park_target = _recall_return
+	_capture_aim()
+	_choose_park_target()
 	placement = Placement.FLOATING
 
 func begin_adjust(hand_world: Transform3D) -> void:
@@ -240,8 +241,9 @@ func begin_adjust(hand_world: Transform3D) -> void:
 		return
 	_adjusting = true
 	_adjust_reference = hand_world.basis.orthonormalized()
+	_adjust_origin_y = hand_world.origin.y
 	_adjust_open = lantern.shutter_openness
-	_last_roll_detent = 0
+	_last_pitch_detent = 0
 	_swing_velocity *= 0.2
 
 func update_adjust(hand_world: Transform3D) -> void:
@@ -250,18 +252,18 @@ func update_adjust(hand_world: Transform3D) -> void:
 	var relative := _adjust_reference.inverse() * hand_world.basis.orthonormalized()
 	# Angles come from the captured relative basis, avoiding Euler subtraction at wrap.
 	var pitch := atan2(-relative.z.y, relative.z.z)
-	var roll := atan2(relative.x.y, relative.x.x)
-	lantern.set_shutter(clampf(_adjust_open + pitch / 0.85, 0.0, 1.0), false)
-	var detent := _last_roll_detent
-	if roll < (-0.30 if detent == 0 else -0.19):
+	# Raise/lower the adjusting hand for aperture; pitch now only selects a filter.
+	lantern.set_shutter(clampf(_adjust_open + (hand_world.origin.y - _adjust_origin_y) / SHUTTER_HAND_TRAVEL_M, 0.0, 1.0))
+	var detent := _last_pitch_detent
+	if pitch < (-0.30 if detent == 0 else -0.19):
 		detent = -1
-	elif roll > (0.30 if detent == 0 else 0.19):
+	elif pitch > (0.30 if detent == 0 else 0.19):
 		detent = 1
-	elif absf(roll) < 0.16:
+	elif absf(pitch) < 0.16:
 		detent = 0
-	if detent != _last_roll_detent:
-		_last_roll_detent = detent
-		lantern.request_mode(LightField.Mode.CLEAR if detent == 0 else LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE)
+	if detent != _last_pitch_detent:
+		_last_pitch_detent = detent
+		lantern.set_mode(LightField.Mode.CLEAR if detent == 0 else LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE)
 
 func end_adjust() -> void:
 	_adjusting = false

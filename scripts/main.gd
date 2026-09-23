@@ -452,7 +452,10 @@ func _build_xr_player() -> void:
 	player.set_process_unhandled_input(false)
 	player.collision_layer = 0
 	player.collision_mask = 0
+	xr_player.current = true
+	xr_player.camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	print("MUSHI_XR_CAMERA current=%s origin_current=%s" % [get_viewport().get_camera_3d().get_path(), xr_player.is_current()])
 	xr_player.recall_requested.connect(_on_xr_recall_requested)
 	xr_player.recall_released.connect(_on_xr_recall_released)
 	staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)

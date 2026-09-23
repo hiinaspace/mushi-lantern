@@ -47,16 +47,28 @@ func _build_visual() -> void:
 	handle.material_override = _material(Color("5a4030"), 0.15)
 	add_child(handle)
 
-	var cage := MeshInstance3D.new()
-	var cage_mesh := CylinderMesh.new()
-	cage_mesh.top_radius = 0.18
-	cage_mesh.bottom_radius = 0.24
-	cage_mesh.height = 0.32
-	cage.mesh = cage_mesh
-	cage.rotation.x = PI * 0.5
-	cage.position = Vector3(0.0, 0.0, -0.11)
-	cage.material_override = _material(Color("342c35"), 0.45)
-	add_child(cage)
+	var cage_material := _material(Color("514751"), 0.12)
+	for ring_z: float in [0.03, -0.34]:
+		var rim := MeshInstance3D.new()
+		var rim_mesh := TorusMesh.new()
+		rim_mesh.inner_radius = 0.16
+		rim_mesh.outer_radius = 0.19
+		rim.mesh = rim_mesh
+		rim.rotation.x = PI * 0.5
+		rim.position.z = ring_z
+		rim.material_override = cage_material
+		add_child(rim)
+	for spoke: Vector2 in [Vector2(0.17, 0.0), Vector2(-0.17, 0.0), Vector2(0.0, 0.17), Vector2(0.0, -0.17)]:
+		var rib := MeshInstance3D.new()
+		var rib_mesh := CylinderMesh.new()
+		rib_mesh.top_radius = 0.014
+		rib_mesh.bottom_radius = 0.014
+		rib_mesh.height = 0.37
+		rib.mesh = rib_mesh
+		rib.rotation.x = PI * 0.5
+		rib.position = Vector3(spoke.x, spoke.y, -0.155)
+		rib.material_override = cage_material
+		add_child(rib)
 
 	filter_mesh = MeshInstance3D.new()
 	var filter_sphere := SphereMesh.new()
