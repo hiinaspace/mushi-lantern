@@ -61,6 +61,10 @@ func _run() -> void:
 	for frame: int in 150:
 		staff.advance(1.0 / 60.0)
 	assert((staff._swing.global_basis * Vector3.DOWN).dot(Vector3.DOWN) > 0.92)
+	# Equal sideways and forward waves should throw the lantern less sideways.
+	var side_peak := _wave_peak(staff, Vector3.RIGHT)
+	var forward_peak := _wave_peak(staff, Vector3.FORWARD)
+	assert(side_peak < forward_peak * 0.8)
 	staff.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0)), 1.0, false)
 	staff.lantern.set_mode(LightField.Mode.CLEAR)
 	staff.begin_adjust(Transform3D.IDENTITY)
@@ -103,8 +107,19 @@ func _run() -> void:
 	staff.end_adjust()
 	assert(staff.lantern.mode == LightField.Mode.BLUE)
 	staff.begin_adjust(Transform3D.IDENTITY)
-	staff.update_adjust(Transform3D(Basis(Vector3.UP, -0.20), Vector3.ZERO))
+	staff.update_adjust(Transform3D(Basis(Vector3.UP, -0.30), Vector3.ZERO))
 	staff.end_adjust()
 	assert(staff.lantern.mode == LightField.Mode.CLEAR)
 	print("STAFF_TOOL_SMOKE_OK")
 	get_tree().quit()
+
+func _wave_peak(staff: StaffTool, direction: Vector3) -> float:
+	staff.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0)))
+	var peak := 0.0
+	for frame: int in 45:
+		var seconds := float(frame + 1) / 60.0
+		var offset := direction * (0.05 * sin(TAU * 2.0 * seconds))
+		staff.set_held_world_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0) + offset))
+		staff.advance(1.0 / 60.0)
+		peak = maxf(peak, absf(staff._swing_angle.y if direction == Vector3.RIGHT else staff._swing_angle.x))
+	return peak

@@ -18,9 +18,12 @@ const SHUTTER_DEAD_ZONE_M := 0.02
 # The grip pose is forward of the wrist. Tracking this point removes most of
 # the apparent vertical motion caused by tilting the controller in place.
 const WRIST_BACK_OFFSET_M := 0.10
-const FILTER_STEP_YAW := 0.30
-const FILTER_ENTER_YAW := 0.17
-const FILTER_EXIT_YAW := 0.13
+const FILTER_STEP_YAW := 0.55
+const FILTER_ENTER_YAW := 0.30
+const FILTER_EXIT_YAW := 0.25
+const LATERAL_SWING_ACCEL_SCALE := 0.14
+const FORWARD_SWING_ACCEL_SCALE := 0.28
+const VERTICAL_SWING_ACCEL_SCALE := 0.28
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -452,9 +455,16 @@ func _update_swing(dt: float) -> void:
 		velocity = Vector3.ZERO
 		_previous_velocity = Vector3.ZERO
 	var acceleration := (velocity - _previous_velocity) / dt
-	# A hanging lantern seeks world down, even when the staff rolls. Acceleration
-	# briefly tilts the effective gravity vector and injects a visible pendulum swing.
-	var effective_down := Vector3.DOWN * 9.81 - acceleration * 0.35
+	# A hanging lantern seeks world down, even when the staff rolls. The side
+	# response is lighter than fore/aft motion so a sideways wave does not throw
+	# the lantern out as far; damping still lets it settle over a second or two.
+	var local_accel := global_basis.inverse() * acceleration
+	var swing_accel := global_basis * Vector3(
+		local_accel.x * LATERAL_SWING_ACCEL_SCALE,
+		local_accel.y * VERTICAL_SWING_ACCEL_SCALE,
+		local_accel.z * FORWARD_SWING_ACCEL_SCALE
+	)
+	var effective_down := Vector3.DOWN * 9.81 - swing_accel
 	var local_down := global_basis.inverse() * effective_down.normalized()
 	var parked_pitch := -0.25 if placement == Placement.PARKED or placement == Placement.SETTLING else 0.0
 	var target := Vector2(

@@ -8,6 +8,9 @@ const BLIND_COUNT := 7
 const COOKIE_SIZE := 64
 const COOKIE_STEPS := 16
 const HOUSING_SCALE := 0.7
+const DIAL_RANGE_YAW := 0.55
+const DIAL_GLYPH_ANGLE := 0.92
+const COLOR_SETTLE_TIME := 0.42
 
 var mode: LightField.Mode = LightField.Mode.BLUE
 var shutter_openness: float = 1.0
@@ -19,17 +22,23 @@ var night_vision: float = 1.0
 var _adaptation := NightAdaptation.new()
 var _filter_material: StandardMaterial3D
 var _glyph_materials: Array[StandardMaterial3D] = []
+var _dial_glyph_materials: Array[StandardMaterial3D] = []
 var _aperture_lines: Array[MeshInstance3D] = []
 var _front_strips: Array[MeshInstance3D] = []
 var _visual_root: Node3D
 var _dial: Node3D
+var _last_dial_glyph_index := -1
 var _dial_preview := 0.0
 var _dial_preview_active := false
+var _settling_split := false
 var _dial_preview_amount := 0.0
 var _dial_preview_source: LightField.Mode = LightField.Mode.BLUE
 var _dial_preview_target: LightField.Mode = LightField.Mode.CLEAR
-var _settle_from_color := Color.WHITE
 var _settle_elapsed := 1.0
+var _settle_from_amount := 0.0
+var _settle_to_amount := 0.0
+var _settle_from_dial := 0.0
+var _settle_to_dial := 0.0
 var _last_visual_mode: int = -1
 var _last_visual_openness: float = -1.0
 var _requested_mode: LightField.Mode = LightField.Mode.BLUE
@@ -100,6 +109,7 @@ func _build_visual() -> void:
 	_add_status_face("Rear", Vector3(0.0, 0.0, 0.126), 0.0, rear_face, dark, 1.0)
 	_add_status_face("Left", Vector3(-0.182, 0.0, 0.0), -PI * 0.5, rear_face, dark, 0.88)
 	_add_status_face("Right", Vector3(0.182, 0.0, 0.0), PI * 0.5, rear_face, dark, 0.88)
+	_build_radial_dial(metal, dark)
 	# The front retains a very small mode tell even with the shutter fully closed.
 	for i: int in 3:
 		_box("FrontMode%d" % i, Vector3(0.019, 0.008, 0.005), Vector3((float(i) - 1.0) * 0.028, -0.192, -0.148), _glyph_materials[i])
@@ -126,16 +136,49 @@ func _add_status_face(label: String, at: Vector3, yaw: float, panel: Material, t
 	_box(label + "ApertureTrack", Vector3(0.012, 0.105, 0.004), Vector3(0.10, -0.040, 0.006), track, face)
 	var line := _box(label + "ApertureLevel", Vector3(0.009, 0.10, 0.005), Vector3(0.10, -0.040, 0.010), _material(Color("f8e5b2"), 1.3), face)
 	_aperture_lines.append(line)
-	if label == "Rear":
-		_dial = Node3D.new()
-		_dial.name = "ColorDial"
-		_dial.position = Vector3(0.0, -0.125, 0.008)
-		face.add_child(_dial)
-		var disc := _box("DialBody", Vector3(0.046, 0.046, 0.008), Vector3.ZERO, _material(Color("7c746a"), 0.0), _dial)
-		disc.rotation.z = PI * 0.25
-		_box("DialPointer", Vector3(0.007, 0.029, 0.004), Vector3(0.0, 0.018, 0.007), _material(Color("f8e5b2"), 0.65), _dial)
-		for i: int in 3:
-			_box("DialDetent%d" % i, Vector3(0.009, 0.006, 0.004), Vector3((float(i) - 1.0) * 0.020, -0.099 if i != 1 else -0.090, 0.013), _glyph_materials[i], face)
+
+func _build_radial_dial(metal: Material, dark: Material) -> void:
+	# A shallow horizontal wheel leaves the housing compact and reads from above.
+	_dial = Node3D.new()
+	_dial.name = "RadialColorDial"
+	_dial.position.y = 0.222
+	_visual_root.add_child(_dial)
+	var radius := 0.235
+	for segment: int in 16:
+		var angle := TAU * float(segment) / 16.0
+		var rim := _box("DialRim%02d" % segment, Vector3(0.075, 0.008, 0.012), Vector3(sin(angle) * radius, 0.0, cos(angle) * radius), dark, _dial)
+		rim.rotation.y = angle
+	for i: int in 3:
+		var glyph_angle := (float(i) - 1.0) * DIAL_GLYPH_ANGLE
+		var glyph := Node3D.new()
+		glyph.name = "DialGlyph%s" % ["B", "C", "O"][i]
+		glyph.position = Vector3(sin(glyph_angle) * radius, 0.007, cos(glyph_angle) * radius)
+		glyph.rotation.y = glyph_angle
+		_dial.add_child(glyph)
+		var glyph_material := _material(_mode_color(LightField.Mode.BLUE if i == 0 else LightField.Mode.CLEAR if i == 1 else LightField.Mode.ORANGE), 0.0)
+		glyph_material.emission_enabled = true
+		_dial_glyph_materials.append(glyph_material)
+		_build_dial_letter(i, glyph, glyph_material)
+	# Fixed notch marks the reading position at the rear of the wheel.
+	_box("DialReadNotch", Vector3(0.025, 0.010, 0.015), Vector3(0.0, 0.222, radius + 0.025), metal)
+
+func _build_dial_letter(letter_index: int, glyph: Node3D, material: Material) -> void:
+	# Strokes lie in XZ, with their tops toward the lantern center.
+	var stroke := 0.007
+	if letter_index == 0:
+		_box("BStem", Vector3(stroke, 0.004, 0.046), Vector3(-0.017, 0.0, 0.0), material, glyph)
+		for row: int in 3:
+			_box("BBar%d" % row, Vector3(0.031, 0.004, stroke), Vector3(0.0, 0.0, (float(row) - 1.0) * 0.020), material, glyph)
+		for row: int in 2:
+			_box("BCurve%d" % row, Vector3(stroke, 0.004, 0.020), Vector3(0.017, 0.0, (float(row) - 0.5) * 0.020), material, glyph)
+	elif letter_index == 1:
+		_box("CStem", Vector3(stroke, 0.004, 0.046), Vector3(-0.017, 0.0, 0.0), material, glyph)
+		for row: int in 2:
+			_box("CBar%d" % row, Vector3(0.034, 0.004, stroke), Vector3(0.0, 0.0, (float(row) - 0.5) * 0.040), material, glyph)
+	else:
+		for side: int in 2:
+			_box("OSide%d" % side, Vector3(stroke, 0.004, 0.046), Vector3((float(side) - 0.5) * 0.034, 0.0, 0.0), material, glyph)
+			_box("OBar%d" % side, Vector3(0.034, 0.004, stroke), Vector3(0.0, 0.0, (float(side) - 0.5) * 0.040), material, glyph)
 
 func _box(label: String, size: Vector3, at: Vector3, material: Material, parent: Node3D = null) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
@@ -185,21 +228,22 @@ func _update_cookie() -> void:
 			var projector_color := Color.WHITE
 			if split_active:
 				# A colored filter slides across the lens before the mode detent changes.
-				var target_weight := smoothstep(1.0 - split_fraction - 0.07, 1.0 - split_fraction + 0.07, u)
+				var target_weight := smoothstep(1.0 - split_fraction - 0.018, 1.0 - split_fraction + 0.018, u)
 				projector_color = source_color.lerp(target_color, target_weight)
 			image.set_pixel(x, y, projector_color * (intensity * edge))
-	if _projector_textures.size() >= 256:
-		_projector_textures.clear()
+	# The finite shutter/preview quantization has fewer than 600 reachable
+	# textures. Keep them for this lantern's lifetime: evicting a texture while
+	# the spotlight still references it can invalidate Godot's projector atlas.
 	_projector_textures[key] = ImageTexture.create_from_image(image)
 	spot.light_projector = _projector_textures[key]
 	_projector_key = key
 
 func _preview_split_step() -> int:
-	return clampi(roundi(_dial_preview_amount * COOKIE_STEPS), 0, COOKIE_STEPS) if _dial_preview_active else 0
+	return clampi(roundi(_dial_preview_amount * COOKIE_STEPS), 0, COOKIE_STEPS) if _dial_preview_active or _settling_split else 0
 
 func _preview_has_rgb_split() -> bool:
 	var step := _preview_split_step()
-	return _dial_preview_active and _dial_preview_source != _dial_preview_target and step > 0 and step < COOKIE_STEPS
+	return (_dial_preview_active or _settling_split) and _dial_preview_source != _dial_preview_target and step > 0 and step < COOKIE_STEPS
 
 func _mode_color(filter_mode: LightField.Mode) -> Color:
 	if filter_mode == LightField.Mode.BLUE:
@@ -210,46 +254,53 @@ func _mode_color(filter_mode: LightField.Mode) -> Color:
 
 func set_mode(new_mode: LightField.Mode) -> void:
 	_transition_phase = 0
+	if not _dial_preview_active:
+		_settling_split = false
+		_settle_elapsed = 1.0
 	mode = new_mode
 	_requested_mode = new_mode
 	_apply_visual()
 	changed.emit()
 
 func begin_dial_preview() -> void:
+	_settling_split = false
 	_dial_preview_active = true
 	_dial_preview_amount = 0.0
 	_settle_elapsed = 1.0
 	set_dial_preview(_mode_dial_position(mode))
 
 func _mode_dial_position(filter_mode: LightField.Mode) -> float:
-	return -0.30 if filter_mode == LightField.Mode.BLUE else 0.30 if filter_mode == LightField.Mode.ORANGE else 0.0
+	return -DIAL_RANGE_YAW if filter_mode == LightField.Mode.BLUE else DIAL_RANGE_YAW if filter_mode == LightField.Mode.ORANGE else 0.0
 
 func set_dial_preview(dial_position: float) -> void:
-	_dial_preview = clampf(dial_position, -0.30, 0.30)
+	_dial_preview = clampf(dial_position, -DIAL_RANGE_YAW, DIAL_RANGE_YAW)
 	if _dial_preview_active:
 		# The dial slides through adjacent blue, clear, and orange filters.
 		if _dial_preview <= 0.0:
 			_dial_preview_source = LightField.Mode.BLUE
 			_dial_preview_target = LightField.Mode.CLEAR
-			_dial_preview_amount = (_dial_preview + 0.30) / 0.30
+			_dial_preview_amount = (_dial_preview + DIAL_RANGE_YAW) / DIAL_RANGE_YAW
 		else:
 			_dial_preview_source = LightField.Mode.CLEAR
 			_dial_preview_target = LightField.Mode.ORANGE
-			_dial_preview_amount = _dial_preview / 0.30
+			_dial_preview_amount = _dial_preview / DIAL_RANGE_YAW
 	if _dial != null:
-		_dial.rotation.z = -_dial_preview * 1.9
+		_dial.rotation.y = -_dial_preview / DIAL_RANGE_YAW * DIAL_GLYPH_ANGLE
 	if _dial_preview_active:
 		_apply_visual()
 
 func end_dial_preview() -> void:
 	if not _dial_preview_active:
 		return
-	_settle_from_color = _mode_color(_dial_preview_source).lerp(_mode_color(_dial_preview_target), _dial_preview_amount)
+	_settle_from_amount = _dial_preview_amount
+	_settle_to_amount = 0.0 if mode == _dial_preview_source else 1.0
+	_settle_from_dial = _dial_preview
+	_settle_to_dial = _mode_dial_position(mode)
 	_settle_elapsed = 0.0
 	_dial_preview_active = false
-	_dial_preview_amount = 0.0
-	# Return to the selected color when the adjusting hand releases.
-	set_dial_preview(_mode_dial_position(mode))
+	_settling_split = not is_equal_approx(_settle_from_amount, _settle_to_amount)
+	if not _settling_split:
+		set_dial_preview(_settle_to_dial)
 	_apply_visual()
 
 func request_mode(new_mode: LightField.Mode) -> void:
@@ -316,7 +367,15 @@ func forward_direction() -> Vector3:
 func advance_flame(delta: float) -> void:
 	var dt := clampf(delta, 0.0, 0.1)
 	_flame_time += dt
-	_settle_elapsed = minf(_settle_elapsed + dt / 0.18, 1.0)
+	if _settling_split:
+		_settle_elapsed = minf(_settle_elapsed + dt / COLOR_SETTLE_TIME, 1.0)
+		var settle_weight := smoothstep(0.0, 1.0, _settle_elapsed)
+		_dial_preview_amount = lerpf(_settle_from_amount, _settle_to_amount, settle_weight)
+		_dial_preview = lerpf(_settle_from_dial, _settle_to_dial, settle_weight)
+		_dial.rotation.y = -_dial_preview / DIAL_RANGE_YAW * DIAL_GLYPH_ANGLE
+		if _settle_elapsed >= 1.0:
+			_settling_split = false
+			set_dial_preview(_settle_to_dial)
 	var wave := sin(_flame_time * 17.0) * 0.48 + sin(_flame_time * 29.0 + 1.7) * 0.32 + sin(_flame_time * 43.0 + 0.4) * 0.20
 	_flame_gain = 1.0 + wave * 0.075
 	spot.position = Vector3(
@@ -360,16 +419,19 @@ func _apply_visual() -> void:
 		var active_glyph := 0 if mode == LightField.Mode.BLUE else 2 if mode == LightField.Mode.ORANGE else 1
 		for i: int in _glyph_materials.size():
 			_glyph_materials[i].emission_energy_multiplier = 1.8 if i == active_glyph else 0.045
-		if not _dial_preview_active:
+		if not _dial_preview_active and not _settling_split:
 			set_dial_preview(_mode_dial_position(mode))
 		_last_visual_mode = int(mode)
+	var centered_glyph := 0 if _dial_preview < -DIAL_RANGE_YAW * 0.5 else 2 if _dial_preview > DIAL_RANGE_YAW * 0.5 else 1
+	if centered_glyph != _last_dial_glyph_index:
+		for i: int in _dial_glyph_materials.size():
+			_dial_glyph_materials[i].emission_energy_multiplier = 2.3 if i == centered_glyph else 0.09
+		_last_dial_glyph_index = centered_glyph
 	var split_active := _preview_has_rgb_split()
 	if split_active:
 		spot.light_color = Color.WHITE
-	elif _dial_preview_active:
+	elif _dial_preview_active or _settling_split:
 		spot.light_color = _mode_color(_dial_preview_target if _dial_preview_amount >= 0.5 else _dial_preview_source)
-	elif _settle_elapsed < 1.0:
-		spot.light_color = _settle_from_color.lerp(color, smoothstep(0.0, 1.0, _settle_elapsed))
 	else:
 		spot.light_color = color
 	spot.light_energy = base_energy * shutter_openness * _adaptation.lantern_gain() * _flame_gain
