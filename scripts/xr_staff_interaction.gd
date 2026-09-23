@@ -98,7 +98,6 @@ func update(_delta: float) -> void:
 				_consumed_grip[index] = true
 				_saved_hand_pose = (controller.get_node("Hand") as Node3D).transform
 				staff.begin_adjust(controller.global_transform)
-				rig.set_interaction_lock(true)
 				_snap_hand(controller)
 		else:
 			pickup.enabled = tracked and not rig.is_menu_open() and not _consumed_grip[index]
@@ -128,7 +127,6 @@ func _end_adjust() -> void:
 		hand.transform = _saved_hand_pose
 	staff.end_adjust()
 	_adjust_owner = null
-	rig.set_interaction_lock(false)
 
 
 func _on_staff_dropped(_pickable: XRToolsPickable) -> void:

@@ -7,6 +7,7 @@ signal menu_toggled(open: bool)
 
 @export var recall_hold_seconds: float = 0.5
 @export var snap_turn: bool = false
+@export_range(0.0, 0.5, 0.01) var locomotion_deadzone: float = 0.22
 
 @onready var camera: XRCamera3D = $Camera
 @onready var left_controller: XRController3D = $LeftController
@@ -25,6 +26,8 @@ var world_surface: Variant
 var _menu_open: bool = false
 var _interaction_lock: bool = false
 var _movement_neutral_required: bool = false
+var _active_move_deadzone: float = 0.22
+var _active_turn_deadzone: float = 0.22
 var _recall_pressed_at: Dictionary = {}
 var _recall_active: Dictionary = {}
 
@@ -43,6 +46,7 @@ func _ready() -> void:
 	if xr_active:
 		print("MUSHI_XR_ACTIVE: OpenXR player rig initialized")
 	_body.enabled = xr_active
+	_update_locomotion_deadzone()
 	_turn.turn_mode = XRToolsMovementTurn.TurnMode.SNAP if snap_turn else XRToolsMovementTurn.TurnMode.SMOOTH
 	left_controller.button_pressed.connect(_on_button_pressed.bind(left_controller))
 	left_controller.button_released.connect(_on_button_released.bind(left_controller))
@@ -55,7 +59,7 @@ func _process(_delta: float) -> void:
 	if not xr_active:
 		return
 	if _movement_neutral_required and not _menu_open and not _interaction_lock:
-		if left_controller.get_vector2("primary").length() < 0.16 and absf(right_controller.get_vector2("primary").x) < 0.16:
+		if left_controller.get_vector2("primary").length() <= _active_move_deadzone and absf(right_controller.get_vector2("primary").x) <= _active_turn_deadzone:
 			_movement_neutral_required = false
 			_update_movement()
 	var now: float = Time.get_ticks_msec() / 1000.0
@@ -128,4 +132,15 @@ func reset_pose(world_position: Vector3) -> void:
 func set_snap_turn(enabled: bool) -> void:
 	snap_turn = enabled
 	if is_node_ready():
+		_update_locomotion_deadzone()
 		_turn.turn_mode = XRToolsMovementTurn.TurnMode.SNAP if enabled else XRToolsMovementTurn.TurnMode.SMOOTH
+
+func _update_locomotion_deadzone() -> void:
+	_active_move_deadzone = maxf(
+		locomotion_deadzone,
+		maxf(XRToolsUserSettings.x_axis_dead_zone, XRToolsUserSettings.y_axis_dead_zone))
+	_active_turn_deadzone = maxf(locomotion_deadzone, XRToolsUserSettings.x_axis_dead_zone)
+	if snap_turn:
+		_active_turn_deadzone = maxf(_active_turn_deadzone, XRTools.get_snap_turning_deadzone())
+	_move.stick_deadzone = _active_move_deadzone
+	_turn.stick_deadzone = _active_turn_deadzone

@@ -24,6 +24,10 @@ extends XRToolsMovementProvider
 ## Input action for movement direction
 @export var input_action : String = "primary"
 
+## Radial thumbstick deadzone. Inputs inside this radius are ignored, with
+## the remaining range rescaled to preserve full speed at the stick edge.
+@export_range(0.0, 0.5, 0.01) var stick_deadzone : float = 0.18
+
 
 # Controller node
 var _controller : XRController3D
@@ -50,8 +54,14 @@ func physics_movement(_delta: float, player_body: XRToolsPlayerBody, _disabled: 
 	if not _controller or not _controller.get_is_active():
 		return
 
-	## get input action with deadzone correction applied
-	var dz_input_action = XRToolsUserSettings.get_adjusted_vector2(_controller, input_action)
+	# Apply a radial deadzone so small controller drift cannot move the player
+	# and diagonal movement keeps a consistent deadzone in every direction.
+	var input_vector: Vector2 = _controller.get_vector2(input_action)
+	var input_length: float = input_vector.length()
+	var dz_input_action := Vector2.ZERO
+	if input_length > stick_deadzone:
+		dz_input_action = input_vector / input_length * clampf(
+			(input_length - stick_deadzone) / (1.0 - stick_deadzone), 0.0, 1.0)
 
 	player_body.ground_control_velocity.y += dz_input_action.y * max_speed
 	if strafe:

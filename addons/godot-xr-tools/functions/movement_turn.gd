@@ -35,6 +35,9 @@ enum TurnMode {
 ## Our directional input
 @export var input_action : String = "primary"
 
+## Thumbstick deadzone for snap and smooth turning.
+@export_range(0.0, 0.5, 0.01) var stick_deadzone : float = 0.18
+
 # Turn step accumulator
 var _turn_step : float = 0.0
 
@@ -64,9 +67,7 @@ func physics_movement(delta: float, player_body: XRToolsPlayerBody, _disabled: b
 	if not _controller or not _controller.get_is_active():
 		return
 
-	var deadzone = 0.1
-	if _snap_turning():
-		deadzone = XRTools.get_snap_turning_deadzone()
+	var deadzone: float = stick_deadzone
 
 	# Read the left/right joystick axis
 	var left_right := _controller.get_vector2(input_action).x
@@ -77,7 +78,8 @@ func physics_movement(delta: float, player_body: XRToolsPlayerBody, _disabled: b
 
 	# Handle smooth rotation
 	if !_snap_turning():
-		left_right -= deadzone * sign(left_right)
+		left_right = sign(left_right) * clampf(
+			(absf(left_right) - deadzone) / (1.0 - deadzone), 0.0, 1.0)
 		player_body.rotate_player(smooth_turn_speed * delta * left_right)
 		return
 

@@ -40,13 +40,27 @@ func _run() -> void:
 	assert(is_equal_approx(staff.lantern.shutter_openness, 1.0))
 	staff.update_adjust(Transform3D(Basis.IDENTITY, Vector3(0.0, -0.068, 0.0)))
 	assert(is_equal_approx(staff.lantern.shutter_openness, 0.4))
-	var tilted := Basis(Vector3.RIGHT, 0.5)
+	# Pitching around an estimated wrist should leave both controls unchanged.
+	var pitched := Basis(Vector3.RIGHT, 0.5)
+	var pitch_wrist_offset_y: float = (pitched * Vector3(0.0, 0.0, StaffTool.WRIST_BACK_OFFSET_M)).y
+	staff.update_adjust(Transform3D(pitched, Vector3(0.0, -0.068 - pitch_wrist_offset_y, 0.0)))
+	assert(staff.lantern.mode == LightField.Mode.BLUE)
+	assert(is_equal_approx(staff.lantern.shutter_openness, 0.4))
+	var tilted := Basis(Vector3.UP, -0.5)
 	var wrist_offset_y: float = (tilted * Vector3(0.0, 0.0, StaffTool.WRIST_BACK_OFFSET_M)).y
 	staff.update_adjust(Transform3D(tilted, Vector3(0.0, -0.068 - wrist_offset_y, 0.0)))
 	assert(staff.lantern.mode == LightField.Mode.ORANGE)
 	assert(is_equal_approx(staff.lantern.shutter_openness, 0.4))
 	staff.update_adjust(Transform3D(Basis.IDENTITY, Vector3(0.0, -0.068, 0.0)))
 	assert(staff.lantern.mode == LightField.Mode.CLEAR)
+	var blue_hand := Transform3D(Basis(Vector3.UP, 0.5), Vector3(0.0, -0.068, 0.0))
+	staff.update_adjust(blue_hand)
+	assert(staff.lantern.mode == LightField.Mode.BLUE)
+	var walked_and_turned := Transform3D(Basis(Vector3.UP, 0.4), Vector3(2.0, 0.3, -1.0))
+	staff.global_transform = walked_and_turned * staff.global_transform
+	staff.update_adjust(walked_and_turned * blue_hand)
+	assert(staff.lantern.mode == LightField.Mode.BLUE)
+	assert(is_equal_approx(staff.lantern.shutter_openness, 0.4))
 	staff.end_adjust()
 	assert(staff.placement == StaffTool.Placement.PARKED)
 	print("STAFF_TOOL_SMOKE_OK")

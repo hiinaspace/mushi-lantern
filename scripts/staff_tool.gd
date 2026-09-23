@@ -16,8 +16,8 @@ const SHUTTER_DEAD_ZONE_M := 0.02
 # The grip pose is forward of the wrist. Tracking this point removes most of
 # the apparent vertical motion caused by tilting the controller in place.
 const WRIST_BACK_OFFSET_M := 0.10
-const FILTER_ENTER_PITCH := 0.30
-const FILTER_CENTER_PITCH := 0.16
+const FILTER_ENTER_YAW := 0.30
+const FILTER_CENTER_YAW := 0.16
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -34,9 +34,10 @@ var _park_target := Transform3D.IDENTITY
 var _last_horizontal_aim := Vector3.FORWARD
 var _adjusting := false
 var _adjust_reference := Basis.IDENTITY
+var _adjust_yaw_uses_right := false
 var _adjust_origin_y := 0.0
 var _adjust_open := 1.0
-var _last_pitch_detent := 0
+var _last_yaw_detent := 0
 var _recall_hand := Transform3D.IDENTITY
 var external_pose_owned := false
 
@@ -53,7 +54,7 @@ func _ready() -> void:
 	super._ready()
 	set_process(false)
 	_build_visual()
-	_previous_position = global_position
+	_previous_position = _swing.global_position
 	_capture_aim()
 
 func pick_up(by: Node3D) -> void:
@@ -120,7 +121,7 @@ func _build_visual() -> void:
 	add_child(_swing)
 	lantern = Lantern.new()
 	lantern.name = "Lantern"
-	lantern.position = Vector3(0.0, -0.25, 0.0)
+	lantern.position = Vector3(0.0, -0.39, 0.0)
 	_swing.add_child(lantern)
 
 func _build_grab_points() -> void:
@@ -195,13 +196,13 @@ func release_external_grab(intentional_final: bool) -> void:
 func tracking_lost() -> void:
 	# Freeze in place until tracking returns or the player explicitly releases.
 	_swing_velocity = Vector2.ZERO
-	_previous_position = global_position
+	_previous_position = _swing.global_position
 	_previous_velocity = Vector3.ZERO
 	if is_instance_valid(_grab_driver):
 		_grab_driver.set_physics_process(false)
 
 func tracking_restored() -> void:
-	_previous_position = global_position
+	_previous_position = _swing.global_position
 	_previous_velocity = Vector3.ZERO
 	if is_instance_valid(_grab_driver):
 		_grab_driver.set_physics_process(true)
@@ -246,38 +247,60 @@ func begin_adjust(hand_world: Transform3D) -> void:
 	if not _valid_transform(hand_world):
 		return
 	_adjusting = true
-	_adjust_reference = hand_world.basis.orthonormalized()
-	_adjust_origin_y = _adjust_wrist_height(hand_world)
+	var hand_local := _adjust_frame().affine_inverse() * hand_world
+	_adjust_reference = hand_local.basis.orthonormalized()
+	# Use the controller axis with the more stable horizontal projection.
+	_adjust_yaw_uses_right = absf(_adjust_reference.z.y) > 0.8
+	_adjust_origin_y = _adjust_wrist_height(hand_local)
 	_adjust_open = lantern.shutter_openness
-	_last_pitch_detent = 0
+	_last_yaw_detent = 0
 	_swing_velocity *= 0.2
 
 func update_adjust(hand_world: Transform3D) -> void:
 	if not _adjusting or not _valid_transform(hand_world):
 		return
-	var relative := _adjust_reference.inverse() * hand_world.basis.orthonormalized()
-	# Angles come from the captured relative basis, avoiding Euler subtraction at wrap.
-	var pitch := atan2(-relative.z.y, relative.z.z)
-	# Raise/lower the adjusting hand for aperture; pitch now only selects a filter.
-	var height_delta := _adjust_wrist_height(hand_world) - _adjust_origin_y
+	var hand_local := _adjust_frame().affine_inverse() * hand_world
+	var current_basis := hand_local.basis.orthonormalized()
+	# The level lantern frame follows the tool through stick locomotion and turning.
+	# Horizontal yaw remains separate from vertical hand travel in a rolled grip.
+	var reference_axis := _adjust_reference.x if _adjust_yaw_uses_right else -_adjust_reference.z
+	var current_axis := current_basis.x if _adjust_yaw_uses_right else -current_basis.z
+	reference_axis.y = 0.0
+	current_axis.y = 0.0
+	# Raise/lower the adjusting hand for aperture; horizontal controller yaw selects a filter.
+	var height_delta := _adjust_wrist_height(hand_local) - _adjust_origin_y
 	var shutter_motion := signf(height_delta) * maxf(absf(height_delta) - SHUTTER_DEAD_ZONE_M, 0.0)
 	lantern.set_shutter(clampf(_adjust_open + shutter_motion / SHUTTER_HAND_TRAVEL_M, 0.0, 1.0))
-	var detent := _last_pitch_detent
-	if pitch < (-FILTER_ENTER_PITCH if detent == 0 else -0.19):
-		detent = -1
-	elif pitch > (FILTER_ENTER_PITCH if detent == 0 else 0.19):
-		detent = 1
-	elif absf(pitch) < FILTER_CENTER_PITCH:
-		detent = 0
-	if detent != _last_pitch_detent:
-		_last_pitch_detent = detent
-		lantern.set_mode(LightField.Mode.CLEAR if detent == 0 else LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE)
+	if reference_axis.length_squared() > 0.04 and current_axis.length_squared() > 0.04:
+		reference_axis = reference_axis.normalized()
+		current_axis = current_axis.normalized()
+		var yaw := atan2(-reference_axis.cross(current_axis).y, reference_axis.dot(current_axis))
+		var detent := _last_yaw_detent
+		if yaw < (-FILTER_ENTER_YAW if detent == 0 else -0.19):
+			detent = -1
+		elif yaw > (FILTER_ENTER_YAW if detent == 0 else 0.19):
+			detent = 1
+		elif absf(yaw) < FILTER_CENTER_YAW:
+			detent = 0
+		if detent != _last_yaw_detent:
+			_last_yaw_detent = detent
+			lantern.set_mode(LightField.Mode.CLEAR if detent == 0 else LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE)
 
 func end_adjust() -> void:
 	_adjusting = false
 
 func _adjust_wrist_height(hand_world: Transform3D) -> float:
 	return (hand_world.origin + hand_world.basis.orthonormalized() * Vector3(0.0, 0.0, WRIST_BACK_OFFSET_M)).y
+
+func _adjust_frame() -> Transform3D:
+	var forward := lantern.forward_direction()
+	forward.y = 0.0
+	if forward.length_squared() < 0.001:
+		forward = _last_horizontal_aim
+	forward = forward.normalized()
+	var z_axis := -forward
+	var x_axis := Vector3.UP.cross(z_axis).normalized()
+	return Transform3D(Basis(x_axis, Vector3.UP, z_axis), lantern.global_position)
 
 func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = true) -> void:
 	if not _valid_transform(staff_world):
@@ -290,7 +313,7 @@ func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = 
 	_swing_angle = Vector2.ZERO
 	_swing_velocity = Vector2.ZERO
 	_swing.rotation = Vector3.ZERO
-	_previous_position = global_position
+	_previous_position = _swing.global_position
 	_previous_velocity = Vector3.ZERO
 	lantern.set_shutter(shutter)
 	_capture_aim()
@@ -314,6 +337,7 @@ func advance(delta: float) -> void:
 	elif placement == Placement.RECALL_HOVER:
 		update_recall(_recall_hand, dt)
 	_update_swing(dt)
+	lantern.advance_flame(dt)
 	lantern.advance_transition(dt)
 
 func _choose_park_target() -> void:
@@ -358,31 +382,33 @@ func _capture_aim() -> void:
 		_last_horizontal_aim = forward.normalized()
 
 func _rebase_swing_if_jump() -> void:
-	if global_position.distance_to(_previous_position) > 0.55:
+	if _swing.global_position.distance_to(_previous_position) > 0.55:
 		_swing_velocity = Vector2.ZERO
 		_previous_velocity = Vector3.ZERO
-		_previous_position = global_position
+		_previous_position = _swing.global_position
 
 func _update_swing(dt: float) -> void:
 	if dt <= 0.0:
 		return
-	var velocity := (global_position - _previous_position) / dt
+	# The attachment point moves when the staff rotates around a held wrist.
+	var attachment_position := _swing.global_position
+	var velocity := (attachment_position - _previous_position) / dt
 	if velocity.length() > 8.0:
 		velocity = Vector3.ZERO
 		_previous_velocity = Vector3.ZERO
 	var acceleration := (velocity - _previous_velocity) / dt
 	var local_accel := global_basis.inverse() * acceleration
 	var resting_pitch := -0.25 if placement == Placement.PARKED or placement == Placement.SETTLING else 0.0
-	var target := Vector2(clampf(-local_accel.z * 0.018, -0.22, 0.22) + resting_pitch, clampf(local_accel.x * 0.018, -0.22, 0.22))
+	var target := Vector2(clampf(-local_accel.z * 0.023, -0.29, 0.29) + resting_pitch, clampf(local_accel.x * 0.023, -0.29, 0.29))
 	if _adjusting:
 		target = _swing_angle
-	_swing_velocity += (target - _swing_angle) * (22.0 * dt)
-	_swing_velocity *= exp(-7.0 * dt)
+	_swing_velocity += (target - _swing_angle) * (24.0 * dt)
+	_swing_velocity *= exp(-4.2 * dt)
 	_swing_angle += _swing_velocity * dt
-	_swing_angle.x = clampf(_swing_angle.x, -0.46, 0.38)
-	_swing_angle.y = clampf(_swing_angle.y, -0.36, 0.36)
+	_swing_angle.x = clampf(_swing_angle.x, -0.52, 0.45)
+	_swing_angle.y = clampf(_swing_angle.y, -0.43, 0.43)
 	_swing.rotation = Vector3(_swing_angle.x, 0.0, _swing_angle.y)
-	_previous_position = global_position
+	_previous_position = attachment_position
 	_previous_velocity = velocity
 
 func _valid_transform(value: Transform3D) -> bool:

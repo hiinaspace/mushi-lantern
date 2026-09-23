@@ -832,6 +832,14 @@ func _apply_velocity_and_control(delta: float):
 				ground_physics, default_physics)
 		var traction_factor: float = clamp(current_traction * delta, 0.0, 1.0)
 		horizontal_velocity = horizontal_velocity.lerp(control_velocity, traction_factor)
+	elif on_ground and ground_physics.stop_on_slope:
+		# Even on a gentle grade, normal-directed gravity and move_and_slide()
+		# can leave a small constant horizontal velocity after drag. Standing
+		# still should be stationary; retain gravity and steep-slope behavior.
+		var standing_max_slope := XRToolsGroundPhysicsSettings.get_move_max_slope(
+				ground_physics, default_physics)
+		if ground_angle < standing_max_slope:
+			horizontal_velocity = Vector3.ZERO
 
 	# Prevent the player from moving up steep slopes
 	if on_ground:
