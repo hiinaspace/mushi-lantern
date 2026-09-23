@@ -30,7 +30,7 @@ func _run() -> void:
 	lantern.shutter_openness = 1.0
 	lantern.adjust_shutter(0.0)
 	var flash := lantern.spot.light_energy
-	_expect(lantern.spot.spot_angle == 55.0 and lantern.spot.spot_angle_attenuation == 0.25, "wide soft cone")
+	_expect(lantern.spot.spot_angle == 65.0 and Lantern.BEHAVIOR_HALF_ANGLE_DEGREES == 55.0 and lantern.spot.spot_angle_attenuation == 0.25, "square projector preserves wide beam")
 	_expect(lantern.spot.spot_range == 20.0 and flash > 10.0, "clear navigation beam begins brighter")
 	lantern.advance_adaptation(9.0)
 	_expect(lantern.spot.light_energy < flash and absf(lantern.spot.light_energy - 10.0) < 0.05, "clear beam settles after adaptation")
@@ -43,7 +43,7 @@ func _run() -> void:
 	lantern.shutter_openness = 0.0
 	lantern.adjust_shutter(0.0)
 	_expect(is_zero_approx(lantern.spot.light_energy) and not lantern.spot.visible, "closed shutter has no spot emission")
-	_expect(is_zero_approx((lantern.filter_mesh.material_override as StandardMaterial3D).emission_energy_multiplier), "closed shutter has no filter emission")
+	_expect((lantern.filter_mesh.material_override as ShaderMaterial).get_shader_parameter("glow_strength") > 0.0, "closed shutter retains a small face slit")
 	lantern.advance_adaptation(6.0)
 	_expect(lantern.night_vision > 0.75, "closed shutter restores dark adaptation")
 	lantern.free()

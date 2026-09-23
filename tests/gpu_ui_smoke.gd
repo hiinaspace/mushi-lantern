@@ -17,8 +17,10 @@ func _run() -> void:
 	lab.set_process_unhandled_input(false)
 	lab.player.set_physics_process(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_expect(lab.current_preset.preset_name == "Longer drift", "Longer drift is the launch default")
-	_expect(lab.fixture_count == 1024 and is_equal_approx(lab.strength_slider.value, 0.8) and is_equal_approx(lab.social_slider.value, 1.4) and is_equal_approx(lab.wander_slider.value, 0.5), "launch defaults match saved population and live multipliers")
+	_expect(lab.current_preset.preset_name == "Loose trains", "accepted Loose trains tuning is the launch default")
+	_expect(lab.fixture_count == 1024 and is_equal_approx(lab.strength_slider.value, 0.8) and is_equal_approx(lab.social_slider.value, 1.4) and is_equal_approx(lab.wander_slider.value, 0.8), "launch defaults match accepted population and live multipliers")
+	_expect(is_equal_approx(lab.current_preset.formation_follow_weight, 0.55) and is_equal_approx(lab.current_preset.cluster_pressure_weight, 1.1) and lab.current_preset.cluster_target_neighbors == 2, "launch preset keeps accepted loose-trio matching")
+	_expect(is_equal_approx(lab.current_preset.arousal_contagion_strength, 0.45) and is_equal_approx(lab.current_preset.arousal_scatter_strength, 0.65) and is_equal_approx(lab.current_preset.glyph_render_scale, 0.6), "launch preset keeps accepted contagion, scatter and glyph scale")
 	var population_choices: Array[String] = []
 	for child: Node in lab.panel.find_children("*", "Button", true, false):
 		population_choices.append((child as Button).text)
@@ -48,7 +50,7 @@ func _run() -> void:
 	for _frame: int in 30:
 		await process_frame
 	_expect(lab.simulation.formation_predecessors.count(-1) == lab.fixture_count and lab.simulation.formation_successors.count(-1) == lab.fixture_count, "live follow disable clears both partner slots")
-	lab._apply_preset(6, true)
+	lab._apply_preset(8, true)
 	await _wait_ready(lab)
 	lab.simulation_paused = true
 	var paused_revision: int = lab.simulation.state_revision

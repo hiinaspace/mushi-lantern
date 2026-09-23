@@ -21,9 +21,11 @@ const WRIST_BACK_OFFSET_M := 0.10
 const FILTER_STEP_YAW := 0.55
 const FILTER_ENTER_YAW := 0.30
 const FILTER_EXIT_YAW := 0.25
-const LATERAL_SWING_ACCEL_SCALE := 0.14
-const FORWARD_SWING_ACCEL_SCALE := 0.28
-const VERTICAL_SWING_ACCEL_SCALE := 0.28
+const SUSPENSION_LENGTH := 0.39
+const SWING_GRAVITY := 9.81
+const SWING_DRAG := 2.2
+const SWING_STEP := 1.0 / 120.0
+const SWING_JUMP_DISTANCE := 0.55
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -31,10 +33,9 @@ var world_surface: Variant
 var grip_index: int = MID_GRIP_INDEX
 var _forced_grip_index := -1
 var _swing: Node3D
-var _swing_angle := Vector2.ZERO
-var _swing_velocity := Vector2.ZERO
-var _previous_position := Vector3.ZERO
-var _previous_velocity := Vector3.ZERO
+var _bob_world := Vector3.ZERO
+var _bob_velocity := Vector3.ZERO
+var _previous_pivot := Vector3.ZERO
 var _float_elapsed := 0.0
 var _float_origin := Transform3D.IDENTITY
 var _park_target := Transform3D.IDENTITY
@@ -63,7 +64,7 @@ func _ready() -> void:
 	super._ready()
 	set_process(false)
 	_build_visual()
-	_previous_position = _swing.global_position
+	_reset_swing()
 	_capture_aim()
 
 func pick_up(by: Node3D) -> void:
@@ -166,7 +167,7 @@ func _build_visual() -> void:
 	_swing.add_child(suspension)
 	lantern = Lantern.new()
 	lantern.name = "Lantern"
-	lantern.position = Vector3(0.0, -0.39, 0.0)
+	lantern.position = Vector3(0.0, -SUSPENSION_LENGTH, 0.0)
 	_swing.add_child(lantern)
 
 func _build_grab_points() -> void:
@@ -240,15 +241,14 @@ func release_external_grab(intentional_final: bool) -> void:
 
 func tracking_lost() -> void:
 	# Freeze in place until tracking returns or the player explicitly releases.
-	_swing_velocity = Vector2.ZERO
-	_previous_position = _swing.global_position
-	_previous_velocity = Vector3.ZERO
+	_bob_velocity = Vector3.ZERO
+	_previous_pivot = _swing.global_position
 	if is_instance_valid(_grab_driver):
 		_grab_driver.set_physics_process(false)
 
 func tracking_restored() -> void:
-	_previous_position = _swing.global_position
-	_previous_velocity = Vector3.ZERO
+	_previous_pivot = _swing.global_position
+	_bob_velocity = Vector3.ZERO
 	if is_instance_valid(_grab_driver):
 		_grab_driver.set_physics_process(true)
 
@@ -301,7 +301,8 @@ func begin_adjust(hand_world: Transform3D) -> void:
 	_last_yaw_detent = _mode_detent(lantern.mode)
 	_adjust_origin_dial = float(_last_yaw_detent) * FILTER_STEP_YAW
 	_adjust_last_dial = _adjust_origin_dial
-	_swing_velocity *= 0.2
+	_bob_velocity = Vector3.ZERO
+	_previous_pivot = _swing.global_position
 	lantern.begin_dial_preview()
 	lantern.set_dial_preview(_adjust_origin_dial)
 
@@ -343,6 +344,8 @@ func end_adjust() -> void:
 		lantern.set_mode(LightField.Mode.CLEAR if final_detent == 0 else LightField.Mode.BLUE if final_detent < 0 else LightField.Mode.ORANGE)
 	_adjusting = false
 	lantern.end_dial_preview()
+	_previous_pivot = _swing.global_position
+	_bob_velocity = Vector3.ZERO
 
 func _mode_detent(value: LightField.Mode) -> int:
 	return -1 if value == LightField.Mode.BLUE else 1 if value == LightField.Mode.ORANGE else 0
@@ -370,11 +373,7 @@ func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = 
 	_adjusting = false
 	lantern.end_dial_preview()
 	_float_elapsed = 0.0
-	_swing_angle = Vector2.ZERO
-	_swing_velocity = Vector2.ZERO
-	_swing.rotation = Vector3.ZERO
-	_previous_position = _swing.global_position
-	_previous_velocity = Vector3.ZERO
+	_reset_swing()
 	lantern.set_shutter(shutter)
 	_capture_aim()
 	_park_target = global_transform
@@ -440,48 +439,62 @@ func _capture_aim() -> void:
 		_last_horizontal_aim = forward.normalized()
 
 func _rebase_swing_if_jump() -> void:
-	if _swing.global_position.distance_to(_previous_position) > 0.55:
-		_swing_velocity = Vector2.ZERO
-		_previous_velocity = Vector3.ZERO
-		_previous_position = _swing.global_position
+	if _swing.global_position.distance_to(_previous_pivot) > SWING_JUMP_DISTANCE:
+		_reset_swing()
+
+func _reset_swing() -> void:
+	_previous_pivot = _swing.global_position
+	_bob_world = _previous_pivot + Vector3.DOWN * SUSPENSION_LENGTH
+	_bob_velocity = Vector3.ZERO
+	_orient_swing(_previous_pivot)
 
 func _update_swing(dt: float) -> void:
 	if dt <= 0.0:
 		return
-	# The attachment point moves when the staff rotates around a held wrist.
-	var attachment_position := _swing.global_position
-	var velocity := (attachment_position - _previous_position) / dt
-	if velocity.length() > 8.0:
-		velocity = Vector3.ZERO
-		_previous_velocity = Vector3.ZERO
-	var acceleration := (velocity - _previous_velocity) / dt
-	# A hanging lantern seeks world down, even when the staff rolls. The side
-	# response is lighter than fore/aft motion so a sideways wave does not throw
-	# the lantern out as far; damping still lets it settle over a second or two.
-	var local_accel := global_basis.inverse() * acceleration
-	var swing_accel := global_basis * Vector3(
-		local_accel.x * LATERAL_SWING_ACCEL_SCALE,
-		local_accel.y * VERTICAL_SWING_ACCEL_SCALE,
-		local_accel.z * FORWARD_SWING_ACCEL_SCALE
-	)
-	var effective_down := Vector3.DOWN * 9.81 - swing_accel
-	var local_down := global_basis.inverse() * effective_down.normalized()
-	var parked_pitch := -0.25 if placement == Placement.PARKED or placement == Placement.SETTLING else 0.0
-	var target := Vector2(
-		clampf(atan2(-local_down.z, -local_down.y) + parked_pitch, -1.6, 1.6),
-		clampf(atan2(local_down.x, Vector2(local_down.y, local_down.z).length()), -1.6, 1.6)
-	)
+	var pivot := _swing.global_position
+	if pivot.distance_to(_previous_pivot) > SWING_JUMP_DISTANCE:
+		_reset_swing()
+		return
 	if _adjusting:
-		target = _swing_angle
-		_swing_velocity = Vector2.ZERO
-	_swing_velocity += (target - _swing_angle) * (19.0 * dt)
-	_swing_velocity *= exp(-2.25 * dt)
-	_swing_angle += _swing_velocity * dt
-	_swing_angle.x = clampf(_swing_angle.x, -1.6, 1.6)
-	_swing_angle.y = clampf(_swing_angle.y, -1.6, 1.6)
-	_swing.rotation = Vector3(_swing_angle.x, 0.0, _swing_angle.y)
-	_previous_position = attachment_position
-	_previous_velocity = velocity
+		_bob_world += pivot - _previous_pivot
+		_bob_velocity = Vector3.ZERO
+	else:
+		var steps := maxi(1, ceili(dt / SWING_STEP))
+		var step_dt := dt / float(steps)
+		var pivot_velocity := (pivot - _previous_pivot) / dt
+		for step: int in steps:
+			var step_pivot := _previous_pivot + (pivot - _previous_pivot) * (float(step + 1) / float(steps))
+			var old_bob := _bob_world
+			_bob_velocity += Vector3.DOWN * SWING_GRAVITY * step_dt
+			_bob_velocity *= exp(-SWING_DRAG * step_dt)
+			var unconstrained := _bob_world + _bob_velocity * step_dt
+			var direction := unconstrained - step_pivot
+			if direction.length_squared() < 0.000001:
+				direction = Vector3.DOWN
+			direction = direction.normalized()
+			_bob_world = step_pivot + direction * SUSPENSION_LENGTH
+			_bob_velocity = (_bob_world - old_bob) / step_dt
+			# The string removes radial velocity relative to its moving pivot.
+			_bob_velocity -= direction * (_bob_velocity - pivot_velocity).dot(direction)
+	_previous_pivot = pivot
+	_orient_swing(pivot)
+
+func _orient_swing(pivot: Vector3) -> void:
+	var down := (_bob_world - pivot).normalized()
+	if down.length_squared() < 0.5:
+		down = Vector3.DOWN
+	var up := -down
+	# Shaft yaw affects only the beam orientation, never the bob simulation.
+	var forward := -global_basis.z
+	forward -= up * forward.dot(up)
+	if forward.length_squared() < 0.0001:
+		forward = _last_horizontal_aim - up * _last_horizontal_aim.dot(up)
+	if forward.length_squared() < 0.0001:
+		forward = Vector3.FORWARD - up * Vector3.FORWARD.dot(up)
+	forward = forward.normalized()
+	var z_axis := -forward
+	var x_axis := up.cross(z_axis).normalized()
+	_swing.global_transform = Transform3D(Basis(x_axis, up, z_axis), pivot)
 
 func _valid_transform(value: Transform3D) -> bool:
 	return is_finite(value.origin.x) and is_finite(value.origin.y) and is_finite(value.origin.z) and is_finite(value.basis.determinant()) and absf(value.basis.determinant()) > 0.01

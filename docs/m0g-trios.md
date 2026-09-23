@@ -1,6 +1,6 @@
 # M0g — local three-glyph bodies
 
-The user found the M0f `Drifting trains` experiment still looked like insect clumps, even with its exposed weights raised. This pass keeps the accepted 1,024-agent `Longer drift` default and its 0.4 glyph scale. Preset 7 is a revised comparison for small head/body/tail groups. F1 remains a sandbox, and the user's saved tuning snapshots were not edited.
+The user found the M0f `Drifting trains` experiment still looked like insect clumps, even with its exposed weights raised. The follow-up accepted the user's `loose trains` tuning as the built-in 1,024-agent launch default. Preset 7 remains the stronger-follow comparison; F1 remains a sandbox, and private saved tuning snapshots are not needed for the default.
 
 ## Rule
 
@@ -43,6 +43,6 @@ The user has retired CPU flight and ground compatibility as design requirements.
 
 The user confirmed that the little trios are readable and aesthetic, and explicitly closed particle-simulation work for now. Their saved `loose trains` tuning intentionally weakens following so crowds can split and recombine while retaining a composite identity. This is human desktop acceptance; headset/full-scene performance remains unverified.
 
-Verified saved tuning on sayu: 1024 agents, seed 40721, flight enabled; formation follow 0.55, crowd pressure 1.1, crowd threshold 2, contagion 0.45, arousal scatter 0.65, glyph scale 0.6, social multiplier 1.4, wander multiplier 0.8, lantern strength 0.8. Remaining coefficients match the Longer drift-derived preset. The private JSON stays at `/home/s/.local/share/godot/app_userdata/Mushi Lantern — M0 Herding Lab/m0_saved_presets.json`; it is not included in the commit. The built-in launch default remains Longer drift. Launch `./launch.sh --preset 7 --count 1024`, then load `loose trains` in F1 for the accepted personal tuning.
+Verified accepted tuning on sayu: 1024 agents, seed 40721, flight enabled; formation follow 0.55, crowd pressure 1.1, crowd threshold 2, contagion 0.45, arousal scatter 0.65, glyph scale 0.6, social multiplier 1.4, wander multiplier 0.8, lantern strength 0.8. Remaining coefficients match the Longer drift-derived preset. It is now built in as preset 8 and selected by default. Preset 7 remains `Drifting trains`; `./launch.sh --preset 7 --count 1024` selects that comparison explicitly.
 
 Next task: a bounded Terrain3D/environment greybox at the current arena scale, with heightmap clearance and coarse rock/trunk avoidance. Fine foliage collision is unnecessary; begin with Terrain3D's own foliage/instancing before adding a scatter addon. Preserve the accepted GPU simulation and F1 sandbox; CPU/ground support is no longer required. Measure terrain plus simulation on sayu before larger terrain, darkness/bloom or headset claims. Preserve a practical host-authoritative 2–4-player path, but networking remains a stretch goal. Do not reopen particle morphology or parameter search without a concrete new issue.

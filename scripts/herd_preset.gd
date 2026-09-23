@@ -216,4 +216,13 @@ static func builtins() -> Array[HerdPreset]:
 	drifting_trains.cluster_pressure_weight = 1.0
 	drifting_trains.cluster_target_neighbors = 2
 
-	return [plain, memory, independent, energy, lingering, living, longer_drift, drifting_trains]
+	var loose_trains := longer_drift.copy_preset()
+	loose_trains.preset_name = "Loose trains"
+	loose_trains.formation_follow_weight = 0.55
+	loose_trains.cluster_pressure_weight = 1.1
+	loose_trains.cluster_target_neighbors = 2
+	loose_trains.arousal_contagion_strength = 0.45
+	loose_trains.arousal_scatter_strength = 0.65
+	loose_trains.glyph_render_scale = 0.6
+
+	return [plain, memory, independent, energy, lingering, living, longer_drift, drifting_trains, loose_trains]

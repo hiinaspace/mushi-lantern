@@ -6,11 +6,10 @@ Implementation after the approved [environment plan](m1-environment-plan.md). Th
 
 ```bash
 ./launch.sh
-./launch.sh --preset 7 --saved-preset "loose trains" --count 1024
-./launch.sh --terrain-size 256 --preset 7 --saved-preset "loose trains" --count 1024
+./launch.sh --terrain-size 256
 ```
 
-The named preset command reads the user's existing private saved preset; it is not bundled in the game. Without that name, the built-in Longer drift default remains. An explicit `--count` overrides the saved preset's count. F1 still opens the behavioral sandbox. F2 opens quality controls and pauses the simulation while the menu is open; choose 512 or 1024 and explicitly apply/reset to change population. Vegetation, shadows and 80%/100% 3D render scale apply independently. Preferences live in `user://m1_quality.json`. Runtime/headset supersampling is separate. The normal launcher retains its 60 FPS desktop cap; benchmarks below bypass it.
+The built-in default is the accepted 1024-agent Loose trains tuning, and `--preset`/`--count` remain available for explicit comparisons. F1 still opens the behavioral sandbox. F2 opens quality controls and pauses the simulation while the menu is open; choose 512 or 1024 and explicitly apply/reset to change population. Vegetation, shadows and 80%/100% 3D render scale apply independently. Preferences live in `user://m1_quality.json`. Runtime/headset supersampling is separate. The normal launcher retains its 60 FPS desktop cap; benchmarks below bypass it.
 
 Test card:
 
@@ -29,7 +28,7 @@ A green unshaded core and faint halo extend 300 m upward from the goal. They cas
 
 ## Artificial adaptation and navigation light
 
-All lantern modes now use a 55-degree angular radius (110-degree full cone) with soft angular attenuation. The terrain simulation's colored-light cone follows that width; clear mode remains behaviorally neutral. Clear light reaches 20 m at base energy 10, versus 10.5 m and base energy 3.4/3.8 for blue/orange. High-quality lantern shadows remain enabled.
+The terrain simulation's colored-light cone uses a 55-degree angular radius (110-degree full width); clear mode remains behaviorally neutral. The lantern spotlight now uses a wider 65-degree cone with a soft square projector mask, retaining roughly the same effective horizontal reach. Clear light reaches 20 m at base energy 10, versus 10.5 m and base energy 3.4/3.8 for blue/orange. High-quality lantern shadows remain enabled.
 
 `NightAdaptation` tracks a visual-only `night_vision` value in [0,1]. Fully open clear targets 0; either colored filter targets 0.75; a closed shutter targets 1. Partial shutters interpolate those targets. Exponential time constants are 1.5 seconds toward light adaptation and 6 seconds toward dark adaptation (about 4.5/18 seconds for 95% of a full transition). Pausing also pauses adaptation. Light output is multiplied by `1 + 0.7 * night_vision`, so a dark-adapted player sees a short bright onset before clear illumination settles. This visual gain does not multiply the simulation stimulus.
 

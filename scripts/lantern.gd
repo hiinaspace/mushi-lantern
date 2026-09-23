@@ -4,12 +4,12 @@ extends Node3D
 signal changed
 
 const FILTER_HALF_TIME := 0.12
+const BEHAVIOR_HALF_ANGLE_DEGREES := 55.0
 const BLIND_COUNT := 7
 const COOKIE_SIZE := 64
 const COOKIE_STEPS := 16
 const HOUSING_SCALE := 0.7
 const DIAL_RANGE_YAW := 0.55
-const DIAL_GLYPH_ANGLE := 0.92
 const COLOR_SETTLE_TIME := 0.42
 
 var mode: LightField.Mode = LightField.Mode.BLUE
@@ -20,14 +20,10 @@ var glow_mesh: MeshInstance3D
 var filter_mesh: MeshInstance3D
 var night_vision: float = 1.0
 var _adaptation := NightAdaptation.new()
-var _filter_material: StandardMaterial3D
+var _front_glow_material: ShaderMaterial
 var _glyph_materials: Array[StandardMaterial3D] = []
-var _dial_glyph_materials: Array[StandardMaterial3D] = []
-var _aperture_lines: Array[MeshInstance3D] = []
-var _front_strips: Array[MeshInstance3D] = []
+var _side_glow_material: ShaderMaterial
 var _visual_root: Node3D
-var _dial: Node3D
-var _last_dial_glyph_index := -1
 var _dial_preview := 0.0
 var _dial_preview_active := false
 var _settling_split := false
@@ -63,8 +59,9 @@ func _build_visual() -> void:
 	spot.name = "VisibleBeam"
 	spot.position = Vector3(0.0, 0.0, -0.145 * HOUSING_SCALE)
 	spot.spot_range = 10.5
-	# Godot's angle is the cone radius: 55 degrees makes a 110 degree beam.
-	spot.spot_angle = 55.0
+	# The projector inscribes a square in this cone. Its horizontal edge still
+	# reaches roughly the original 55-degree half angle used by the simulation.
+	spot.spot_angle = 65.0
 	spot.spot_angle_attenuation = 0.25
 	spot.shadow_enabled = true
 	spot.light_energy = 0.0
@@ -72,7 +69,6 @@ func _build_visual() -> void:
 	add_child(spot)
 
 	var metal := _material(Color("514751"), 0.0)
-	var dark := _material(Color("1b1a21"), 0.0)
 	var glass := _material(Color("2e3036"), 0.0)
 	# Opaque side and rear walls keep the high-energy emitter directional.
 	_box("RearWall", Vector3(0.34, 0.40, 0.018), Vector3(0.0, 0.0, 0.112), metal)
@@ -86,16 +82,20 @@ func _build_visual() -> void:
 	for y: float in [-0.19, 0.19]:
 		_box("FrontRail", Vector3(0.34, 0.018, 0.025), Vector3(0.0, y, -0.131), metal)
 
-	filter_mesh = _box("FrontGlow", Vector3(0.29, 0.33, 0.003), Vector3(0.0, 0.0, -0.126), null)
-	_filter_material = _material(Color("f8e5b2"), 0.0)
-	_filter_material.emission_enabled = true
-	filter_mesh.material_override = _filter_material
+	# A quad gives the filter full 0..1 UVs; BoxMesh atlas UVs collapse the
+	# moving color boundary into one side of its tiny front panel.
+	filter_mesh = MeshInstance3D.new()
+	filter_mesh.name = "FrontGlow"
+	var front_quad := QuadMesh.new()
+	front_quad.size = Vector2(0.29, 0.33)
+	filter_mesh.mesh = front_quad
+	filter_mesh.position.z = -0.128
+	filter_mesh.rotation.y = PI
+	filter_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_visual_root.add_child(filter_mesh)
+	_front_glow_material = _make_side_glow_material()
+	filter_mesh.material_override = _front_glow_material
 	glow_mesh = filter_mesh
-	# A strip always has a dark hinge line; the lit part grows upwards within it.
-	for i: int in BLIND_COUNT:
-		var strip := _box("FrontStrip%d" % i, Vector3(0.294, 0.01, 0.005), Vector3(0.0, 0.0, -0.131), dark)
-		_front_strips.append(strip)
-
 	# The suspension is part of the lantern so it follows the pendulum joint.
 	_box("Hanger", Vector3(0.013, 0.17, 0.013), Vector3(0.0, 0.29, 0.0), metal)
 	_box("HangerLoop", Vector3(0.08, 0.015, 0.06), Vector3(0.0, 0.38, 0.0), metal)
@@ -106,79 +106,64 @@ func _build_visual() -> void:
 		var glyph_material := _material(glyph_colors[i], 0.0)
 		glyph_material.emission_enabled = true
 		_glyph_materials.append(glyph_material)
-	_add_status_face("Rear", Vector3(0.0, 0.0, 0.126), 0.0, rear_face, dark, 1.0)
-	_add_status_face("Left", Vector3(-0.182, 0.0, 0.0), -PI * 0.5, rear_face, dark, 0.88)
-	_add_status_face("Right", Vector3(0.182, 0.0, 0.0), PI * 0.5, rear_face, dark, 0.88)
-	_build_radial_dial(metal, dark)
+	_side_glow_material = _make_side_glow_material()
+	_add_glow_face("Rear", Vector3(0.0, 0.0, 0.126), 0.0, rear_face, Vector2(0.29, 0.33))
+	_add_glow_face("Left", Vector3(-0.182, 0.0, 0.0), -PI * 0.5, rear_face, Vector2(0.20, 0.33))
+	_add_glow_face("Right", Vector3(0.182, 0.0, 0.0), PI * 0.5, rear_face, Vector2(0.20, 0.33))
 	# The front retains a very small mode tell even with the shutter fully closed.
 	for i: int in 3:
 		_box("FrontMode%d" % i, Vector3(0.019, 0.008, 0.005), Vector3((float(i) - 1.0) * 0.028, -0.192, -0.148), _glyph_materials[i])
 	# The offhand catches this short pull below the smaller housing.
-	_box("SettingCord", Vector3(0.008, 0.14, 0.008), Vector3(0.0, -0.205, 0.0), dark, self)
+	_box("SettingCord", Vector3(0.008, 0.14, 0.008), Vector3(0.0, -0.205, 0.0), _material(Color("70839a"), 0.22), self)
 	_box("SettingGrip", Vector3(0.042, 0.045, 0.027), Vector3(0.0, -0.29, 0.0), metal, self)
+	_box("SettingGripGuide", Vector3(0.046, 0.008, 0.031), Vector3(0.0, -0.29, 0.0), _material(Color("b4d0e2"), 0.42), self)
 
 func control_grip_local_position() -> Vector3:
 	return Vector3(0.0, -0.29, 0.0)
 
-func _add_status_face(label: String, at: Vector3, yaw: float, panel: Material, track: Material, size_factor: float) -> void:
+func _add_glow_face(label: String, at: Vector3, yaw: float, panel: Material, window_size: Vector2) -> void:
 	var face := Node3D.new()
-	face.name = label + "Status"
+	face.name = label + "Window"
 	face.position = at
 	face.rotation.y = yaw
-	face.scale = Vector3.ONE * size_factor
 	_visual_root.add_child(face)
-	_box(label + "Panel", Vector3(0.25, 0.20, 0.005), Vector3(0.0, 0.015, 0.0), panel, face)
-	for i: int in 3:
-		var x := (float(i) - 1.0) * 0.075
-		var mark := _box(label + "Color%d" % i, Vector3(0.026, 0.026, 0.004), Vector3(x, 0.077, 0.006), _glyph_materials[i], face)
-		if i == 1:
-			mark.rotation.z = PI * 0.25
-	_box(label + "ApertureTrack", Vector3(0.012, 0.105, 0.004), Vector3(0.10, -0.040, 0.006), track, face)
-	var line := _box(label + "ApertureLevel", Vector3(0.009, 0.10, 0.005), Vector3(0.10, -0.040, 0.010), _material(Color("f8e5b2"), 1.3), face)
-	_aperture_lines.append(line)
+	_box(label + "WindowBacking", Vector3(window_size.x + 0.015, window_size.y + 0.015, 0.004), Vector3.ZERO, panel, face)
+	var window := MeshInstance3D.new()
+	window.name = label + "Glow"
+	var quad := QuadMesh.new()
+	quad.size = window_size
+	window.mesh = quad
+	window.position.z = 0.004
+	window.material_override = _side_glow_material
+	window.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	face.add_child(window)
 
-func _build_radial_dial(metal: Material, dark: Material) -> void:
-	# A shallow horizontal wheel leaves the housing compact and reads from above.
-	_dial = Node3D.new()
-	_dial.name = "RadialColorDial"
-	_dial.position.y = 0.222
-	_visual_root.add_child(_dial)
-	var radius := 0.235
-	for segment: int in 16:
-		var angle := TAU * float(segment) / 16.0
-		var rim := _box("DialRim%02d" % segment, Vector3(0.075, 0.008, 0.012), Vector3(sin(angle) * radius, 0.0, cos(angle) * radius), dark, _dial)
-		rim.rotation.y = angle
-	for i: int in 3:
-		var glyph_angle := (float(i) - 1.0) * DIAL_GLYPH_ANGLE
-		var glyph := Node3D.new()
-		glyph.name = "DialGlyph%s" % ["B", "C", "O"][i]
-		glyph.position = Vector3(sin(glyph_angle) * radius, 0.007, cos(glyph_angle) * radius)
-		glyph.rotation.y = glyph_angle
-		_dial.add_child(glyph)
-		var glyph_material := _material(_mode_color(LightField.Mode.BLUE if i == 0 else LightField.Mode.CLEAR if i == 1 else LightField.Mode.ORANGE), 0.0)
-		glyph_material.emission_enabled = true
-		_dial_glyph_materials.append(glyph_material)
-		_build_dial_letter(i, glyph, glyph_material)
-	# Fixed notch marks the reading position at the rear of the wheel.
-	_box("DialReadNotch", Vector3(0.025, 0.010, 0.015), Vector3(0.0, 0.222, radius + 0.025), metal)
-
-func _build_dial_letter(letter_index: int, glyph: Node3D, material: Material) -> void:
-	# Strokes lie in XZ, with their tops toward the lantern center.
-	var stroke := 0.007
-	if letter_index == 0:
-		_box("BStem", Vector3(stroke, 0.004, 0.046), Vector3(-0.017, 0.0, 0.0), material, glyph)
-		for row: int in 3:
-			_box("BBar%d" % row, Vector3(0.031, 0.004, stroke), Vector3(0.0, 0.0, (float(row) - 1.0) * 0.020), material, glyph)
-		for row: int in 2:
-			_box("BCurve%d" % row, Vector3(stroke, 0.004, 0.020), Vector3(0.017, 0.0, (float(row) - 0.5) * 0.020), material, glyph)
-	elif letter_index == 1:
-		_box("CStem", Vector3(stroke, 0.004, 0.046), Vector3(-0.017, 0.0, 0.0), material, glyph)
-		for row: int in 2:
-			_box("CBar%d" % row, Vector3(0.034, 0.004, stroke), Vector3(0.0, 0.0, (float(row) - 0.5) * 0.040), material, glyph)
-	else:
-		for side: int in 2:
-			_box("OSide%d" % side, Vector3(stroke, 0.004, 0.046), Vector3((float(side) - 0.5) * 0.034, 0.0, 0.0), material, glyph)
-			_box("OBar%d" % side, Vector3(0.034, 0.004, stroke), Vector3(0.0, 0.0, (float(side) - 0.5) * 0.040), material, glyph)
+func _make_side_glow_material() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform vec3 filter_source = vec3(0.4, 0.78, 1.0);
+uniform vec3 filter_target = vec3(0.4, 0.78, 1.0);
+uniform float split_fraction = 0.0;
+uniform bool split_active = false;
+uniform float shutter_open = 1.0;
+uniform float glow_strength = 0.28;
+void fragment() {
+	float row = UV.y;
+	float strip = fract(row * 7.0);
+	float visible_open = max(shutter_open, 0.075);
+	float lit = smoothstep(0.13, 0.16, strip) * (1.0 - smoothstep(0.14 + 0.80 * visible_open - 0.02, 0.14 + 0.80 * visible_open + 0.01, strip));
+	if (shutter_open >= 0.995) { lit = 1.0; }
+	float mix_amount = split_active ? smoothstep(1.0 - split_fraction - 0.018, 1.0 - split_fraction + 0.018, UV.x) : 0.0;
+	vec3 color = mix(filter_source, filter_target, mix_amount);
+	// Unshaded materials write their visible light through ALBEDO.
+	ALBEDO = vec3(0.012, 0.012, 0.018) + color * lit * glow_strength;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	return material
 
 func _box(label: String, size: Vector3, at: Vector3, material: Material, parent: Node3D = null) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
@@ -203,7 +188,7 @@ func _update_cookie() -> void:
 	var key := "%d:%d:%d:%d" % [step, int(_dial_preview_source), int(_dial_preview_target), split_step]
 	if key == _projector_key:
 		return
-	if step == 0 or (step == COOKIE_STEPS and not split_active):
+	if step == 0:
 		spot.light_projector = null
 		_projector_key = key
 		return
@@ -221,10 +206,13 @@ func _update_cookie() -> void:
 		var strip_position := fposmod(row * float(BLIND_COUNT), 1.0)
 		var lit := step == COOKIE_STEPS or (strip_position > 0.14 and strip_position < 0.14 + 0.80 * visual_open)
 		var intensity := 1.0 if lit else 0.0
-		# A slight center falloff keeps the square projection from showing hard corners.
+		# This inscribed square fades before the spotlight's round cone edge.
+		# Full-open still needs this texture, but has no shutter stripes.
 		for x: int in COOKIE_SIZE:
 			var u := (float(x) + 0.5) / float(COOKIE_SIZE)
-			var edge := smoothstep(0.0, 0.14, u) * (1.0 - smoothstep(0.86, 1.0, u))
+			var v := (float(y) + 0.5) / float(COOKIE_SIZE)
+			var edge := smoothstep(0.145, 0.17, u) * (1.0 - smoothstep(0.83, 0.855, u))
+			edge *= smoothstep(0.145, 0.17, v) * (1.0 - smoothstep(0.83, 0.855, v))
 			var projector_color := Color.WHITE
 			if split_active:
 				# A colored filter slides across the lens before the mode detent changes.
@@ -284,8 +272,6 @@ func set_dial_preview(dial_position: float) -> void:
 			_dial_preview_source = LightField.Mode.CLEAR
 			_dial_preview_target = LightField.Mode.ORANGE
 			_dial_preview_amount = _dial_preview / DIAL_RANGE_YAW
-	if _dial != null:
-		_dial.rotation.y = -_dial_preview / DIAL_RANGE_YAW * DIAL_GLYPH_ANGLE
 	if _dial_preview_active:
 		_apply_visual()
 
@@ -372,7 +358,6 @@ func advance_flame(delta: float) -> void:
 		var settle_weight := smoothstep(0.0, 1.0, _settle_elapsed)
 		_dial_preview_amount = lerpf(_settle_from_amount, _settle_to_amount, settle_weight)
 		_dial_preview = lerpf(_settle_from_dial, _settle_to_dial, settle_weight)
-		_dial.rotation.y = -_dial_preview / DIAL_RANGE_YAW * DIAL_GLYPH_ANGLE
 		if _settle_elapsed >= 1.0:
 			_settling_split = false
 			set_dial_preview(_settle_to_dial)
@@ -414,19 +399,12 @@ func _apply_visual() -> void:
 		range_m = 10.5
 	if _last_visual_mode != int(mode):
 		spot.spot_range = range_m
-		_filter_material.albedo_color = color
-		_filter_material.emission = color
 		var active_glyph := 0 if mode == LightField.Mode.BLUE else 2 if mode == LightField.Mode.ORANGE else 1
 		for i: int in _glyph_materials.size():
 			_glyph_materials[i].emission_energy_multiplier = 1.8 if i == active_glyph else 0.045
 		if not _dial_preview_active and not _settling_split:
 			set_dial_preview(_mode_dial_position(mode))
 		_last_visual_mode = int(mode)
-	var centered_glyph := 0 if _dial_preview < -DIAL_RANGE_YAW * 0.5 else 2 if _dial_preview > DIAL_RANGE_YAW * 0.5 else 1
-	if centered_glyph != _last_dial_glyph_index:
-		for i: int in _dial_glyph_materials.size():
-			_dial_glyph_materials[i].emission_energy_multiplier = 2.3 if i == centered_glyph else 0.09
-		_last_dial_glyph_index = centered_glyph
 	var split_active := _preview_has_rgb_split()
 	if split_active:
 		spot.light_color = Color.WHITE
@@ -435,21 +413,17 @@ func _apply_visual() -> void:
 	else:
 		spot.light_color = color
 	spot.light_energy = base_energy * shutter_openness * _adaptation.lantern_gain() * _flame_gain
+	for glow_material: ShaderMaterial in [_front_glow_material, _side_glow_material]:
+		glow_material.set_shader_parameter("filter_source", _mode_color(_dial_preview_source) if split_active else spot.light_color)
+		glow_material.set_shader_parameter("filter_target", _mode_color(_dial_preview_target))
+		glow_material.set_shader_parameter("split_fraction", float(_preview_split_step()) / float(COOKIE_STEPS))
+		glow_material.set_shader_parameter("split_active", split_active)
+		glow_material.set_shader_parameter("shutter_open", shutter_openness)
+	_front_glow_material.set_shader_parameter("glow_strength", (1.5 + shutter_openness * 2.5) * maxf(shutter_openness, 0.12) * _flame_gain)
+	_side_glow_material.set_shader_parameter("glow_strength", (0.12 + shutter_openness * 0.16) * _flame_gain)
 	if _last_visual_openness != shutter_openness:
 		spot.visible = shutter_openness > 0.01
-		_filter_material.emission_energy_multiplier = (1.5 + shutter_openness * 2.5) * shutter_openness * _flame_gain
-		for i: int in BLIND_COUNT:
-			var cell_height := 0.33 / float(BLIND_COUNT)
-			var exposed := 0.80 * shutter_openness * cell_height
-			_front_strips[i].scale.y = maxf((cell_height - exposed) / 0.01, 0.01)
-			_front_strips[i].position.y = -0.165 + (float(i) + 0.5) * cell_height + exposed * 0.5
-			_front_strips[i].visible = shutter_openness < 0.995
-		for line: MeshInstance3D in _aperture_lines:
-			line.scale.y = maxf(shutter_openness, 0.001)
-			line.position.y = -0.090 + 0.05 * shutter_openness
 		_last_visual_openness = shutter_openness
-	else:
-		_filter_material.emission_energy_multiplier = (1.5 + shutter_openness * 2.5) * shutter_openness * _flame_gain
 	_update_cookie()
 
 func _material(color: Color, emission_energy: float) -> StandardMaterial3D:

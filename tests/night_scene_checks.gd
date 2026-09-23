@@ -108,7 +108,7 @@ func _run() -> void:
 	lab.lantern.advance_adaptation(90.0)
 	lab.lantern.adjust_shutter(1.0)
 	var flash_energy: float = lab.lantern.spot.light_energy
-	_expect(is_equal_approx(lab.lantern.spot.spot_angle, 55.0), "110 degree full spotlight cone")
+	_expect(is_equal_approx(lab.lantern.spot.spot_angle, 65.0) and Lantern.BEHAVIOR_HALF_ANGLE_DEGREES == 55.0, "square projector keeps 110 degree effective beam")
 	_expect(is_equal_approx(lab.lantern.spot.spot_range, 20.0), "clear navigation range is 20 m")
 	await _capture("night-%d-clear-flash.png" % expected_size)
 	lab.lantern.advance_adaptation(30.0)

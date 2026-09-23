@@ -31,7 +31,7 @@ var flight_goal_volume: MeshInstance3D
 var light_field := LightField.new()
 var presets: Array[HerdPreset] = HerdPreset.builtins()
 var current_preset: HerdPreset
-var current_preset_index: int = 6
+var current_preset_index: int = 8
 var current_seed: int = DEFAULT_SEED
 var fixture_count: int = 1024
 var accumulator: float = 0.0
@@ -104,6 +104,7 @@ var _desktop_recall_held: bool = false
 var _xr_recall_owner: XRController3D
 
 func _ready() -> void:
+	process_physics_priority = 100
 	_setup_input()
 	quality_menu = load("res://scripts/environment_settings.gd").new()
 	_quality_settings = quality_menu.get_settings()
@@ -158,6 +159,9 @@ func _ready() -> void:
 		player.set_physics_process(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+func _physics_process(delta: float) -> void:
+	_update_staff_pose(delta)
+
 func _process(delta: float) -> void:
 	if _active_backend == "gpu":
 		if not simulation.gpu_error.is_empty():
@@ -179,7 +183,6 @@ func _process(delta: float) -> void:
 		var shutter_delta := Input.get_axis("shutter_close", "shutter_open")
 		if shutter_delta != 0.0:
 			lantern.adjust_shutter(shutter_delta * delta * 0.6)
-	_update_staff_pose(delta)
 	if not simulation_paused:
 		elapsed += delta
 		mode_times[int(lantern.mode)] += delta
@@ -193,7 +196,7 @@ func _process(delta: float) -> void:
 	light_field.shutter_openness = lantern.shutter_openness
 	light_field.mode = lantern.mode
 	if environment_enabled:
-		light_field.half_angle_degrees = lantern.spot.spot_angle
+		light_field.half_angle_degrees = lantern.BEHAVIOR_HALF_ANGLE_DEGREES
 		light_field.range_m = lantern.spot.spot_range
 	light_field.mode_strength = strength_slider.value if strength_slider != null else 1.0
 	if not simulation_paused:
@@ -954,10 +957,10 @@ func _apply_preset(index: int, restart: bool) -> void:
 	preset_picker.select(index)
 	config_changed = false
 	if strength_slider != null:
-		var longer_drift_globals := index >= 6 and index <= 7
+		var longer_drift_globals := index >= 6
 		strength_slider.set_value_no_signal(0.8 if longer_drift_globals else 1.0)
 		social_slider.set_value_no_signal(1.4 if longer_drift_globals else 1.0)
-		wander_slider.set_value_no_signal(0.5 if longer_drift_globals else 1.0)
+		wander_slider.set_value_no_signal(0.8 if index == 8 else (0.5 if longer_drift_globals else 1.0))
 		goal_slider.set_value_no_signal(current_preset.goal_repulsion_strength)
 		memory_slider.set_value_no_signal(current_preset.arousal_response)
 		_sync_energy_controls()
