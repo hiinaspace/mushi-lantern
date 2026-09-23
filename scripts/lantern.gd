@@ -160,11 +160,11 @@ void fragment() {
 	float mix_amount = split_active ? smoothstep(1.0 - split_fraction - 0.018, 1.0 - split_fraction + 0.018, UV.x) : 0.0;
 	vec3 color = mix(filter_source, filter_target, mix_amount);
 	// The filter engraving follows each color across the sliding lens.
-	float corner = 1.0 - 2.0 * abs(fract(UV.x * 3.0) - 0.5);
-	float blue_phase = abs(fract((UV.y - corner * 0.11) * 4.0) - 0.5);
-	float red_phase = abs(fract((UV.y + corner * 0.11) * 4.0) - 0.5);
-	float blue_line = 1.0 - smoothstep(0.035, 0.12, blue_phase);
-	float red_line = 1.0 - smoothstep(0.035, 0.12, red_phase);
+	vec2 cell = fract(UV * vec2(4.0, 5.0));
+	float in_glyph = smoothstep(0.14, 0.19, cell.x) * (1.0 - smoothstep(0.81, 0.86, cell.x));
+	float point = 1.0 - 2.0 * abs(cell.x - 0.5);
+	float blue_line = in_glyph * (1.0 - smoothstep(0.035, 0.085, abs(cell.y - (0.24 + 0.48 * point))));
+	float red_line = in_glyph * (1.0 - smoothstep(0.035, 0.085, abs(cell.y - (0.76 - 0.48 * point))));
 	float source_line = source_chevron < -0.5 ? blue_line : source_chevron > 0.5 ? red_line : 0.0;
 	float target_line = target_chevron < -0.5 ? blue_line : target_chevron > 0.5 ? red_line : 0.0;
 	color *= 1.0 - 0.19 * mix(source_line, target_line, mix_amount);
@@ -225,12 +225,13 @@ func _update_cookie() -> void:
 			var edge := smoothstep(0.145, 0.17, u) * (1.0 - smoothstep(0.83, 0.855, u))
 			edge *= smoothstep(0.145, 0.17, v) * (1.0 - smoothstep(0.83, 0.855, v))
 			var projector_color := Color.WHITE
-			var source_pattern := _chevron_multiplier(u, row, _dial_preview_source if split_active else mode)
+			# Godot projects cookie V upside down relative to the face UVs.
+			var source_pattern := _chevron_multiplier(u, 1.0 - row, _dial_preview_source if split_active else mode)
 			if split_active:
 				# A colored filter slides across the lens before the mode detent changes.
 				var target_weight := smoothstep(1.0 - split_fraction - 0.018, 1.0 - split_fraction + 0.018, u)
 				projector_color = source_color.lerp(target_color, target_weight)
-				var target_pattern := _chevron_multiplier(u, row, _dial_preview_target)
+				var target_pattern := _chevron_multiplier(u, 1.0 - row, _dial_preview_target)
 				source_pattern = lerpf(source_pattern, target_pattern, target_weight)
 			image.set_pixel(x, y, projector_color * (intensity * edge * source_pattern))
 	# The finite shutter/preview quantization has fewer than 600 reachable
@@ -250,10 +251,13 @@ func _preview_has_rgb_split() -> bool:
 func _chevron_multiplier(u: float, row: float, filter_mode: LightField.Mode) -> float:
 	if filter_mode == LightField.Mode.CLEAR:
 		return 1.0
-	var corner := 1.0 - 2.0 * absf(fposmod(u * 3.0, 1.0) - 0.5)
-	var bend := -0.11 if filter_mode == LightField.Mode.BLUE else 0.11
-	var phase := absf(fposmod((row + corner * bend) * 4.0, 1.0) - 0.5)
-	return 1.0 - 0.38 * (1.0 - smoothstep(0.035, 0.12, phase))
+	var cell_x := fposmod(u * 4.0, 1.0)
+	var cell_y := fposmod(row * 5.0, 1.0)
+	var in_glyph := smoothstep(0.14, 0.19, cell_x) * (1.0 - smoothstep(0.81, 0.86, cell_x))
+	var point := 1.0 - 2.0 * absf(cell_x - 0.5)
+	var line_y := 0.24 + 0.48 * point if filter_mode == LightField.Mode.BLUE else 0.76 - 0.48 * point
+	var line := in_glyph * (1.0 - smoothstep(0.035, 0.085, absf(cell_y - line_y)))
+	return 1.0 - 0.38 * line
 
 func _mode_color(filter_mode: LightField.Mode) -> Color:
 	if filter_mode == LightField.Mode.BLUE:

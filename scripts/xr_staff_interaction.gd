@@ -5,12 +5,15 @@ extends RefCounted
 ## XR Tools owns the staff pose while grabbed; StaffTool owns it otherwise.
 const CONTROL_RADIUS := 0.23
 const RECALL_GRAB_RADIUS := 0.55
-const PICKUP_HAPTIC := 0.22
-const RELEASE_HAPTIC := 0.16
-const ADJUST_HAPTIC_MIN_SPEED := 0.06
-const ADJUST_HAPTIC_MAX_SPEED := 0.85
+const PICKUP_HAPTIC := 0.065
+const RELEASE_HAPTIC := 0.05
+const ADJUST_HAPTIC_MIN_INTERVAL := 0.065
+const ADJUST_SHUTTER_TICK := 0.08
+const ADJUST_DIAL_TICK := 0.07
+const ADJUST_HAPTIC_MIN_SPEED := 0.15
+const ADJUST_HAPTIC_MAX_SPEED := 1.4
 const RECALL_HAPTIC_INTERVAL := 0.62
-const RECALL_HAPTIC := 0.075
+const RECALL_HAPTIC := 0.045
 const GRIP_THRESHOLD := 0.65
 const HIGHLIGHT_RING := preload("res://addons/godot-xr-tools/objects/highlight/highlight_ring.tscn")
 
@@ -40,6 +43,8 @@ var _hint: ControlHighlight
 var _shaft_ring: XRToolsHighlightRing
 var _shaft_highlight_requested := false
 var _adjust_haptic_elapsed := 0.0
+var _adjust_haptic_shutter := 0.0
+var _adjust_haptic_dial := 0.0
 var _recall_haptic_elapsed := 0.0
 var _recall_haptic_owner: XRController3D
 
@@ -104,18 +109,8 @@ func update(delta: float) -> void:
 		if controller == _adjust_owner:
 			pickup.enabled = false
 			if grip_down and not rig.is_menu_open():
-				var old_shutter := staff.lantern.shutter_openness
-				var old_dial := staff.lantern._dial_preview
 				staff.update_adjust(controller.global_transform)
-				var adjustment_speed := maxf(
-					absf(staff.lantern.shutter_openness - old_shutter) / maxf(delta, 0.001),
-					absf(staff.lantern._dial_preview - old_dial) / maxf(delta, 0.001))
-				if adjustment_speed >= ADJUST_HAPTIC_MIN_SPEED:
-					_adjust_haptic_elapsed += delta
-					if _adjust_haptic_elapsed >= 0.08:
-						var strength := lerpf(0.08, 0.3, clampf(inverse_lerp(ADJUST_HAPTIC_MIN_SPEED, ADJUST_HAPTIC_MAX_SPEED, adjustment_speed), 0.0, 1.0))
-						_pulse(controller, strength, 55, &"adjust")
-						_adjust_haptic_elapsed = 0.0
+				_update_adjust_haptic(controller, delta)
 				_snap_hand(controller)
 			else:
 				_end_adjust()
@@ -130,7 +125,10 @@ func update(delta: float) -> void:
 				_consumed_grip[index] = true
 				_saved_hand_pose = (controller.get_node("Hand") as Node3D).transform
 				staff.begin_adjust(controller.global_transform)
-				_pulse(controller, PICKUP_HAPTIC * 0.7, 60, &"adjust_grip")
+				_adjust_haptic_elapsed = 0.0
+				_adjust_haptic_shutter = staff.lantern.shutter_openness
+				_adjust_haptic_dial = staff.lantern._dial_preview
+				_one_shot_haptic(controller, PICKUP_HAPTIC * 0.7, 0.018)
 				_snap_hand(controller)
 		else:
 			pickup.enabled = tracked and not rig.is_menu_open() and not _consumed_grip[index]
@@ -138,7 +136,7 @@ func update(delta: float) -> void:
 	if staff.is_picked_up():
 		var current_owner := staff.get_picked_up_by_controller()
 		if current_owner != null and current_owner != _last_shaft_owner:
-			_pulse(current_owner, PICKUP_HAPTIC, 75, &"pickup")
+			_one_shot_haptic(current_owner, PICKUP_HAPTIC, 0.020)
 		_last_shaft_owner = current_owner
 	_hint.set_hovered(show_hint and _adjust_owner == null)
 	if _hint.hovered:
@@ -164,9 +162,40 @@ func _end_adjust(with_haptic: bool = true) -> void:
 		hand.transform = _saved_hand_pose
 	staff.end_adjust()
 	if with_haptic:
-		_pulse(_adjust_owner, RELEASE_HAPTIC * 0.7, 50, &"adjust_release")
+		_one_shot_haptic(_adjust_owner, RELEASE_HAPTIC * 0.7, 0.018)
 	_adjust_haptic_elapsed = 0.0
 	_adjust_owner = null
+
+
+func _update_adjust_haptic(controller: XRController3D, delta: float) -> void:
+	# Small control-space detents stay quiet at rest and feel like separate ticks
+	# as either setting actually travels, independent of headset locomotion.
+	_adjust_haptic_elapsed = minf(_adjust_haptic_elapsed + maxf(delta, 0.0), 0.25)
+	var shutter := staff.lantern.shutter_openness
+	var dial := staff.lantern._dial_preview
+	var shutter_travel := absf(shutter - _adjust_haptic_shutter)
+	var dial_travel := absf(dial - _adjust_haptic_dial)
+	if shutter_travel < ADJUST_SHUTTER_TICK and dial_travel < ADJUST_DIAL_TICK:
+		return
+	if _adjust_haptic_elapsed < ADJUST_HAPTIC_MIN_INTERVAL:
+		return
+	var adjustment_speed := maxf(
+		shutter_travel, dial_travel) / _adjust_haptic_elapsed
+	_adjust_haptic_shutter = shutter
+	_adjust_haptic_dial = dial
+	_adjust_haptic_elapsed = 0.0
+	var amount := clampf(inverse_lerp(ADJUST_HAPTIC_MIN_SPEED, ADJUST_HAPTIC_MAX_SPEED, adjustment_speed), 0.0, 1.0)
+	_one_shot_haptic(controller, lerpf(0.025, 0.10, amount), 0.018)
+
+
+func _one_shot_haptic(controller: XRController3D, magnitude: float, duration: float) -> void:
+	if controller == null or not controller.get_has_tracking_data() or XRServer.primary_interface == null:
+		return
+	# XR Tools resends each event as a 100 ms pulse every frame. Direct OpenXR
+	# keeps a setting detent or grip event brief and at the requested strength.
+	XRServer.primary_interface.trigger_haptic_pulse(
+		&"haptic", controller.tracker, 0.0,
+		clampf(magnitude * XRToolsUserSettings.haptics_scale, 0.0, 1.0), duration, 0.0)
 
 
 func _update_recall_haptics(delta: float) -> void:
@@ -218,7 +247,7 @@ func _resolve_drop() -> void:
 		_end_adjust()
 	var intentional := _last_shaft_owner != null and _last_shaft_owner.get_has_tracking_data()
 	if intentional:
-		_pulse(_last_shaft_owner, RELEASE_HAPTIC, 65, &"release")
+		_one_shot_haptic(_last_shaft_owner, RELEASE_HAPTIC, 0.018)
 	staff.release_external_grab(intentional)
 	_last_shaft_owner = null
 

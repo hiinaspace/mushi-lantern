@@ -80,7 +80,7 @@ func _run() -> void:
 	var pivot := staff._swing.global_position
 	var bob_before := staff._bob_world
 	var yaw_basis := Basis(Vector3.UP, 0.8)
-	var yaw_origin := pivot - yaw_basis * Vector3(0.36, 0.64, 0.0)
+	var yaw_origin := pivot - yaw_basis * StaffTool.SUSPENSION_PIVOT_LOCAL
 	staff.set_held_world_pose(Transform3D(yaw_basis, yaw_origin))
 	staff.advance(1.0 / 60.0)
 	assert(staff._bob_world.distance_to(bob_before) < 0.002)

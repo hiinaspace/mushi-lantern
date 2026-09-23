@@ -64,6 +64,10 @@ func _run() -> void:
 							high = maxf(high, value)
 					_expect(high > 0.98 and low < 0.75, "colored filter engraves cookie")
 					_expect(absf(image.get_pixel(30, 30).r - image.get_pixel(30, 30).b) < 0.01, "steady cookie stays neutral")
+					if mode == LightField.Mode.BLUE:
+						_expect(image.get_pixel(24, 34).r < image.get_pixel(24, 29).r, "blue cookie V points down in projector coordinates")
+					else:
+						_expect(image.get_pixel(24, 29).r < image.get_pixel(24, 34).r, "orange cookie caret points up in projector coordinates")
 		await _capture(camera, "beam-%d.png" % mode)
 		await _capture_window(camera, wall, "window-%d.png" % mode)
 	lantern.set_mode(LightField.Mode.BLUE)

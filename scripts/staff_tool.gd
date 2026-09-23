@@ -22,11 +22,12 @@ const FILTER_STEP_YAW := 0.55
 const FILTER_ENTER_YAW := 0.30
 const FILTER_EXIT_YAW := 0.25
 const SUSPENSION_LENGTH := 0.39
+const SUSPENSION_PIVOT_LOCAL := Vector3(0.0, 0.64, -0.36)
 const SWING_GRAVITY := 9.81
-const SWING_DRAG := 2.2
+const SWING_DRAG := 2.6
 const SWING_STEP := 1.0 / 120.0
 const SWING_JUMP_DISTANCE := 0.55
-const XR_LOCOMOTION_FOLLOW := 0.35
+const XR_LOCOMOTION_FOLLOW := 0.45
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -137,8 +138,8 @@ func _build_visual() -> void:
 	arm_mesh.bottom_radius = 0.014
 	arm_mesh.height = 0.38
 	arm.mesh = arm_mesh
-	arm.rotation.z = PI * 0.5
-	arm.position = Vector3(0.17, 0.75, 0.0)
+	arm.rotation.x = -PI * 0.5
+	arm.position = Vector3(0.0, 0.75, -0.17)
 	arm.material_override = _material(Color("857f69"), 0.48, 0.0)
 	add_child(arm)
 	_swing = Node3D.new()
@@ -150,10 +151,10 @@ func _build_visual() -> void:
 	crook_mesh.bottom_radius = 0.014
 	crook_mesh.height = 0.11
 	crook_tip.mesh = crook_mesh
-	crook_tip.position = Vector3(0.36, 0.69, 0.0)
+	crook_tip.position = Vector3(0.0, 0.69, -0.36)
 	crook_tip.material_override = _material(Color("857f69"), 0.48, 0.10)
 	add_child(crook_tip)
-	_swing.position = Vector3(0.36, 0.64, 0.0)
+	_swing.position = SUSPENSION_PIVOT_LOCAL
 	add_child(_swing)
 	var suspension := MeshInstance3D.new()
 	suspension.name = "SuspensionCord"
