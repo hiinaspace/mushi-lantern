@@ -102,6 +102,8 @@ var _want_xr: bool = false
 var _desktop_aim: Vector2 = Vector2.ZERO
 var _desktop_recall_held: bool = false
 var _xr_recall_owner: XRController3D
+var _previous_xr_origin := Vector3.ZERO
+var _xr_origin_sampled := false
 
 func _ready() -> void:
 	process_physics_priority = 100
@@ -443,6 +445,7 @@ func _build_xr_player() -> void:
 	add_child(xr_player)
 	xr_player.set_world_surface(world_surface)
 	xr_player.reset_pose(player.global_position)
+	_xr_origin_sampled = false
 	if not xr_player.xr_active:
 		push_warning("OpenXR did not initialize; continuing in desktop mode")
 		xr_player.queue_free()
@@ -491,19 +494,28 @@ func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
 func _update_staff_pose(delta: float) -> void:
 	if staff_tool == null:
 		return
+	var locomotion_delta := Vector3.ZERO
 	if xr_player != null and xr_player.xr_active:
+		var xr_origin: Vector3 = xr_player.global_position
+		if _xr_origin_sampled:
+			var displacement: Vector3 = xr_origin - _previous_xr_origin
+			if displacement.is_finite() and displacement.length() < StaffTool.SWING_JUMP_DISTANCE:
+				locomotion_delta = displacement
+		_previous_xr_origin = xr_origin
+		_xr_origin_sampled = true
 		if xr_staff_interaction != null:
 			xr_staff_interaction.update(delta)
 		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
 			staff_tool.update_recall(_xr_recall_owner.global_transform, delta)
 	else:
+		_xr_origin_sampled = false
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_desktop_aim = _desktop_aim.lerp(Vector2.ZERO, 1.0 - exp(-delta * 3.5))
 		if _desktop_recall_held:
 			staff_tool.update_recall(player.camera.global_transform, delta)
 		elif staff_tool.placement == StaffTool.Placement.HELD:
 			staff_tool.set_held_world_pose(_desktop_staff_pose())
-	staff_tool.advance(delta)
+	staff_tool.advance(delta, locomotion_delta)
 
 
 func _viewer_lantern_exposure() -> float:
@@ -1022,6 +1034,7 @@ func _reset_run(record_previous: bool) -> void:
 			xr_staff_interaction.reset_for_run()
 		_xr_recall_owner = null
 		xr_player.reset_pose(player.global_position)
+		_xr_origin_sampled = false
 		staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	else:
 		staff_tool.reset_to_pose(_desktop_staff_pose())

@@ -101,7 +101,7 @@ func _build_visual() -> void:
 	_box("HangerLoop", Vector3(0.08, 0.015, 0.06), Vector3(0.0, 0.38, 0.0), metal)
 
 	var rear_face := _material(Color("242630"), 0.0)
-	var glyph_colors := [Color("65c8ff"), Color("f8e5b2"), Color("ff9852")]
+	var glyph_colors := [_mode_color(LightField.Mode.BLUE), _mode_color(LightField.Mode.CLEAR), _mode_color(LightField.Mode.ORANGE)]
 	for i: int in 3:
 		var glyph_material := _material(glyph_colors[i], 0.0)
 		glyph_material.emission_enabled = true
@@ -143,8 +143,10 @@ func _make_side_glow_material() -> ShaderMaterial:
 	shader.code = """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
-uniform vec3 filter_source = vec3(0.4, 0.78, 1.0);
-uniform vec3 filter_target = vec3(0.4, 0.78, 1.0);
+uniform vec3 filter_source = vec3(0.263, 0.561, 0.910);
+uniform vec3 filter_target = vec3(0.263, 0.561, 0.910);
+uniform float source_chevron = -1.0;
+uniform float target_chevron = -1.0;
 uniform float split_fraction = 0.0;
 uniform bool split_active = false;
 uniform float shutter_open = 1.0;
@@ -157,6 +159,15 @@ void fragment() {
 	if (shutter_open >= 0.995) { lit = 1.0; }
 	float mix_amount = split_active ? smoothstep(1.0 - split_fraction - 0.018, 1.0 - split_fraction + 0.018, UV.x) : 0.0;
 	vec3 color = mix(filter_source, filter_target, mix_amount);
+	// The filter engraving follows each color across the sliding lens.
+	float corner = 1.0 - 2.0 * abs(fract(UV.x * 3.0) - 0.5);
+	float blue_phase = abs(fract((UV.y - corner * 0.11) * 4.0) - 0.5);
+	float red_phase = abs(fract((UV.y + corner * 0.11) * 4.0) - 0.5);
+	float blue_line = 1.0 - smoothstep(0.035, 0.12, blue_phase);
+	float red_line = 1.0 - smoothstep(0.035, 0.12, red_phase);
+	float source_line = source_chevron < -0.5 ? blue_line : source_chevron > 0.5 ? red_line : 0.0;
+	float target_line = target_chevron < -0.5 ? blue_line : target_chevron > 0.5 ? red_line : 0.0;
+	color *= 1.0 - 0.19 * mix(source_line, target_line, mix_amount);
 	// Unshaded materials write their visible light through ALBEDO.
 	ALBEDO = vec3(0.012, 0.012, 0.018) + color * lit * glow_strength;
 }
@@ -185,7 +196,7 @@ func _update_cookie() -> void:
 	var step := 0 if shutter_openness <= 0.005 else COOKIE_STEPS if shutter_openness >= 0.995 else clampi(roundi(shutter_openness * COOKIE_STEPS), 1, COOKIE_STEPS - 1)
 	var split_step := _preview_split_step()
 	var split_active := _preview_has_rgb_split()
-	var key := "%d:%d:%d:%d" % [step, int(_dial_preview_source), int(_dial_preview_target), split_step]
+	var key := "%d:%d:%d:%d:%d" % [step, int(mode), int(_dial_preview_source), int(_dial_preview_target), split_step]
 	if key == _projector_key:
 		return
 	if step == 0:
@@ -214,11 +225,14 @@ func _update_cookie() -> void:
 			var edge := smoothstep(0.145, 0.17, u) * (1.0 - smoothstep(0.83, 0.855, u))
 			edge *= smoothstep(0.145, 0.17, v) * (1.0 - smoothstep(0.83, 0.855, v))
 			var projector_color := Color.WHITE
+			var source_pattern := _chevron_multiplier(u, row, _dial_preview_source if split_active else mode)
 			if split_active:
 				# A colored filter slides across the lens before the mode detent changes.
 				var target_weight := smoothstep(1.0 - split_fraction - 0.018, 1.0 - split_fraction + 0.018, u)
 				projector_color = source_color.lerp(target_color, target_weight)
-			image.set_pixel(x, y, projector_color * (intensity * edge))
+				var target_pattern := _chevron_multiplier(u, row, _dial_preview_target)
+				source_pattern = lerpf(source_pattern, target_pattern, target_weight)
+			image.set_pixel(x, y, projector_color * (intensity * edge * source_pattern))
 	# The finite shutter/preview quantization has fewer than 600 reachable
 	# textures. Keep them for this lantern's lifetime: evicting a texture while
 	# the spotlight still references it can invalidate Godot's projector atlas.
@@ -233,11 +247,19 @@ func _preview_has_rgb_split() -> bool:
 	var step := _preview_split_step()
 	return (_dial_preview_active or _settling_split) and _dial_preview_source != _dial_preview_target and step > 0 and step < COOKIE_STEPS
 
+func _chevron_multiplier(u: float, row: float, filter_mode: LightField.Mode) -> float:
+	if filter_mode == LightField.Mode.CLEAR:
+		return 1.0
+	var corner := 1.0 - 2.0 * absf(fposmod(u * 3.0, 1.0) - 0.5)
+	var bend := -0.11 if filter_mode == LightField.Mode.BLUE else 0.11
+	var phase := absf(fposmod((row + corner * bend) * 4.0, 1.0) - 0.5)
+	return 1.0 - 0.38 * (1.0 - smoothstep(0.035, 0.12, phase))
+
 func _mode_color(filter_mode: LightField.Mode) -> Color:
 	if filter_mode == LightField.Mode.BLUE:
-		return Color("65c8ff")
+		return Color("438fe8")
 	if filter_mode == LightField.Mode.ORANGE:
-		return Color("ff9852")
+		return Color("ed5d49")
 	return Color("f8e5b2")
 
 func set_mode(new_mode: LightField.Mode) -> void:
@@ -390,11 +412,11 @@ func _apply_visual() -> void:
 	var base_energy := 10.0
 	var range_m := 20.0
 	if mode == LightField.Mode.BLUE:
-		color = Color("65c8ff")
+		color = _mode_color(mode)
 		base_energy = 3.4
 		range_m = 10.5
 	elif mode == LightField.Mode.ORANGE:
-		color = Color("ff9852")
+		color = _mode_color(mode)
 		base_energy = 3.8
 		range_m = 10.5
 	if _last_visual_mode != int(mode):
@@ -416,6 +438,8 @@ func _apply_visual() -> void:
 	for glow_material: ShaderMaterial in [_front_glow_material, _side_glow_material]:
 		glow_material.set_shader_parameter("filter_source", _mode_color(_dial_preview_source) if split_active else spot.light_color)
 		glow_material.set_shader_parameter("filter_target", _mode_color(_dial_preview_target))
+		glow_material.set_shader_parameter("source_chevron", _chevron_direction(_dial_preview_source if split_active else mode))
+		glow_material.set_shader_parameter("target_chevron", _chevron_direction(_dial_preview_target))
 		glow_material.set_shader_parameter("split_fraction", float(_preview_split_step()) / float(COOKIE_STEPS))
 		glow_material.set_shader_parameter("split_active", split_active)
 		glow_material.set_shader_parameter("shutter_open", shutter_openness)
@@ -425,6 +449,9 @@ func _apply_visual() -> void:
 		spot.visible = shutter_openness > 0.01
 		_last_visual_openness = shutter_openness
 	_update_cookie()
+
+func _chevron_direction(filter_mode: LightField.Mode) -> float:
+	return -1.0 if filter_mode == LightField.Mode.BLUE else 1.0 if filter_mode == LightField.Mode.ORANGE else 0.0
 
 func _material(color: Color, emission_energy: float) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()

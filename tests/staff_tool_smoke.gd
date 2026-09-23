@@ -66,6 +66,15 @@ func _run() -> void:
 	var forward_peak := _wave_peak(staff, Vector3.FORWARD)
 	assert(side_peak > 0.01 and forward_peak > 0.01)
 	assert(absf(side_peak - forward_peak) < maxf(side_peak, forward_peak) * 0.12)
+	# Joystick translation has a smaller start/stop kick, while ordinary hand waves still swing.
+	var uncompensated := _locomotion_peak(staff, 60, false)
+	var compensated := _locomotion_peak(staff, 60, true)
+	var compensated_90 := _locomotion_peak(staff, 90, true)
+	assert(uncompensated > 0.02)
+	assert(compensated < uncompensated * 0.85)
+	assert(compensated > uncompensated * 0.4)
+	assert(absf(compensated_90 - compensated) < compensated * 0.15)
+	assert(side_peak > compensated * 0.1)
 	# Pure shaft yaw about the suspension point turns the beam without kicking the bob.
 	staff.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0)))
 	var pivot := staff._swing.global_position
@@ -156,6 +165,20 @@ func _wave_peak(staff: StaffTool, direction: Vector3) -> float:
 		staff.advance(1.0 / 60.0)
 		var offset_from_vertical := staff._bob_world - staff._swing.global_position - Vector3.DOWN * StaffTool.SUSPENSION_LENGTH
 		peak = maxf(peak, absf(offset_from_vertical.dot(direction)))
+	return peak
+
+func _locomotion_peak(staff: StaffTool, fps: int, compensate: bool) -> float:
+	staff.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0)))
+	var dt := 1.0 / float(fps)
+	var distance := 0.0
+	var peak := 0.0
+	for frame: int in fps:
+		# Walk for half a second and then stop sharply.
+		var step_distance := 1.8 * dt if frame < fps / 2 else 0.0
+		distance += step_distance
+		staff.set_held_world_pose(Transform3D(Basis.IDENTITY, Vector3(distance, 1.0, 0.0)))
+		staff.advance(dt, Vector3(step_distance, 0.0, 0.0) if compensate else Vector3.ZERO)
+		peak = maxf(peak, absf(staff._bob_world.x - staff._swing.global_position.x))
 	return peak
 
 func _finite_swing(staff: StaffTool) -> bool:

@@ -26,6 +26,7 @@ const SWING_GRAVITY := 9.81
 const SWING_DRAG := 2.2
 const SWING_STEP := 1.0 / 120.0
 const SWING_JUMP_DISTANCE := 0.55
+const XR_LOCOMOTION_FOLLOW := 0.35
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -378,7 +379,7 @@ func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = 
 	_capture_aim()
 	_park_target = global_transform
 
-func advance(delta: float) -> void:
+func advance(delta: float, xr_locomotion_delta: Vector3 = Vector3.ZERO) -> void:
 	var dt := clampf(delta, 0.0, 0.1)
 	if placement == Placement.FLOATING:
 		_float_elapsed += dt
@@ -393,7 +394,7 @@ func advance(delta: float) -> void:
 		if global_position.distance_to(_park_target.origin) < 0.018:
 			global_transform = _park_target
 			placement = Placement.PARKED
-	_update_swing(dt)
+	_update_swing(dt, xr_locomotion_delta)
 	lantern.advance_flame(dt)
 	lantern.advance_transition(dt)
 
@@ -448,13 +449,17 @@ func _reset_swing() -> void:
 	_bob_velocity = Vector3.ZERO
 	_orient_swing(_previous_pivot)
 
-func _update_swing(dt: float) -> void:
+func _update_swing(dt: float, xr_locomotion_delta: Vector3 = Vector3.ZERO) -> void:
 	if dt <= 0.0:
 		return
 	var pivot := _swing.global_position
 	if pivot.distance_to(_previous_pivot) > SWING_JUMP_DISTANCE:
 		_reset_swing()
 		return
+	# The rig's joystick translation carries part of the bob along with the hand.
+	# Leave tracked hand motion and world-space gravity untouched.
+	if placement == Placement.HELD and not _adjusting and xr_locomotion_delta.is_finite() and xr_locomotion_delta.length() < SWING_JUMP_DISTANCE:
+		_bob_world += xr_locomotion_delta * XR_LOCOMOTION_FOLLOW
 	if _adjusting:
 		_bob_world += pivot - _previous_pivot
 		_bob_velocity = Vector3.ZERO

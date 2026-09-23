@@ -32,7 +32,7 @@ distance = 4.0
 
 [node name="Pickup" parent="LeftController" instance=ExtResource("10")]
 pickup_axis_action = "grip"
-grab_distance = 0.32
+grab_distance = 0.2
 grab_collision_mask = 4
 ranged_enable = false
 
@@ -52,7 +52,7 @@ distance = 4.0
 
 [node name="Pickup" parent="RightController" instance=ExtResource("10")]
 pickup_axis_action = "grip"
-grab_distance = 0.32
+grab_distance = 0.2
 grab_collision_mask = 4
 ranged_enable = false
 

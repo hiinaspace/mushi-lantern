@@ -5,6 +5,12 @@ extends RefCounted
 ## XR Tools owns the staff pose while grabbed; StaffTool owns it otherwise.
 const CONTROL_RADIUS := 0.23
 const RECALL_GRAB_RADIUS := 0.55
+const PICKUP_HAPTIC := 0.22
+const RELEASE_HAPTIC := 0.16
+const ADJUST_HAPTIC_MIN_SPEED := 0.06
+const ADJUST_HAPTIC_MAX_SPEED := 0.85
+const RECALL_HAPTIC_INTERVAL := 0.62
+const RECALL_HAPTIC := 0.075
 const GRIP_THRESHOLD := 0.65
 const HIGHLIGHT_RING := preload("res://addons/godot-xr-tools/objects/highlight/highlight_ring.tscn")
 
@@ -33,6 +39,9 @@ var _saved_hand_pose: Transform3D = Transform3D.IDENTITY
 var _hint: ControlHighlight
 var _shaft_ring: XRToolsHighlightRing
 var _shaft_highlight_requested := false
+var _adjust_haptic_elapsed := 0.0
+var _recall_haptic_elapsed := 0.0
+var _recall_haptic_owner: XRController3D
 
 
 func configure(tool: StaffTool, player_rig: MushiXRPlayer) -> void:
@@ -57,7 +66,7 @@ func configure(tool: StaffTool, player_rig: MushiXRPlayer) -> void:
 	rig.add_child(_hint)
 
 
-func update(_delta: float) -> void:
+func update(delta: float) -> void:
 	if staff == null or rig == null or not rig.xr_active:
 		return
 	_resolve_drop()
@@ -95,7 +104,18 @@ func update(_delta: float) -> void:
 		if controller == _adjust_owner:
 			pickup.enabled = false
 			if grip_down and not rig.is_menu_open():
+				var old_shutter := staff.lantern.shutter_openness
+				var old_dial := staff.lantern._dial_preview
 				staff.update_adjust(controller.global_transform)
+				var adjustment_speed := maxf(
+					absf(staff.lantern.shutter_openness - old_shutter) / maxf(delta, 0.001),
+					absf(staff.lantern._dial_preview - old_dial) / maxf(delta, 0.001))
+				if adjustment_speed >= ADJUST_HAPTIC_MIN_SPEED:
+					_adjust_haptic_elapsed += delta
+					if _adjust_haptic_elapsed >= 0.08:
+						var strength := lerpf(0.08, 0.3, clampf(inverse_lerp(ADJUST_HAPTIC_MIN_SPEED, ADJUST_HAPTIC_MAX_SPEED, adjustment_speed), 0.0, 1.0))
+						_pulse(controller, strength, 55, &"adjust")
+						_adjust_haptic_elapsed = 0.0
 				_snap_hand(controller)
 			else:
 				_end_adjust()
@@ -110,16 +130,21 @@ func update(_delta: float) -> void:
 				_consumed_grip[index] = true
 				_saved_hand_pose = (controller.get_node("Hand") as Node3D).transform
 				staff.begin_adjust(controller.global_transform)
+				_pulse(controller, PICKUP_HAPTIC * 0.7, 60, &"adjust_grip")
 				_snap_hand(controller)
 		else:
 			pickup.enabled = tracked and not rig.is_menu_open() and not _consumed_grip[index]
 		_was_gripped[index] = grip_down
 	if staff.is_picked_up():
-		_last_shaft_owner = staff.get_picked_up_by_controller()
+		var current_owner := staff.get_picked_up_by_controller()
+		if current_owner != null and current_owner != _last_shaft_owner:
+			_pulse(current_owner, PICKUP_HAPTIC, 75, &"pickup")
+		_last_shaft_owner = current_owner
 	_hint.set_hovered(show_hint and _adjust_owner == null)
 	if _hint.hovered:
 		_hint.global_position = staff.control_world_position()
 	_shaft_ring.visible = _shaft_highlight_requested and not rig.is_menu_open() and not show_hint and _adjust_owner == null
+	_update_recall_haptics(delta)
 
 
 func _on_shaft_highlight_updated(_pickable: XRToolsPickable, enabled: bool) -> void:
@@ -131,14 +156,50 @@ func _snap_hand(controller: XRController3D) -> void:
 	hand.global_position = staff.control_world_position()
 
 
-func _end_adjust() -> void:
+func _end_adjust(with_haptic: bool = true) -> void:
 	if _adjust_owner == null:
 		return
 	var hand := _adjust_owner.get_node_or_null("Hand") as Node3D
 	if hand != null:
 		hand.transform = _saved_hand_pose
 	staff.end_adjust()
+	if with_haptic:
+		_pulse(_adjust_owner, RELEASE_HAPTIC * 0.7, 50, &"adjust_release")
+	_adjust_haptic_elapsed = 0.0
 	_adjust_owner = null
+
+
+func _update_recall_haptics(delta: float) -> void:
+	var active_owner: XRController3D
+	if staff.placement == StaffTool.Placement.RECALL_HOVER:
+		for controller: XRController3D in _controllers:
+			if rig._recall_active.has(controller) and controller.get_has_tracking_data():
+				active_owner = controller
+				break
+	if _recall_haptic_owner != active_owner:
+		_clear_pulse(_recall_haptic_owner, &"recall")
+		_recall_haptic_owner = active_owner
+		_recall_haptic_elapsed = RECALL_HAPTIC_INTERVAL
+	if active_owner == null:
+		return
+	_recall_haptic_elapsed += delta
+	if _recall_haptic_elapsed >= RECALL_HAPTIC_INTERVAL:
+		_pulse(active_owner, RECALL_HAPTIC, 45, &"recall")
+		_recall_haptic_elapsed = 0.0
+
+
+func _pulse(controller: XRController3D, magnitude: float, duration_ms: int, key: StringName) -> void:
+	if controller == null or not controller.get_has_tracking_data() or XRServer.primary_interface == null:
+		return
+	var event := XRToolsRumbleEvent.new()
+	event.magnitude = clampf(magnitude, 0.0, 1.0)
+	event.duration_ms = duration_ms
+	XRToolsRumbleManager.add(StringName("mushi_staff_%s_%s" % [key, controller.tracker]), event, [controller.tracker])
+
+
+func _clear_pulse(controller: XRController3D, key: StringName) -> void:
+	if controller != null:
+		XRToolsRumbleManager.clear(StringName("mushi_staff_%s_%s" % [key, controller.tracker]), [controller.tracker])
 
 
 func _on_staff_dropped(_pickable: XRToolsPickable) -> void:
@@ -156,12 +217,17 @@ func _resolve_drop() -> void:
 	if _adjust_owner != null:
 		_end_adjust()
 	var intentional := _last_shaft_owner != null and _last_shaft_owner.get_has_tracking_data()
+	if intentional:
+		_pulse(_last_shaft_owner, RELEASE_HAPTIC, 65, &"release")
 	staff.release_external_grab(intentional)
 	_last_shaft_owner = null
 
 
 func reset_for_run() -> void:
-	_end_adjust()
+	_clear_pulse(_recall_haptic_owner, &"recall")
+	_recall_haptic_owner = null
+	_recall_haptic_elapsed = 0.0
+	_end_adjust(false)
 	if staff != null and staff.is_picked_up():
 		staff.drop()
 	_pending_drop = false
