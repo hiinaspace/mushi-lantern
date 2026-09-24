@@ -55,8 +55,32 @@ pitch. The shorter falloff and six-slot default retain individual spatial
 positions. Shutter cues trigger when manual travel begins instead of waiting
 for a large position change, and filter-driven shutter animation no longer
 triggers them. The source clips' leading quiet material was trimmed, and the
-filter control rotates through additional recorded transient cuts. The revised
-output level, cue timing, and new cuts still need headset listening review.
+filter control rotates through additional recorded transient cuts.
+
+The next headset pass accepted the mushi call density and shutter sound timing.
+The user saved a preferred balance: Overall 5.88, Mushi 0.27, Forest 1.0,
+Tool 0.63, and Steps 1.23. Those values are now the code defaults while the
+local saved file remains independently editable. The calls still feel somewhat
+ambient, so calm mushi now play at 0.5× pitch and fully excited ones at 1.0×,
+with two live pitch sliders in the desktop and XR audio menus. A slowed call
+finishes before that source starts another; the six-source spatial pool and
+shorter audible range remain. The pitch and final balance await another ear
+review. Integrated loudness should be measured on a representative game
+capture as context, since a sparse forest does not have a meaningful fixed
+target from a continuously loud program.
+
+A 40-second rendered desktop capture at these defaults, with 1024 GPU agents
+and about six nearby audio slots on average, measured −42.3 LUFS integrated
+and −20.5 dBTP true peak using FFmpeg's `loudnorm` input analysis. Reproduce
+the run on sayu with `./tools/measure-audio-loudness.sh`; it uses a temporary
+PulseAudio sink and fresh local settings, leaving the user's mix file alone.
+The path
+stood still for 10 seconds, walked forward for 10, stood for 10, then walked
+back for 8; the first still window measured −43.8 LUFS, forward walking
+−42.2, later still −50.4, and walking back −39.9. This is one authored path,
+not a loudness target. Bringing its full integrated value near −14 LUFS by
+uniform gain alone would exceed the measured peak headroom, so that figure
+would be a poor normalization goal for this sparse, dynamic soundscape.
 
 ## Intended sound
 

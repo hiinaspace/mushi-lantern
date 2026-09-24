@@ -2,24 +2,34 @@ class_name AudioMixPanel
 extends CanvasLayer
 
 signal panel_visibility_changed(open: bool)
+signal mushi_pitch_range_changed(calm: float, excited: float)
 
 const SAVE_PATH := "user://audio_mix.json"
 const BUS_NAMES: Array[String] = ["Master", "Mushi", "Forest", "Tool", "Steps"]
-const DEFAULT_LEVEL := 1.0
 const MAX_LEVEL := 1.5
-const MASTER_DEFAULT_LEVEL := 3.0
 const MASTER_MAX_LEVEL := 6.0
+const DEFAULT_LEVELS := {"Master": 5.88, "Mushi": 0.27, "Forest": 1.0, "Tool": 0.63, "Steps": 1.23}
+const PITCH_MIN := 0.35
+const PITCH_MAX := 1.6
+const DEFAULT_CALM_PITCH := 0.5
+const DEFAULT_EXCITED_PITCH := 1.0
+const CALM_PITCH_KEY := "MushiCalmPitch"
+const EXCITED_PITCH_KEY := "MushiExcitedPitch"
 
 var _levels: Dictionary = {}
+var _calm_pitch := DEFAULT_CALM_PITCH
+var _excited_pitch := DEFAULT_EXCITED_PITCH
 var _panel: PanelContainer
 var _desktop_sliders: Dictionary = {}
 var _xr_sliders: Dictionary = {}
+var _desktop_pitch_sliders: Dictionary = {}
+var _xr_pitch_sliders: Dictionary = {}
 var _status_labels: Array[Label] = []
 
 
 func _init() -> void:
 	for bus_name: String in BUS_NAMES:
-		_levels[bus_name] = MASTER_DEFAULT_LEVEL if bus_name == "Master" else DEFAULT_LEVEL
+		_levels[bus_name] = DEFAULT_LEVELS[bus_name]
 	_load_preset()
 
 
@@ -44,6 +54,24 @@ func get_levels() -> Dictionary:
 	return _levels.duplicate()
 
 
+func get_mushi_pitch_range() -> Vector2:
+	return Vector2(_calm_pitch, _excited_pitch)
+
+
+func set_mushi_pitch_range(calm: float, excited: float) -> void:
+	if not is_finite(calm) or not is_finite(excited):
+		return
+	var new_calm := clampf(calm, PITCH_MIN, PITCH_MAX)
+	var new_excited := clampf(excited, new_calm, PITCH_MAX)
+	if is_equal_approx(new_calm, _calm_pitch) and is_equal_approx(new_excited, _excited_pitch):
+		return
+	_calm_pitch = new_calm
+	_excited_pitch = new_excited
+	_sync_sliders()
+	mushi_pitch_range_changed.emit(_calm_pitch, _excited_pitch)
+	_set_status("Unsaved mix · Save preset to keep it")
+
+
 func set_level(bus_name: String, level: float) -> void:
 	if not BUS_NAMES.has(bus_name) or not is_finite(level):
 		return
@@ -57,6 +85,16 @@ func attach_xr_menu(menu_root: Control) -> void:
 	var contents := menu_root.get_node_or_null("Panel/Margin/Contents") as VBoxContainer
 	if contents == null:
 		return
+	# The 900x550 menu needs scrolling once the live audio controls are attached.
+	var scroll := ScrollContainer.new()
+	scroll.name = "AudioScroll"
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	contents.get_parent().add_child(scroll)
+	contents.reparent(scroll)
+	contents.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	contents.add_theme_constant_override("separation", 4)
 	contents.add_child(HSeparator.new())
 	var title := Label.new()
 	title.text = "Audio mix · point and drag"
@@ -64,6 +102,7 @@ func attach_xr_menu(menu_root: Control) -> void:
 	contents.add_child(title)
 	for bus_name: String in BUS_NAMES:
 		_xr_sliders[bus_name] = _add_slider(contents, bus_name, true)
+	_add_pitch_controls(contents, true)
 	var actions := HBoxContainer.new()
 	contents.add_child(actions)
 	_add_action_buttons(actions)
@@ -111,6 +150,7 @@ func _build_desktop_panel() -> void:
 	stack.add_child(note)
 	for bus_name: String in BUS_NAMES:
 		_desktop_sliders[bus_name] = _add_slider(stack, bus_name, false)
+	_add_pitch_controls(stack, false)
 	_add_action_buttons(stack)
 	var status := Label.new()
 	status.text = "Loaded mix · Save preset keeps it locally"
@@ -148,6 +188,37 @@ func _add_slider(parent: BoxContainer, bus_name: String, xr: bool) -> HSlider:
 	return slider
 
 
+func _add_pitch_controls(parent: BoxContainer, xr: bool) -> void:
+	var caption := Label.new()
+	caption.text = "Mushi pitch · calm to excited"
+	parent.add_child(caption)
+	for calm: bool in [true, false]:
+		var row := HBoxContainer.new()
+		parent.add_child(row)
+		var label := Label.new()
+		label.text = "Calm" if calm else "Excited"
+		label.custom_minimum_size.x = 105.0 if xr else 75.0
+		row.add_child(label)
+		var slider := HSlider.new()
+		slider.min_value = PITCH_MIN * 100.0
+		slider.max_value = PITCH_MAX * 100.0
+		slider.step = 1.0
+		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slider.custom_minimum_size.x = 170.0
+		row.add_child(slider)
+		var value_label := Label.new()
+		value_label.custom_minimum_size.x = 48.0
+		row.add_child(value_label)
+		slider.value_changed.connect(func(value: float) -> void:
+			if calm:
+				set_mushi_pitch_range(minf(value / 100.0, _excited_pitch), _excited_pitch)
+			else:
+				set_mushi_pitch_range(_calm_pitch, maxf(value / 100.0, _calm_pitch))
+		)
+		(_xr_pitch_sliders if xr else _desktop_pitch_sliders)["calm" if calm else "excited"] = slider
+	_sync_sliders()
+
+
 func _add_action_buttons(parent: BoxContainer) -> void:
 	var row := HBoxContainer.new()
 	parent.add_child(row)
@@ -168,6 +239,13 @@ func _sync_sliders() -> void:
 				var slider := sliders[bus_name] as HSlider
 				slider.set_value_no_signal(float(_levels[bus_name]) * 100.0)
 				(slider.get_parent().get_child(2) as Label).text = "%d%%" % roundi(float(_levels[bus_name]) * 100.0)
+	for sliders: Dictionary in [_desktop_pitch_sliders, _xr_pitch_sliders]:
+		for key: String in ["calm", "excited"]:
+			if sliders.has(key):
+				var slider := sliders[key] as HSlider
+				var pitch := _calm_pitch if key == "calm" else _excited_pitch
+				slider.set_value_no_signal(pitch * 100.0)
+				(slider.get_parent().get_child(2) as Label).text = "%.2fx" % pitch
 
 
 func _apply_levels() -> void:
@@ -195,6 +273,14 @@ func _load_preset() -> void:
 		var saved: Variant = (parsed as Dictionary).get(bus_name)
 		if (saved is float or saved is int) and is_finite(float(saved)):
 			_levels[bus_name] = clampf(float(saved), 0.0, MASTER_MAX_LEVEL if bus_name == "Master" else MAX_LEVEL)
+	var saved_calm: Variant = (parsed as Dictionary).get(CALM_PITCH_KEY)
+	if (saved_calm is float or saved_calm is int) and is_finite(float(saved_calm)):
+		_calm_pitch = clampf(float(saved_calm), PITCH_MIN, PITCH_MAX)
+	var saved_excited: Variant = (parsed as Dictionary).get(EXCITED_PITCH_KEY)
+	if (saved_excited is float or saved_excited is int) and is_finite(float(saved_excited)):
+		_excited_pitch = clampf(float(saved_excited), _calm_pitch, PITCH_MAX)
+	else:
+		_calm_pitch = minf(_calm_pitch, _excited_pitch)
 
 
 func _save_preset() -> void:
@@ -202,15 +288,21 @@ func _save_preset() -> void:
 	if file == null:
 		_set_status("Could not save preset: %s" % error_string(FileAccess.get_open_error()))
 		return
-	file.store_string(JSON.stringify(_levels, "\t") + "\n")
+	var preset := _levels.duplicate()
+	preset[CALM_PITCH_KEY] = _calm_pitch
+	preset[EXCITED_PITCH_KEY] = _excited_pitch
+	file.store_string(JSON.stringify(preset, "\t") + "\n")
 	_set_status("Mix preset saved locally")
 
 
 func _restore_defaults() -> void:
 	for bus_name: String in BUS_NAMES:
-		_levels[bus_name] = MASTER_DEFAULT_LEVEL if bus_name == "Master" else DEFAULT_LEVEL
+		_levels[bus_name] = DEFAULT_LEVELS[bus_name]
+	_calm_pitch = DEFAULT_CALM_PITCH
+	_excited_pitch = DEFAULT_EXCITED_PITCH
 	_apply_levels()
 	_sync_sliders()
+	mushi_pitch_range_changed.emit(_calm_pitch, _excited_pitch)
 	_set_status("Defaults restored · Save preset to keep them")
 
 

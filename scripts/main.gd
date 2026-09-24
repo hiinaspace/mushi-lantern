@@ -134,6 +134,9 @@ func _ready() -> void:
 	audio_mix_menu = load("res://scripts/audio_mix_panel.gd").new()
 	add_child(audio_mix_menu)
 	audio_mix_menu.panel_visibility_changed.connect(_on_audio_mix_visibility)
+	var mushi_pitch_range: Vector2 = audio_mix_menu.get_mushi_pitch_range()
+	grove_audio.set_mushi_pitch_range(mushi_pitch_range.x, mushi_pitch_range.y)
+	audio_mix_menu.mushi_pitch_range_changed.connect(grove_audio.set_mushi_pitch_range)
 	if xr_player != null and xr_player.xr_active:
 		var xr_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
 		if xr_surface.scene_node is Control:

@@ -14,11 +14,17 @@ const FADE_RATE := 5.0
 const AUDIO := "res://assets/audio/placeholders/"
 const FIELD_AUDIO := "res://assets/audio/field/"
 const FILTER_TRANSIENTS := ["lantern_shutter_variant_a", "lantern_shutter_variant_b", "lantern_shutter_open", "lantern_shutter_variant_c", "lantern_shutter_close"]
+const MUSHI_PITCH_MIN := 0.35
+const MUSHI_PITCH_MAX := 1.6
+const MUSHI_CALM_PITCH_DEFAULT := 0.5
+const MUSHI_EXCITED_PITCH_DEFAULT := 1.0
 
 var mushi_limit := 6
 var forest_limit := 3
 var tool_limit := TOOL_CAP
 var step_limit := STEP_CAP
+var _mushi_calm_pitch := MUSHI_CALM_PITCH_DEFAULT
+var _mushi_excited_pitch := MUSHI_EXCITED_PITCH_DEFAULT
 
 var _simulation: FlightSimulation
 var _surface: EnvironmentSurface
@@ -82,6 +88,17 @@ func configure(simulation: Variant, world_surface: EnvironmentSurface, staff_too
 	_build_forest_sites()
 	bind_simulation(simulation)
 	_reset_polled_state()
+
+
+func set_mushi_pitch_range(calm: float, excited: float) -> void:
+	if not is_finite(calm) or not is_finite(excited):
+		return
+	_mushi_calm_pitch = clampf(calm, MUSHI_PITCH_MIN, MUSHI_PITCH_MAX)
+	_mushi_excited_pitch = clampf(excited, _mushi_calm_pitch, MUSHI_PITCH_MAX)
+
+
+func get_mushi_pitch_range() -> Vector2:
+	return Vector2(_mushi_calm_pitch, _mushi_excited_pitch)
 
 
 func bind_simulation(new_simulation: Variant) -> void:
@@ -282,11 +299,14 @@ func _update_mushi(dt: float) -> void:
 					var speed := velocity.length() if velocity.is_finite() else 0.0
 					var motion := smoothstep(0.06, 0.55, speed)
 					var presence := maxf(motion, activity * 0.7)
-					if _clock >= float(slot.next_call) and proximity > 0.02:
+					if _clock >= float(slot.next_call) and proximity > 0.02 and not (slot.player as AudioStreamPlayer3D).playing:
 						var variant := 1 + posmod(id * 7 + _rng.randi_range(0, 3), 4)
-						var pitch := clampf(0.86 + float(posmod(id * 41, 101)) * 0.0025 + activity * 0.30 + _rng.randf_range(-0.035, 0.035), 0.78, 1.5)
-						_play(slot, "mushi_resonance_%02d" % variant, -29.0, pitch)
-						slot.next_call = _clock + lerpf(_rng.randf_range(12.0, 18.0), _rng.randf_range(2.9, 3.5), presence)
+						var pitch := clampf(lerpf(_mushi_calm_pitch, _mushi_excited_pitch, activity) + (float(posmod(id * 41, 101)) / 100.0 - 0.5) * 0.09 + _rng.randf_range(-0.025, 0.025), MUSHI_PITCH_MIN, MUSHI_PITCH_MAX)
+						var stem := "mushi_resonance_%02d" % variant
+						_play(slot, stem, -29.0, pitch)
+						var cadence := lerpf(_rng.randf_range(12.0, 18.0), _rng.randf_range(2.9, 3.5), presence)
+						var playback_seconds := (_streams[stem] as AudioStream).get_length() / pitch if _streams.has(stem) else 0.0
+						slot.next_call = _clock + maxf(cadence, playback_seconds + _rng.randf_range(0.08, 0.24))
 					if (slot.player as AudioStreamPlayer3D).playing:
 						slot.target = proximity * lerpf(0.08, 1.0, presence)
 						if float(slot.gain) > proximity:
