@@ -12,9 +12,10 @@ const STALE_SECONDS := 0.55
 const HOLD_SECONDS := 0.8
 const FADE_RATE := 5.0
 const AUDIO := "res://assets/audio/placeholders/"
+const FIELD_AUDIO := "res://assets/audio/field/"
 
 var mushi_limit := MUSHI_CAP
-var forest_limit := FOREST_CAP
+var forest_limit := 3
 var tool_limit := TOOL_CAP
 var step_limit := STEP_CAP
 
@@ -38,18 +39,12 @@ var _forest: Array[Dictionary] = []
 var _tool: Array[Dictionary] = []
 var _steps: Array[Dictionary] = []
 var _last_head := Vector3.ZERO
-var _step_distance := 0.0
-var _last_staff_position := Vector3.ZERO
 var _last_swing_local := Vector3.ZERO
 var _staff_speed := 0.0
 var _last_shutter := -1.0
 var _last_mode := -1
-var _last_placement := -1
 var _shutter_cooldown := 0.0
 var _filter_cooldown := 0.0
-var _creak_cooldown := 0.0
-var _step_cursor := 0
-var _creak_cursor := 0
 var _forest_sites: Array[Vector3] = []
 
 
@@ -124,6 +119,10 @@ func _load_streams() -> void:
 		var source: AudioStream = load(AUDIO + stem + ".wav")
 		if source != null:
 			_streams[stem] = source
+	for stem: String in ["forest_crickets_owl", "forest_cicadas_kyles", "footsteps_foliage", "lantern_swing", "lantern_shutter_open", "lantern_shutter_close", "lantern_wick"]:
+		var source: AudioStream = load(FIELD_AUDIO + stem + ".wav")
+		if source != null:
+			_streams[stem] = source
 
 
 func _make_pool(label: String, count: int) -> Array[Dictionary]:
@@ -163,7 +162,6 @@ func _process(delta: float) -> void:
 	_clock += dt
 	_shutter_cooldown = maxf(0.0, _shutter_cooldown - dt)
 	_filter_cooldown = maxf(0.0, _filter_cooldown - dt)
-	_creak_cooldown = maxf(0.0, _creak_cooldown - dt)
 	var camera := _listener_camera
 	if camera == null or not is_instance_valid(camera) or not camera.is_inside_tree():
 		_fade_all(dt)
@@ -290,7 +288,7 @@ func _build_forest_sites() -> void:
 	for prop: Dictionary in _surface.props:
 		if str(prop.get("kind", "")) == "tree":
 			var at: Vector3 = prop.position
-			if _forest_sites.is_empty() or _forest_sites.back().distance_to(at) > 7.0:
+			if _forest_sites.is_empty() or _forest_sites.back().distance_to(at) > 12.0:
 				_forest_sites.append(at + Vector3(0.0, 2.0, 0.0))
 
 
@@ -335,7 +333,9 @@ func _update_forest(dt: float) -> void:
 				slot.id = id
 				slot.position = _forest_sites[id]
 				(slot.player as Node3D).global_position = _forest_sites[id]
-				_play(slot, "forest_insects_%02d" % (id % 3 + 1), -26.0, 0.98 + float(id % 3) * 0.02, true)
+				var stem := "forest_crickets_owl" if id % 2 == 0 else "forest_cicadas_kyles"
+				var offset := fposmod(float(id) * 13.37, _streams[stem].get_length())
+				_play(slot, stem, -26.0, 1.0, true, offset)
 				break
 	for slot: Dictionary in _forest:
 		if int(slot.id) >= 0:
@@ -356,16 +356,16 @@ func _update_tool(dt: float) -> void:
 	for slot: Dictionary in _tool:
 		(slot.player as Node3D).global_position = pos
 	if str(flame.stream) == "":
-		_play(flame, "lantern_flame_bed", -25.0, 1.0, true)
+		_play(flame, "lantern_wick", -25.0, 1.0, true)
 	flame.target = proximity * (0.65 if _staff.lantern.shutter_openness > 0.02 else 0.28)
 	var shutter: float = _staff.lantern.shutter_openness
 	var mode: int = int(_staff.lantern.mode)
-	if _last_shutter >= 0.0 and absf(shutter - _last_shutter) >= 0.11 and _shutter_cooldown <= 0.0:
+	if _last_shutter >= 0.0 and absf(shutter - _last_shutter) >= 0.15 and _shutter_cooldown <= 0.0:
 		if proximity > 0.02:
-			_play(_tool[1], "shutter_detent_%02d" % _rng.randi_range(1, 3), -15.0)
+			_play(_tool[1], "lantern_shutter_open" if shutter > _last_shutter else "lantern_shutter_close", -17.0)
 			_tool[1].gain = proximity
 			_tool[1].target = proximity
-		_shutter_cooldown = 0.18
+		_shutter_cooldown = 0.8
 		_last_shutter = shutter
 	if _last_mode >= 0 and mode != _last_mode and _filter_cooldown <= 0.0:
 		if proximity > 0.02:
@@ -377,18 +377,12 @@ func _update_tool(dt: float) -> void:
 	var swing_local: Vector3 = _staff.global_transform.affine_inverse() * pos
 	var velocity: float = swing_local.distance_to(_last_swing_local) / maxf(dt, 0.001)
 	_staff_speed = lerpf(_staff_speed, velocity, minf(1.0, dt * 5.0))
-	if _last_placement >= 0 and _staff_speed > 0.8 and _creak_cooldown <= 0.0:
-		if proximity > 0.02:
-			var name := "lantern_rope_creak_%02d" % (_creak_cursor % 2 + 1) if _creak_cursor % 3 != 2 else "lantern_metal_swing_%02d" % (_creak_cursor % 2 + 1)
-			_play(_tool[3], name, -18.0)
-			_tool[3].gain = proximity
-			_tool[3].target = proximity
-		_creak_cursor += 1
-		_creak_cooldown = _rng.randf_range(1.1, 2.8)
-	_last_staff_position = pos
+	var swing_gain := proximity * smoothstep(0.25, 1.1, _staff_speed)
+	if swing_gain > 0.02 and str(_tool[3].stream) == "":
+		_play(_tool[3], "lantern_swing", -20.0, 1.0, true)
+	_tool[3].target = swing_gain
 	_last_swing_local = swing_local
-	_last_placement = int(_staff.placement)
-	for index: int in range(1, _tool.size()):
+	for index: int in range(1, 3):
 		if (_tool[index].player as AudioStreamPlayer3D).playing:
 			_tool[index].target = proximity
 	for slot: Dictionary in _tool:
@@ -408,23 +402,18 @@ func _update_footsteps(dt: float) -> void:
 		grounded = (player as CharacterBody3D).is_on_floor()
 	elif _surface != null:
 		grounded = absf(feet.y - _surface.get_height_at(Vector2(feet.x, feet.z))) < 0.5
-	if travel < 0.25 and grounded:
-		_step_distance += travel
-	elif travel > 0.9 or not grounded:
-		_step_distance = 0.0
 	_last_head = feet
-	if _step_distance >= 1.35 and step_limit > 0:
-		_step_distance = 0.0
-		var slot: Dictionary = _steps[_step_cursor % mini(step_limit, STEP_CAP)]
-		_step_cursor += 1
-		(slot.player as Node3D).global_position = feet
-		_play(slot, "footstep_ground_%02d" % (_step_cursor % 4 + 1), -18.0, _rng.randf_range(0.95, 1.04))
-		slot.target = 1.0
-	for slot: Dictionary in _steps:
-		_fade(slot, dt)
+	var slot: Dictionary = _steps[0]
+	(slot.player as Node3D).global_position = feet
+	var speed := travel / maxf(dt, 0.001) if travel < 0.9 else 0.0
+	var step_gain := smoothstep(0.35, 1.4, speed) if grounded and step_limit > 0 else 0.0
+	if step_gain > 0.02 and str(slot.stream) == "":
+		_play(slot, "footsteps_foliage", -19.0, 1.0, true)
+	slot.target = step_gain * 0.85
+	_fade(slot, dt)
 
 
-func _play(slot: Dictionary, stem: String, volume_db: float, pitch: float = 1.0, looped: bool = false) -> void:
+func _play(slot: Dictionary, stem: String, volume_db: float, pitch: float = 1.0, looped: bool = false, offset: float = 0.0) -> void:
 	if not _streams.has(stem):
 		return
 	var stream: AudioStream = _streams[stem]
@@ -434,7 +423,7 @@ func _play(slot: Dictionary, stem: String, volume_db: float, pitch: float = 1.0,
 		(stream as AudioStreamWAV).loop_end = maxi(1, roundi(stream.get_length() * float((stream as AudioStreamWAV).mix_rate)))
 		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 	var player: AudioStreamPlayer3D = slot.player
-	player.call("play_stream", stream, 0.0, 0.0, pitch)
+	player.call("play_stream", stream, offset, 0.0, pitch)
 	slot.stream = stem
 	slot.base_gain = db_to_linear(volume_db)
 	slot.gain = 0.0 if looped else 1.0
@@ -470,12 +459,9 @@ func _fade_all(dt: float) -> void:
 
 func _reset_polled_state() -> void:
 	_last_head = _desktop.global_position if _desktop != null else Vector3.ZERO
-	_last_staff_position = _staff.lantern.global_position if _staff != null and _staff.lantern != null else Vector3.ZERO
-	_last_swing_local = _staff.global_transform.affine_inverse() * _last_staff_position if _staff != null and _staff.lantern != null else Vector3.ZERO
+	_last_swing_local = _staff.global_transform.affine_inverse() * _staff.lantern.global_position if _staff != null and _staff.lantern != null else Vector3.ZERO
 	_last_shutter = _staff.lantern.shutter_openness if _staff != null and _staff.lantern != null else -1.0
 	_last_mode = int(_staff.lantern.mode) if _staff != null and _staff.lantern != null else -1
-	_last_placement = int(_staff.placement) if _staff != null else -1
-	_step_distance = 0.0
 
 
 func start_stress_voices(count: int) -> void:

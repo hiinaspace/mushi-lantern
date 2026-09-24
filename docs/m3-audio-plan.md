@@ -12,9 +12,20 @@ The OpenXR build initialized on Monado with the Bigscreen Beyond, Knuckles contr
 
 The follow-up sound pass moved generated placeholder WAVs out of Git while
 retaining the deterministic generator; launch and check scripts recreate them
-when missing. [Sample candidates](audio-sample-shortlist.md) are awaiting ear
-review. A bandpass-noise mushi generator is being auditioned separately. After
-choosing sounds by ear, add in-game bus-level tuning and saved mix presets.
+when missing. [Sample candidates](audio-sample-shortlist.md) began the ear
+review. A bandpass-noise mushi generator is being auditioned separately.
+
+In the next listening pass, the user selected two CC0 cricket/cicada recordings,
+foliage footsteps, lantern swing, shutter gestures, and a wooden wick texture.
+Edited mono excerpts are included in `assets/audio/field/`, with exact credits,
+source hashes, and edit spans in [Credits](../CREDITS.md) and the asset README.
+The forest uses three separated nearby tree emitters and different playback
+offsets. The footstep composite fades with grounded movement; lantern swing
+fades with actual relative lantern motion. The shutter source was cut into two
+provisional open/close gestures that still need ear confirmation. Four audio
+category levels now have live F3 and XR pointer controls plus a locally saved
+mix preset. Narrower 500–3000 Hz mushi sketches await listening approval before
+replacing the generated placeholder calls.
 
 ## Intended sound
 

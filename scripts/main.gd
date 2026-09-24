@@ -12,6 +12,7 @@ var terrain_size: int = 128
 var world_surface: Variant
 var terrain_environment: Node3D
 var quality_menu: CanvasLayer
+var audio_mix_menu: Variant
 var sun_light: DirectionalLight3D
 var night_environment: Environment
 var _quality_settings: Dictionary = {}
@@ -130,6 +131,13 @@ func _ready() -> void:
 	if _want_xr:
 		_build_xr_player()
 	_build_audio()
+	audio_mix_menu = load("res://scripts/audio_mix_panel.gd").new()
+	add_child(audio_mix_menu)
+	audio_mix_menu.panel_visibility_changed.connect(_on_audio_mix_visibility)
+	if xr_player != null and xr_player.xr_active:
+		var xr_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
+		if xr_surface.scene_node is Control:
+			audio_mix_menu.attach_xr_menu(xr_surface.scene_node as Control)
 	_build_ui()
 	panel.visible = debug_visible
 	_apply_preset(current_preset_index, false)
@@ -225,7 +233,7 @@ func _process(delta: float) -> void:
 			_capture_and_quit()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if quality_menu != null and quality_menu.is_open():
+	if (quality_menu != null and quality_menu.is_open()) or (audio_mix_menu != null and audio_mix_menu.is_open()):
 		return
 	if (xr_player == null or not xr_player.xr_active) and event is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var mouse := event as InputEventMouseButton
@@ -558,7 +566,7 @@ func _build_ui() -> void:
 	canvas.add_child(hud_label)
 
 	help_label = Label.new()
-	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · R: reset · F1: debug · F2: quality · Esc: free mouse"
+	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · R: reset · F1: debug · F2: quality · F3: audio · Esc: free mouse"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
 	help_label.add_theme_color_override("font_color", Color("dceae8"))
@@ -1455,6 +1463,22 @@ func _apply_quality(settings: Dictionary) -> void:
 
 
 func _on_quality_visibility(open: bool) -> void:
+	if open and audio_mix_menu != null:
+		audio_mix_menu.set_open(false)
+	if open:
+		_menu_was_paused = simulation_paused
+		simulation_paused = true
+	else:
+		simulation_paused = _menu_was_paused
+	if xr_player == null or not xr_player.xr_active:
+		player.controls_enabled = not open
+		player.look_enabled = not open and not top_down
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED
+
+
+func _on_audio_mix_visibility(open: bool) -> void:
+	if open and quality_menu != null:
+		quality_menu.set_open(false)
 	if open:
 		_menu_was_paused = simulation_paused
 		simulation_paused = true

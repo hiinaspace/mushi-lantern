@@ -1,0 +1,15 @@
+# Field audio sources
+
+These edited mono PCM WAVs are from Freesound recordings published under [Creative Commons Zero](https://creativecommons.org/publicdomain/zero/1.0/). Their original creators and pages are recorded here even though CC0 does not require attribution. The source downloads are kept outside the repository; run `python scripts/process_field_audio.py` with the six original files in `~/Downloads` to rebuild the game assets. The script checks each source's SHA-256 and uses FFmpeg 9.0.1 to downmix to mono, resample to 48 kHz, apply conservative gain and short edge fades, and encode 16-bit PCM.
+
+| Asset | Creator and original recording | Source SHA-256 | Source span and edit |
+| --- | --- | --- | --- |
+| `forest_crickets_owl.wav` | OwlStorm, [Night Crickets Ambience on Rural Property](https://freesound.org/people/OwlStorm/sounds/320145/) | `d7678f7259af893dcb41ea633eb934fed7b8cf0f116b053fb7a96552babf690a` | 0–40 s; +7 dB, 250 ms fades |
+| `forest_cicadas_kyles.wav` | kyles, [Crickets Night Forest with 2 Sharp Close Cicadas Back and Forth](https://freesound.org/people/kyles/sounds/453862/) | `b26328f870206cb362dc5c7b80ca8a5b4faf1550f60a6d3fc8c11e229193c90b` | 0–35.35 s; +13 dB, 250 ms fades |
+| `footsteps_foliage.wav` | Dominik_W, [Footsteps Walking on Foliage in a Forest](https://freesound.org/people/Dominik_W/sounds/398685/) | `d9f740ee4097f15022e3ec59d0e60de30b8aa9e6eabfbcd3e63931f633ec7e73` | 0–11.8 s; +3 dB, 120 ms fades |
+| `lantern_swing.wav` | happy_boozer, [Lantern Swinging](https://freesound.org/people/happy_boozer/sounds/411530/) | `b4ca7ea67c6db97e5b77b40d90fd9e83c1d535b45cc4ef26cf10cc1b5a1f31c5` | 0.1–6.65 s; +12 dB, 120 ms fades |
+| `lantern_shutter_open.wav` | ImAFoley, [Oil Lantern Open and Close](https://freesound.org/people/ImAFoley/sounds/516740/) | `819a9a7f7d58e6ef0db2da86b6846927cd5990e71254c2d7833a1d468bedf8e3` | 3.7–4.65 s; −9 dB, 25/70 ms fades |
+| `lantern_shutter_close.wav` | ImAFoley, [Oil Lantern Open and Close](https://freesound.org/people/ImAFoley/sounds/516740/) | `819a9a7f7d58e6ef0db2da86b6846927cd5990e71254c2d7833a1d468bedf8e3` | 14.65–15.6 s; −9 dB, 25/70 ms fades |
+| `lantern_wick.wav` | deadrobotmusic, [Wooden Wick Candle Crackle 1](https://freesound.org/people/deadrobotmusic/sounds/622854/) | `237c93d7a175e5ae35b8593135323eaa541ac4ca22eebc9ad0d1ebe039ec57bd` | 20–38 s; −2 dB, 200 ms fades |
+
+The shutter recording contains several separate gestures. The selected cuts are isolated transient groups based on waveform energy; **open/close labels and both cuts are provisional until auditioned**. The footsteps, insect beds, swing, and wick retain natural variation. Their edge fades avoid clicks, but a repeating player may reveal a quiet seam or rhythmic restart; a short crossfade or different trim can be chosen after listening in context.

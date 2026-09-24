@@ -1,11 +1,10 @@
 # Audio sample audition shortlist
 
-Candidate source recordings for the next sound pass. These are not included in
-the game or repository. Each linked Freesound page was marked CC0 when checked
-on 2026-09-23. Recheck the page and record creator/title/source before using a
-clip, and listen to the downloaded source rather than judging from preview
-compression. The game's positional sources should use short mono edits of any
-selected recording, with careful loop boundaries for ambient beds.
+Listening shortlist from the first sound pass. The six chosen recordings are
+now included as edited mono game assets and listed in [Credits](../CREDITS.md);
+other links remain candidates. Each linked Freesound page was marked CC0 when
+checked on 2026-09-23. Recheck a page before using another clip, and listen
+to the downloaded source rather than judging from preview compression.
 
 ## Mushi synthesis audition
 
@@ -14,8 +13,9 @@ selected recording, with careful loop boundaries for ambient beds.
 (moderate resonant breath), `airy` (wider, noisier bands), and `glassy`
 (narrower resonances). They use independent white-noise exciters through
 several bandpass filters at a root, fifth, octave, and higher harmonics. Each
-band drifts slowly in center frequency and Q. These are audition files, not yet
-game assets; choosing the timbre and tuning the mix by ear comes next.
+band drifts slowly in center frequency and Q. A second audition raises and
+narrows the glassy partials to roughly 500–3000 Hz. These are audition files,
+not yet game assets; choosing the final timbre by ear comes next.
 
 ## Forest ambience
 

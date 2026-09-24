@@ -34,13 +34,22 @@ class Voice:
     drift: float
     q_sway: float
     gust_hz: float
+    gust_depth: float = .24
+    band_sway: float = 0.0
 
 
 VOICES = {
     # The lower Q versions keep the colored-noise breath especially audible.
     "hollow": Voice(240, 6.5, (1, 1.5, 2, 3), (1, .7, .52, .29), .027, .36, .33),
     "airy": Voice(310, 3.4, (1, 1.5, 2, 3, 4), (1, .75, .55, .32, .15), .043, .43, .42),
-    "glassy": Voice(275, 10, (1, 1.5, 2, 3), (1, .65, .46, .24), .018, .29, .27),
+    # Close, slowly breathing resonances from ~540 to 2700 Hz. The stronger
+    # upper partials make these read as small hollow objects, not a low wind bed.
+    "glassy": Voice(540, 32, (1, 1.5, 2, 3, 4, 5),
+                    (.52, .62, .83, .72, .48, .29), .007, .17, .23, .08, .12),
+    "glassy_soft": Voice(505, 25, (1, 1.5, 2, 3, 4, 5.5),
+                         (.65, .70, .82, .59, .34, .17), .008, .20, .19, .10, .10),
+    "glassy_etched": Voice(570, 43, (1, 1.5, 2, 3, 4, 5),
+                           (.37, .55, .77, .83, .63, .41), .005, .12, .29, .06, .15),
 }
 
 
@@ -91,9 +100,12 @@ def render(voice: Voice, duration: float, seed: int) -> list[float]:
             x = noise_rngs[band].uniform(-1, 1)
             y = c[0] * x + c[1] * x1 + c[2] * x2 - c[3] * y1 - c[4] * y2
             states[band] = [x, x1, y, y1]
-            value += voice.weights[band] * y
+            shimmer = 1 + voice.band_sway * math.sin(
+                2 * math.pi * (.37 + .071 * band) * t + phases[band])
+            value += voice.weights[band] * shimmer * y
 
-        gust = .76 + .24 * math.sin(2 * math.pi * voice.gust_hz * t - .7)
+        gust = (1 - voice.gust_depth) + voice.gust_depth * math.sin(
+            2 * math.pi * voice.gust_hz * t - .7)
         fade = min(1.0, t / .055, (duration - t) / .20)
         samples.append(value * gust * max(0.0, fade))
 
