@@ -22,10 +22,16 @@ source hashes, and edit spans in [Credits](../CREDITS.md) and the asset README.
 The forest uses three separated nearby tree emitters and different playback
 offsets. The footstep composite fades with grounded movement; lantern swing
 fades with actual relative lantern motion. The shutter source was cut into two
-provisional open/close gestures that still need ear confirmation. Four audio
+open/close gestures that the user accepted by ear. Four audio
 category levels now have live F3 and XR pointer controls plus a locally saved
-mix preset. Narrower 500–3000 Hz mushi sketches await listening approval before
-replacing the generated placeholder calls.
+mix preset. The first narrower 500–3000 Hz mushi sketches led to a still
+narrower set with independent slow gain and Q motion per partial, inspired by
+glass-harp tones. The new `glass_harp_soft` sketch provisionally supplies four
+seeded in-game calls. Six nearby mushi slots are active by default; baseline
+arousal near 0.08 gets long 35–65 second intervals after an initial wait,
+while high arousal can shorten intervals to 10–20 seconds and raise pitch
+modestly. The source gain starts 12 dB lower than in the first audio pass. The
+other new sketches and overall balance still need ear review.
 
 ## Intended sound
 

@@ -14,6 +14,8 @@ import struct
 import wave
 from pathlib import Path
 
+from generate_mushi_audio import VOICES, render
+
 RATE = 48_000
 PEAK_LIMIT = 0.18
 OUT = Path(__file__).resolve().parents[1] / "assets/audio/placeholders"
@@ -27,10 +29,6 @@ EXPECTED = [
     *(f"shutter_detent_{i:02d}.wav" for i in range(1, 4)),
     *(f"filter_detent_{i:02d}.wav" for i in range(1, 3)),
 ]
-
-
-def env(t: float, duration: float, attack: float = 0.02, release: float = 0.1) -> float:
-    return min(1.0, t / max(attack, 1e-5), (duration - t) / max(release, 1e-5))
 
 
 def smooth_noise(n: int, seed: int, stride: int = 90) -> list[float]:
@@ -53,20 +51,6 @@ def write(name: str, samples: list[float]) -> None:
         f.setsampwidth(2)
         f.setframerate(RATE)
         f.writeframes(pcm)
-
-
-def mushi(seed: int, base: float, length: float, shape: float) -> list[float]:
-    n = int(RATE * length)
-    noise = smooth_noise(n, seed, 35)
-    out = []
-    for i in range(n):
-        t = i / RATE
-        pulse = 0.55 + 0.45 * math.sin(math.pi * min(1, t / length)) ** 2
-        freq = base * (1 + 0.018 * math.sin(2 * math.pi * 1.7 * t))
-        phase = 2 * math.pi * (freq * t + shape * math.sin(2 * math.pi * 0.7 * t))
-        resonant = 0.68 * math.sin(phase) + 0.20 * math.sin(phase * 2.01 + 0.3)
-        out.append((resonant + 0.16 * noise[i]) * env(t, length, 0.08, 0.22) * pulse)
-    return out
 
 
 def insect(seed: int, rate_hz: float, tone: float) -> list[float]:
@@ -139,8 +123,8 @@ def main() -> None:
     if args.if_missing and all((OUT / name).is_file() for name in EXPECTED):
         return
     OUT.mkdir(parents=True, exist_ok=True)
-    for i, (freq, dur, bend) in enumerate([(282, 1.45, .12), (347, 1.2, .19), (421, 1.55, .09), (236, 1.35, .16)], 1):
-        write(f"mushi_resonance_{i:02d}", mushi(100 + i, freq, dur, bend))
+    for i, length in enumerate((2.5, 2.9, 2.7, 3.1), 1):
+        write(f"mushi_resonance_{i:02d}", render(VOICES["glass_harp_soft"], length, 100 + i))
     for i, (hz, tone) in enumerate([(3.2, 3900), (4.1, 4450), (2.7, 3500)], 1):
         write(f"forest_insects_{i:02d}", insect(200 + i, hz, tone))
     for i, (pitch, grit) in enumerate([(92, .38), (118, .31), (76, .46), (105, .42)], 1):

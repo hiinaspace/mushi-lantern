@@ -8,14 +8,13 @@ to the downloaded source rather than judging from preview compression.
 
 ## Mushi synthesis audition
 
-`python3 scripts/generate_mushi_audio.py` renders three deterministic mono
-48 kHz calls to `/tmp/mushi-lantern-audio-audition` by default: `hollow`
-(moderate resonant breath), `airy` (wider, noisier bands), and `glassy`
-(narrower resonances). They use independent white-noise exciters through
-several bandpass filters at a root, fifth, octave, and higher harmonics. Each
-band drifts slowly in center frequency and Q. A second audition raises and
-narrows the glassy partials to roughly 500–3000 Hz. These are audition files,
-not yet game assets; choosing the final timbre by ear comes next.
+`python3 scripts/generate_mushi_audio.py` renders deterministic mono 48 kHz
+calls. The first `hollow`, `airy`, and `glassy` sketches used noise-excited
+bandpasses. The second pass raised the `glassy_soft` partials to roughly
+500–3000 Hz. The third `glass_harp_soft`, `glass_harp_bloom`, and
+`glass_harp_clear` sketches use narrower resonances and independently moving
+gain and Q on each harmonic. `glass_harp_soft` now supplies four provisional
+seeded in-game calls; the other profiles remain audition choices.
 
 ## Forest ambience
 

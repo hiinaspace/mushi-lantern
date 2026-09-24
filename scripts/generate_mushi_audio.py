@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render original mono mushi calls: noise through drifting resonant bandpasses.
+"""Render original mono mushi calls with drifting resonances and glass tones.
 
 No external packages. The files are auditions, not installed game assets.
 
@@ -36,6 +36,8 @@ class Voice:
     gust_hz: float
     gust_depth: float = .24
     band_sway: float = 0.0
+    tone_mix: float = 0.0  # 0 preserves the earlier noise-excited auditions.
+    pulse_depth: float = 0.0
 
 
 VOICES = {
@@ -50,6 +52,17 @@ VOICES = {
                          (.65, .70, .82, .59, .34, .17), .008, .20, .19, .10, .10),
     "glassy_etched": Voice(570, 43, (1, 1.5, 2, 3, 4, 5),
                            (.37, .55, .77, .83, .63, .41), .005, .12, .29, .06, .15),
+    # Glass harp auditions: mostly sustained, slowly drifting tones. The
+    # remaining bandpass excitation gives the harmonics a little texture.
+    "glass_harp_soft": Voice(505, 82, (1, 1.5, 2, 3, 4, 5.5),
+                             (.65, .70, .82, .59, .34, .17), .0045, .30,
+                             .19, .03, 0, .90, .67),
+    "glass_harp_bloom": Voice(505, 70, (1, 1.5, 2, 3, 4, 5.5),
+                              (.65, .70, .82, .59, .34, .17), .0055, .37,
+                              .19, .03, 0, .83, .82),
+    "glass_harp_clear": Voice(505, 108, (1, 1.5, 2, 3, 4, 5.5),
+                              (.65, .70, .82, .59, .34, .17), .0035, .25,
+                              .19, .03, 0, .96, .58),
 }
 
 
@@ -70,6 +83,19 @@ def render(voice: Voice, duration: float, seed: int) -> list[float]:
     noise_rngs = [random.Random(rng.getrandbits(64)) for _ in range(bands)]
     phases = [rng.uniform(0, 2 * math.pi) for _ in range(bands)]
     q_phases = [rng.uniform(0, 2 * math.pi) for _ in range(bands)]
+    # Different slow rates and phases keep each partial's amplitude and width
+    # from rising together. Two oscillators per control are deterministic but
+    # irregular enough to avoid an obvious repeated tremolo.
+    gain_rates = [(rng.uniform(.12, .31), rng.uniform(.31, .57)) for _ in range(bands)]
+    gain_phases = [(rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi))
+                   for _ in range(bands)]
+    width_rates = [(rng.uniform(.09, .23), rng.uniform(.27, .46)) for _ in range(bands)]
+    width_phases = [(rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi))
+                    for _ in range(bands)]
+    tone_phases = [rng.uniform(0, 2 * math.pi) for _ in range(bands)]
+    tone_steps = [0.0] * bands
+    tone_gains = [1.0] * bands
+    tone_gain_steps = [0.0] * bands
     states = [[0.0, 0.0, 0.0, 0.0] for _ in range(bands)]
     controls = [list(coefficients(voice.root_hz * ratio, voice.q)) for ratio in voice.ratios]
     steps = [[0.0] * 5 for _ in range(bands)]
@@ -85,7 +111,23 @@ def render(voice: Voice, duration: float, seed: int) -> list[float]:
                 common = math.sin(2 * math.pi * .19 * future + .6)
                 private = math.sin(2 * math.pi * (.31 + .047 * band) * future + phases[band])
                 hz = voice.root_hz * ratio * (1 + voice.drift * (.58 * common + .42 * private))
-                width = math.sin(2 * math.pi * (.23 + .061 * band) * future + q_phases[band])
+                if voice.tone_mix:
+                    w1, w2 = width_rates[band]
+                    p1, p2 = width_phases[band]
+                    width = .62 * math.sin(2 * math.pi * w1 * future + p1) + \
+                            .38 * math.sin(2 * math.pi * w2 * future + p2)
+                    g1, g2 = gain_rates[band]
+                    h1, h2 = gain_phases[band]
+                    motion = .62 * math.sin(2 * math.pi * g1 * future + h1) + \
+                             .38 * math.sin(2 * math.pi * g2 * future + h2)
+                    # Square a 0..1 LFO to dwell near silence, while leaving
+                    # a small floor so a partial can quietly reappear.
+                    target_gain = .06 + .94 * (1 - voice.pulse_depth *
+                                                 (.5 - .5 * motion)) ** 2
+                    tone_gain_steps[band] = (target_gain - tone_gains[band]) / CONTROL_FRAMES
+                    tone_steps[band] = 2 * math.pi * hz / RATE
+                else:
+                    width = math.sin(2 * math.pi * (.23 + .061 * band) * future + q_phases[band])
                 q = voice.q * (1 + voice.q_sway * width)
                 target = coefficients(hz, q)
                 steps[band] = [(b - a) / CONTROL_FRAMES for a, b in zip(controls[band], target)]
@@ -100,9 +142,19 @@ def render(voice: Voice, duration: float, seed: int) -> list[float]:
             x = noise_rngs[band].uniform(-1, 1)
             y = c[0] * x + c[1] * x1 + c[2] * x2 - c[3] * y1 - c[4] * y2
             states[band] = [x, x1, y, y1]
-            shimmer = 1 + voice.band_sway * math.sin(
-                2 * math.pi * (.37 + .071 * band) * t + phases[band])
-            value += voice.weights[band] * shimmer * y
+            if voice.tone_mix:
+                tone_phases[band] += tone_steps[band]
+                tone_gains[band] += tone_gain_steps[band]
+                # Equalize the narrow noise bands against the sine signal:
+                # their raw level falls as Q rises. They remain a quiet edge.
+                texture = y * math.sqrt(voice.q) * 2.0
+                value += voice.weights[band] * tone_gains[band] * (
+                    voice.tone_mix * math.sin(tone_phases[band]) +
+                    (1 - voice.tone_mix) * texture)
+            else:
+                shimmer = 1 + voice.band_sway * math.sin(
+                    2 * math.pi * (.37 + .071 * band) * t + phases[band])
+                value += voice.weights[band] * shimmer * y
 
         gust = (1 - voice.gust_depth) + voice.gust_depth * math.sin(
             2 * math.pi * voice.gust_hz * t - .7)

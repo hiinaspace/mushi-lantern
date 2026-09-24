@@ -9,12 +9,12 @@ const STEP_CAP := 2
 const AUDIBLE_RADIUS := 19.0
 const RELEASE_RADIUS := 22.0
 const STALE_SECONDS := 0.55
-const HOLD_SECONDS := 0.8
+const HOLD_SECONDS := 4.0
 const FADE_RATE := 5.0
 const AUDIO := "res://assets/audio/placeholders/"
 const FIELD_AUDIO := "res://assets/audio/field/"
 
-var mushi_limit := MUSHI_CAP
+var mushi_limit := 6
 var forest_limit := 3
 var tool_limit := TOOL_CAP
 var step_limit := STEP_CAP
@@ -195,8 +195,8 @@ func _select_mushi() -> void:
 		var distance := at.distance_to(head)
 		if distance > RELEASE_RADIUS:
 			continue
-		var activity := _simulation.arousals[id] if id < _simulation.arousals.size() else 0.5
-		var score := (1.0 + clampf(activity, 0.0, 1.0) * 0.25) / (2.0 + distance)
+		var activity := _mushi_activity(_simulation.arousals[id] if id < _simulation.arousals.size() else 0.0)
+		var score := (0.35 + activity * 0.9) / (2.0 + distance)
 		for slot: Dictionary in _mushi:
 			if int(slot.id) == id:
 				score *= 1.28
@@ -239,7 +239,8 @@ func _select_mushi() -> void:
 				slot.position = candidate.position
 				(slot.player as Node3D).global_position = candidate.position
 				slot.held_until = _clock + HOLD_SECONDS
-				slot.next_call = _clock + _rng.randf_range(0.2, 3.0)
+				var activity := _mushi_activity(_simulation.arousals[int(candidate.id)] if int(candidate.id) < _simulation.arousals.size() else 0.0)
+				slot.next_call = _clock + lerpf(_rng.randf_range(5.0, 25.0), _rng.randf_range(1.5, 5.0), activity)
 				break
 
 
@@ -248,6 +249,12 @@ func _is_incumbent(id: int) -> bool:
 		if int(slot.id) == id:
 			return true
 	return false
+
+
+func _mushi_activity(arousal: float) -> float:
+	# Most unperturbed agents sit near 0.08. Keep their calls rare, and let
+	# newly aroused visitors become audible without changing simulation state.
+	return smoothstep(0.07, 0.70, clampf(arousal, 0.0, 1.0))
 
 
 func _update_mushi(dt: float) -> void:
@@ -268,10 +275,11 @@ func _update_mushi(dt: float) -> void:
 					source_node.global_position = source_node.global_position.lerp(predicted, 1.0 - exp(-dt * 14.0))
 					var proximity := 1.0 - smoothstep(3.0, AUDIBLE_RADIUS, at.distance_to(_listener_camera.global_position))
 					if _clock >= float(slot.next_call) and proximity > 0.02:
-						var activity := _simulation.arousals[id] if id < _simulation.arousals.size() else 0.5
+						var activity := _mushi_activity(_simulation.arousals[id] if id < _simulation.arousals.size() else 0.0)
 						var variant := 1 + posmod(id * 7 + _rng.randi_range(0, 3), 4)
-						_play(slot, "mushi_resonance_%02d" % variant, -17.0, _rng.randf_range(0.93, 1.07))
-						slot.next_call = _clock + _rng.randf_range(3.0, 7.0) * (1.15 - clampf(activity, 0.0, 1.0) * 0.35)
+						var pitch := clampf(0.86 + float(posmod(id * 41, 101)) * 0.0025 + activity * 0.16 + _rng.randf_range(-0.035, 0.035), 0.78, 1.4)
+						_play(slot, "mushi_resonance_%02d" % variant, -29.0, pitch)
+						slot.next_call = _clock + lerpf(_rng.randf_range(35.0, 65.0), _rng.randf_range(10.0, 20.0), activity)
 					if (slot.player as AudioStreamPlayer3D).playing:
 						slot.target = proximity
 						if float(slot.gain) > proximity:

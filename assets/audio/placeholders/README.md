@@ -20,7 +20,7 @@ texture sources; check loop boundaries and subjective looping before release.
 
 | Prefix / name | Intended cue | Duration |
 | --- | --- | ---: |
-| `mushi_resonance_01..04` | Sparse resonant wind/noise calls | 1.20–1.55 s |
+| `mushi_resonance_01..04` | Sparse glass-harp calls from narrow, slowly changing harmonics; separate seeded renders of the provisional soft profile | 2.50–3.10 s |
 | `forest_insects_01..03` | Localized insect/cricket beds | 3.20 s |
 | `footstep_ground_01..04` | Grounded soft thump/crunch variants | 0.32 s |
 | `lantern_flame_bed` | Quiet filtered flame texture | 4.00 s |
