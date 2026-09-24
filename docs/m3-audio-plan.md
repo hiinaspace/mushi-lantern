@@ -33,6 +33,12 @@ while high arousal can shorten intervals to 10–20 seconds and raise pitch
 modestly. The source gain starts 12 dB lower than in the first audio pass. The
 other new sketches and overall balance still need ear review.
 
+The user then supplied a [glass-harp reference](mushi-audio-reference.md),
+particularly its 1:26–1:33 fifth. The measured passage is dominated by two
+notes near 650 and 986 Hz with alternating ~2.9 Hz rubbing pulses and little
+harmonic energy. Three original two-note recreations are available for mono
+audition; the in-game soft profile remains unchanged until one is chosen.
+
 ## Intended sound
 
 - **Mushi:** sparse, quiet mono calls near actual agents, suggesting tuned resonances in wind or filtered noise. Calls remain audible when the mushi are hidden by the visibility effect. Blue/orange state may alter call rate or tone gently. Avoid a constant chorus or 1024 simultaneous players.
