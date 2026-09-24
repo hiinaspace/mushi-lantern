@@ -34,8 +34,11 @@ CLIPS = (
     ("forest_cicadas_kyles.wav", "453862", 0.0, 35.35, 13.0, 0.25, 0.25),
     ("footsteps_foliage.wav", "398685", 0.0, 11.8, 3.0, 0.12, 0.12),
     ("lantern_swing.wav", "411530", 0.1, 6.65, 12.0, 0.12, 0.12),
-    ("lantern_shutter_open.wav", "516740", 3.7, 4.65, -9.0, 0.025, 0.07),
-    ("lantern_shutter_close.wav", "516740", 14.65, 15.6, -9.0, 0.025, 0.07),
+    ("lantern_shutter_open.wav", "516740", 4.18, 4.65, -9.0, 0.015, 0.07),
+    ("lantern_shutter_close.wav", "516740", 15.12, 15.6, -9.0, 0.015, 0.07),
+    ("lantern_shutter_variant_a.wav", "516740", 7.24, 7.92, -9.0, 0.015, 0.07),
+    ("lantern_shutter_variant_b.wav", "516740", 8.76, 9.27, -9.0, 0.015, 0.07),
+    ("lantern_shutter_variant_c.wav", "516740", 17.24, 17.92, -9.0, 0.015, 0.07),
     ("lantern_wick.wav", "622854", 20.0, 38.0, -2.0, 0.2, 0.2),
 )
 

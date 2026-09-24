@@ -4,9 +4,11 @@ extends CanvasLayer
 signal panel_visibility_changed(open: bool)
 
 const SAVE_PATH := "user://audio_mix.json"
-const BUS_NAMES: Array[String] = ["Mushi", "Forest", "Tool", "Steps"]
+const BUS_NAMES: Array[String] = ["Master", "Mushi", "Forest", "Tool", "Steps"]
 const DEFAULT_LEVEL := 1.0
 const MAX_LEVEL := 1.5
+const MASTER_DEFAULT_LEVEL := 3.0
+const MASTER_MAX_LEVEL := 6.0
 
 var _levels: Dictionary = {}
 var _panel: PanelContainer
@@ -17,7 +19,7 @@ var _status_labels: Array[Label] = []
 
 func _init() -> void:
 	for bus_name: String in BUS_NAMES:
-		_levels[bus_name] = DEFAULT_LEVEL
+		_levels[bus_name] = MASTER_DEFAULT_LEVEL if bus_name == "Master" else DEFAULT_LEVEL
 	_load_preset()
 
 
@@ -45,7 +47,7 @@ func get_levels() -> Dictionary:
 func set_level(bus_name: String, level: float) -> void:
 	if not BUS_NAMES.has(bus_name) or not is_finite(level):
 		return
-	_levels[bus_name] = clampf(level, 0.0, MAX_LEVEL)
+	_levels[bus_name] = clampf(level, 0.0, MASTER_MAX_LEVEL if bus_name == "Master" else MAX_LEVEL)
 	_apply_level(bus_name)
 	_sync_sliders()
 	_set_status("Unsaved mix · Save preset to keep it")
@@ -125,12 +127,12 @@ func _add_slider(parent: BoxContainer, bus_name: String, xr: bool) -> HSlider:
 	var row := HBoxContainer.new()
 	parent.add_child(row)
 	var label := Label.new()
-	label.text = bus_name
+	label.text = "Overall" if bus_name == "Master" else bus_name
 	label.custom_minimum_size.x = 105.0 if xr else 75.0
 	row.add_child(label)
 	var slider := HSlider.new()
 	slider.min_value = 0.0
-	slider.max_value = 150.0
+	slider.max_value = 600.0 if bus_name == "Master" else 150.0
 	slider.step = 1.0
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.custom_minimum_size.x = 170.0
@@ -192,7 +194,7 @@ func _load_preset() -> void:
 	for bus_name: String in BUS_NAMES:
 		var saved: Variant = (parsed as Dictionary).get(bus_name)
 		if (saved is float or saved is int) and is_finite(float(saved)):
-			_levels[bus_name] = clampf(float(saved), 0.0, MAX_LEVEL)
+			_levels[bus_name] = clampf(float(saved), 0.0, MASTER_MAX_LEVEL if bus_name == "Master" else MAX_LEVEL)
 
 
 func _save_preset() -> void:
@@ -206,7 +208,7 @@ func _save_preset() -> void:
 
 func _restore_defaults() -> void:
 	for bus_name: String in BUS_NAMES:
-		_levels[bus_name] = DEFAULT_LEVEL
+		_levels[bus_name] = MASTER_DEFAULT_LEVEL if bus_name == "Master" else DEFAULT_LEVEL
 	_apply_levels()
 	_sync_sliders()
 	_set_status("Defaults restored · Save preset to keep them")

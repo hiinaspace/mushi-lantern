@@ -41,12 +41,26 @@ spectral comparison found faint but important high harmonics and moving
 auditions now test an etched edge, gentle detuned beating, and added contact
 noise. The user selected the contact texture, which adds an insect-like high
 edge without the less desirable detuned beating. All four generated in-game
-calls now use that texture, in two near fourths and two near fifths; the
-spatialized mix still needs ear review.
+calls now use that texture, in two near fourths and two near fifths. The
+first spatialized mix then received headset review.
+
+In that review, the user liked the mushi timbre and the relative balance of
+steps, lantern hinge, and forest, but found the whole output quiet even at the
+category sliders' former 150% limit. The mix panel now has an Overall control
+starting at 300% of the former master gain and adjustable up to 600%; the
+category controls retain their local saved levels. Candle gains 4 dB. Moving
+mushi now call again roughly every 3 seconds from a smaller 10 m audible area;
+dormant mushi call less often and at much lower gain, while arousal raises
+pitch. The shorter falloff and six-slot default retain individual spatial
+positions. Shutter cues trigger when manual travel begins instead of waiting
+for a large position change, and filter-driven shutter animation no longer
+triggers them. The source clips' leading quiet material was trimmed, and the
+filter control rotates through additional recorded transient cuts. The revised
+output level, cue timing, and new cuts still need headset listening review.
 
 ## Intended sound
 
-- **Mushi:** sparse, quiet mono calls near actual agents, suggesting tuned resonances in wind or filtered noise. Calls remain audible when the mushi are hidden by the visibility effect. Blue/orange state may alter call rate or tone gently. Avoid a constant chorus or 1024 simultaneous players.
+- **Mushi:** nearly continuous, quiet mono calls from nearby moving agents, suggesting glass resonances with insect-like contact texture. Dormant agents fade toward silence, and arousal lifts pitch. Calls remain audible when the mushi are hidden by the visibility effect. Keep the source pool bounded instead of mixing all 1024 agents.
 - **Forest:** several localized insect/cricket beds at authored or seeded grove positions, including near trees, with restrained variation. Add a faint campfire cue when that landmark exists. Keep enough silence to locate hidden mushi.
 - **Player and lantern:** footsteps from grounded travel; a soft flame at the lantern; sparse metal/rope creaks from actual relative swing; shutter/filter sounds from actual control travel and detents. One-shots need thresholds and cooldowns so steady motion does not rattle continuously.
 - Keep creature discovery, tool feedback, and later collective return acknowledgment distinct in the mix. Future multiplayer voice should have reserved source budget and its own validation pass.

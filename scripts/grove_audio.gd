@@ -6,13 +6,14 @@ const MUSHI_CAP := 12
 const FOREST_CAP := 6
 const TOOL_CAP := 4
 const STEP_CAP := 2
-const AUDIBLE_RADIUS := 19.0
-const RELEASE_RADIUS := 22.0
+const AUDIBLE_RADIUS := 10.0
+const RELEASE_RADIUS := 12.0
 const STALE_SECONDS := 0.55
 const HOLD_SECONDS := 4.0
 const FADE_RATE := 5.0
 const AUDIO := "res://assets/audio/placeholders/"
 const FIELD_AUDIO := "res://assets/audio/field/"
+const FILTER_TRANSIENTS := ["lantern_shutter_variant_a", "lantern_shutter_variant_b", "lantern_shutter_open", "lantern_shutter_variant_c", "lantern_shutter_close"]
 
 var mushi_limit := 6
 var forest_limit := 3
@@ -42,9 +43,11 @@ var _last_head := Vector3.ZERO
 var _last_swing_local := Vector3.ZERO
 var _staff_speed := 0.0
 var _last_shutter := -1.0
-var _last_mode := -1
-var _shutter_cooldown := 0.0
+var _last_requested_mode := -1
+var _shutter_quiet_time := 1.0
 var _filter_cooldown := 0.0
+var _filter_transition_was_active := false
+var _filter_variant := 0
 var _forest_sites: Array[Vector3] = []
 
 
@@ -119,7 +122,7 @@ func _load_streams() -> void:
 		var source: AudioStream = load(AUDIO + stem + ".wav")
 		if source != null:
 			_streams[stem] = source
-	for stem: String in ["forest_crickets_owl", "forest_cicadas_kyles", "footsteps_foliage", "lantern_swing", "lantern_shutter_open", "lantern_shutter_close", "lantern_wick"]:
+	for stem: String in ["forest_crickets_owl", "forest_cicadas_kyles", "footsteps_foliage", "lantern_swing", "lantern_shutter_open", "lantern_shutter_close", "lantern_shutter_variant_a", "lantern_shutter_variant_b", "lantern_shutter_variant_c", "lantern_wick"]:
 		var source: AudioStream = load(FIELD_AUDIO + stem + ".wav")
 		if source != null:
 			_streams[stem] = source
@@ -160,7 +163,7 @@ func _process(delta: float) -> void:
 		return
 	var dt := minf(delta, 0.1)
 	_clock += dt
-	_shutter_cooldown = maxf(0.0, _shutter_cooldown - dt)
+	_shutter_quiet_time += dt
 	_filter_cooldown = maxf(0.0, _filter_cooldown - dt)
 	var camera := _listener_camera
 	if camera == null or not is_instance_valid(camera) or not camera.is_inside_tree():
@@ -196,7 +199,9 @@ func _select_mushi() -> void:
 		if distance > RELEASE_RADIUS:
 			continue
 		var activity := _mushi_activity(_simulation.arousals[id] if id < _simulation.arousals.size() else 0.0)
-		var score := (0.35 + activity * 0.9) / (2.0 + distance)
+		var velocity: Vector3 = _simulation.velocities[id] if id < _simulation.velocities.size() else Vector3.ZERO
+		var motion := smoothstep(0.06, 0.55, velocity.length()) if velocity.is_finite() else 0.0
+		var score := (0.2 + maxf(activity, motion) * 0.9) / (2.0 + distance)
 		for slot: Dictionary in _mushi:
 			if int(slot.id) == id:
 				score *= 1.28
@@ -239,8 +244,7 @@ func _select_mushi() -> void:
 				slot.position = candidate.position
 				(slot.player as Node3D).global_position = candidate.position
 				slot.held_until = _clock + HOLD_SECONDS
-				var activity := _mushi_activity(_simulation.arousals[int(candidate.id)] if int(candidate.id) < _simulation.arousals.size() else 0.0)
-				slot.next_call = _clock + lerpf(_rng.randf_range(5.0, 25.0), _rng.randf_range(1.5, 5.0), activity)
+				slot.next_call = _clock + _rng.randf_range(0.0, 2.5)
 				break
 
 
@@ -252,8 +256,8 @@ func _is_incumbent(id: int) -> bool:
 
 
 func _mushi_activity(arousal: float) -> float:
-	# Most unperturbed agents sit near 0.08. Keep their calls rare, and let
-	# newly aroused visitors become audible without changing simulation state.
+	# Most unperturbed agents sit near 0.08. This changes pitch and can keep an
+	# aroused visitor audible even as it slows, without changing simulation state.
 	return smoothstep(0.07, 0.70, clampf(arousal, 0.0, 1.0))
 
 
@@ -273,17 +277,20 @@ func _update_mushi(dt: float) -> void:
 					slot.position = predicted
 					var source_node := slot.player as Node3D
 					source_node.global_position = source_node.global_position.lerp(predicted, 1.0 - exp(-dt * 14.0))
-					var proximity := 1.0 - smoothstep(3.0, AUDIBLE_RADIUS, at.distance_to(_listener_camera.global_position))
+					var proximity := 1.0 - smoothstep(2.0, AUDIBLE_RADIUS, at.distance_to(_listener_camera.global_position))
+					var activity := _mushi_activity(_simulation.arousals[id] if id < _simulation.arousals.size() else 0.0)
+					var speed := velocity.length() if velocity.is_finite() else 0.0
+					var motion := smoothstep(0.06, 0.55, speed)
+					var presence := maxf(motion, activity * 0.7)
 					if _clock >= float(slot.next_call) and proximity > 0.02:
-						var activity := _mushi_activity(_simulation.arousals[id] if id < _simulation.arousals.size() else 0.0)
 						var variant := 1 + posmod(id * 7 + _rng.randi_range(0, 3), 4)
-						var pitch := clampf(0.86 + float(posmod(id * 41, 101)) * 0.0025 + activity * 0.16 + _rng.randf_range(-0.035, 0.035), 0.78, 1.4)
+						var pitch := clampf(0.86 + float(posmod(id * 41, 101)) * 0.0025 + activity * 0.30 + _rng.randf_range(-0.035, 0.035), 0.78, 1.5)
 						_play(slot, "mushi_resonance_%02d" % variant, -29.0, pitch)
-						slot.next_call = _clock + lerpf(_rng.randf_range(35.0, 65.0), _rng.randf_range(10.0, 20.0), activity)
+						slot.next_call = _clock + lerpf(_rng.randf_range(12.0, 18.0), _rng.randf_range(2.9, 3.5), presence)
 					if (slot.player as AudioStreamPlayer3D).playing:
-						slot.target = proximity
+						slot.target = proximity * lerpf(0.08, 1.0, presence)
 						if float(slot.gain) > proximity:
-							slot.gain = proximity
+							slot.gain = slot.target
 		if not fresh:
 			_release(slot)
 		_fade(slot, dt)
@@ -364,24 +371,27 @@ func _update_tool(dt: float) -> void:
 	for slot: Dictionary in _tool:
 		(slot.player as Node3D).global_position = pos
 	if str(flame.stream) == "":
-		_play(flame, "lantern_wick", -25.0, 1.0, true)
+		_play(flame, "lantern_wick", -21.0, 1.0, true)
 	flame.target = proximity * (0.65 if _staff.lantern.shutter_openness > 0.02 else 0.28)
 	var shutter: float = _staff.lantern.shutter_openness
-	var mode: int = int(_staff.lantern.mode)
-	if _last_shutter >= 0.0 and absf(shutter - _last_shutter) >= 0.15 and _shutter_cooldown <= 0.0:
-		if proximity > 0.02:
+	var requested_mode: int = int(_staff.lantern.get("_requested_mode"))
+	var filter_transition: bool = int(_staff.lantern.get("_transition_phase")) != 0
+	if _last_shutter >= 0.0 and absf(shutter - _last_shutter) > 0.003 and not filter_transition and not _filter_transition_was_active:
+		if _shutter_quiet_time >= 0.14 and proximity > 0.02:
 			_play(_tool[1], "lantern_shutter_open" if shutter > _last_shutter else "lantern_shutter_close", -17.0)
 			_tool[1].gain = proximity
 			_tool[1].target = proximity
-		_shutter_cooldown = 0.8
-		_last_shutter = shutter
-	if _last_mode >= 0 and mode != _last_mode and _filter_cooldown <= 0.0:
+		_shutter_quiet_time = 0.0
+	_last_shutter = shutter
+	_filter_transition_was_active = filter_transition
+	if _last_requested_mode >= 0 and requested_mode != _last_requested_mode and _filter_cooldown <= 0.0:
 		if proximity > 0.02:
-			_play(_tool[2], "filter_detent_%02d" % _rng.randi_range(1, 2), -13.0)
+			_play(_tool[2], FILTER_TRANSIENTS[_filter_variant], -17.0)
+			_filter_variant = posmod(_filter_variant + 1, FILTER_TRANSIENTS.size())
 			_tool[2].gain = proximity
 			_tool[2].target = proximity
 		_filter_cooldown = 0.14
-	_last_mode = mode
+	_last_requested_mode = requested_mode
 	var swing_local: Vector3 = _staff.global_transform.affine_inverse() * pos
 	var velocity: float = swing_local.distance_to(_last_swing_local) / maxf(dt, 0.001)
 	_staff_speed = lerpf(_staff_speed, velocity, minf(1.0, dt * 5.0))
@@ -469,7 +479,9 @@ func _reset_polled_state() -> void:
 	_last_head = _desktop.global_position if _desktop != null else Vector3.ZERO
 	_last_swing_local = _staff.global_transform.affine_inverse() * _staff.lantern.global_position if _staff != null and _staff.lantern != null else Vector3.ZERO
 	_last_shutter = _staff.lantern.shutter_openness if _staff != null and _staff.lantern != null else -1.0
-	_last_mode = int(_staff.lantern.mode) if _staff != null and _staff.lantern != null else -1
+	_last_requested_mode = int(_staff.lantern.get("_requested_mode")) if _staff != null and _staff.lantern != null else -1
+	_shutter_quiet_time = 1.0
+	_filter_transition_was_active = false
 
 
 func start_stress_voices(count: int) -> void:
