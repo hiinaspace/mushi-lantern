@@ -35,9 +35,12 @@ other new sketches and overall balance still need ear review.
 
 The user then supplied a [glass-harp reference](mushi-audio-reference.md),
 particularly its 1:26–1:33 fifth. The measured passage is dominated by two
-notes near 650 and 986 Hz with alternating ~2.9 Hz rubbing pulses and little
-harmonic energy. Three original two-note recreations are available for mono
-audition; the in-game soft profile remains unchanged until one is chosen.
+notes near 650 and 986 Hz with alternating ~2.9 Hz rubbing pulses. A later
+spectral comparison found faint but important high harmonics and moving
+6–9 kHz content missing from the first reconstruction. Three brighter original
+auditions now test an etched edge, gentle detuned beating, and added contact
+noise. The generated in-game calls provisionally use two near fourths and two
+near fifths from the restrained bright versions; ear review remains open.
 
 ## Intended sound
 
