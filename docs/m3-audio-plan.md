@@ -10,6 +10,12 @@ On the local patched engine, `tests/audio_spatial_smoke.gd` captured the correct
 
 The OpenXR build initialized on Monado with the Bigscreen Beyond, Knuckles controllers, the grove camera/body, and Steam Audio. The user confirmed the grove, localized mushi/forest sound, and broadly balanced footsteps, flame, creaks and controls. In a second 1024-agent headset run, distance falloff felt about right despite placeholder clips, with no noticed crackles, clipping, or performance trouble. This is a subjective headset check, not measured 90 Hz delivery. The initial reproducible backend supplies Linux debug only; Windows/release extension builds and the final sample/mix pass remain open.
 
+The follow-up sound pass moved generated placeholder WAVs out of Git while
+retaining the deterministic generator; launch and check scripts recreate them
+when missing. [Sample candidates](audio-sample-shortlist.md) are awaiting ear
+review. A bandpass-noise mushi generator is being auditioned separately. After
+choosing sounds by ear, add in-game bus-level tuning and saved mix presets.
+
 ## Intended sound
 
 - **Mushi:** sparse, quiet mono calls near actual agents, suggesting tuned resonances in wind or filtered noise. Calls remain audible when the mushi are hidden by the visibility effect. Blue/orange state may alter call rate or tone gently. Avoid a constant chorus or 1024 simultaneous players.
@@ -27,7 +33,7 @@ The GPU simulation already copies 24 float32 words per agent into CPU arrays asy
 
 Start with a hard cap of **24 concurrent spatial sources**, provisionally 12 mushi, 6 forest, 4 lantern/tool, and 2 footsteps. Count fades and one-shots inside the cap. Choose nearby audible agent IDs using distance and modest activity, retain an incumbent until a newcomer is clearly better (about a 20–30% score margin), give slots a minimum hold time, and crossfade reassignment. Prefer one actual agent from each nearby cluster or cell when possible; never move a sound to an average location between distant creatures. Let call timing remain sparse even when all 12 mushi slots are assigned. Reserve capacity for later voices by making category caps configurable, not by assuming 24 is the final mix budget.
 
-Use small generated mono 48 kHz WAV placeholders, with several resonant-noise mushi variants and simple chirps, footfalls, metal/rope movement, control detents, flame, and insects. Generate them offline and commit the source generator plus outputs and provenance; avoid synthesizing waveforms per audio frame in GDScript. Route categories through buses for independent level and mute controls. Keep a nonspatial UI bus. The final samples and subjective mix remain a listening pass.
+Use small generated mono 48 kHz WAV placeholders, with several resonant-noise mushi variants and simple chirps, footfalls, metal/rope movement, control detents, flame, and insects. Generate them offline and commit the source generator and provenance; keep reproducible WAV outputs out of Git. Avoid synthesizing waveforms per audio frame in GDScript. Route categories through buses for independent level and mute controls. Keep a nonspatial UI bus. The final samples and subjective mix remain a listening pass.
 
 ## Implementation sequence
 

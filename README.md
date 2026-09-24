@@ -2,7 +2,7 @@
 
 The default scene is a 128 m Terrain3D basin with GPU mushi, coarse trunk/rock collision, static leafy trees and grass, and a persistent F2 quality panel. The 128/256 m maps have 9/18 mushroom patches, about 10% free-starting mushi, and stepped terrain with drop-offs and walking detours. The nighttime pass adds an adapting starfield, a tall green goal beacon, faint foliage luminescence near full dark adaptation, subtle bloom and lantern lighting with very low ambient light. The lantern now hangs from a grabbable staff with desktop and OpenXR controls. Rendering, staff interaction, and spatial audio have been checked on Beyond/Monado; measured headset frame delivery remains a follow-up.
 
-Steam Audio positions a bounded pool of nearby mushi calls, tree insects, footsteps, and lantern cues. The current mono clips are generated placeholders; their [generator and provenance](assets/audio/placeholders/README.md) are included.
+Steam Audio positions a bounded pool of nearby mushi calls, tree insects, footsteps, and lantern cues. The current mono clips are generated placeholders; their [generator and provenance](assets/audio/placeholders/README.md) are included, while the WAV outputs are generated locally. A [sample audition shortlist](docs/audio-sample-shortlist.md) collects CC0 candidates for the next sound pass.
 
 The accepted 1024-agent simulation and F1 tuning sandbox remain. See [docs/m1-environment.md](docs/m1-environment.md) for the environment test card, measurements and known limits, [docs/m1-environment-plan.md](docs/m1-environment-plan.md) for the approved plan, and [docs/m0g-trios.md](docs/m0g-trios.md) for the accepted trios/tuning checkpoint. Terrain3D is vendored at a pinned version; [dependency provenance](docs/terrain3d-provenance.md) includes its reproducible setup command and license.
 
@@ -17,6 +17,10 @@ Godot once after cloning:
 ./tools/build-steam-audio.sh
 ./tools/build-godot-audio.sh
 ```
+
+`launch.sh` and the check scripts generate the placeholder WAVs on first use.
+Run `python3 scripts/generate_audio_placeholders.py` before opening a fresh
+checkout directly in the Godot editor.
 
 The first command stages native libraries under `addons/godot-steam-audio/bin`;
 the second creates `.local/godot/bin/godot4`. Their source revisions, patches,

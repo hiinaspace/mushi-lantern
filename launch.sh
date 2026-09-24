@@ -2,6 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$project_dir/scripts/generate_audio_placeholders.py" --if-missing
 fallback_godot="/home/s/.local/share/godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64"
 patched_godot="$project_dir/.local/godot/bin/godot4"
 

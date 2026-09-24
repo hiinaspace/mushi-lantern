@@ -8,6 +8,10 @@ They use only Python's standard library. Regenerate from the repository root wit
 python scripts/generate_audio_placeholders.py
 ```
 
+Generated WAVs are ignored by Git. `launch.sh`, `check.sh`, and
+`check-audio.sh` regenerate the set if any file is missing. Run the generator
+before opening the project directly in the Godot editor on a fresh clone.
+
 All files are mono 48 kHz, signed 16-bit PCM WAV. The generator limits each
 asset's peak to 0.18 full scale (about -14.9 dBFS); source gain in the game
 should still be mixed by ear. These synthetic placeholders are for implementation

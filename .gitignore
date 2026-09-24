@@ -4,4 +4,7 @@
 screenshots/
 run-records/
 .local/
+__pycache__/
 /addons/godot-steam-audio/bin/*.so
+/assets/audio/placeholders/*.wav
+/assets/audio/auditions/

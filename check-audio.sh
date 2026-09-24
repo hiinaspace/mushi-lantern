@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$project_dir/scripts/generate_audio_placeholders.py" --if-missing
 godot_bin="${GODOT_BIN:-$project_dir/.local/godot/bin/godot4}"
 if [[ ! -x "$godot_bin" ]]; then
   echo "Build the patched engine with ./tools/build-godot-audio.sh or set GODOT_BIN." >&2

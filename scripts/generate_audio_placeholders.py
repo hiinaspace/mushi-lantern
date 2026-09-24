@@ -8,6 +8,7 @@ assets/audio/placeholders relative to this script. Files are 48 kHz, mono,
 from __future__ import annotations
 
 import math
+import argparse
 import random
 import struct
 import wave
@@ -16,6 +17,16 @@ from pathlib import Path
 RATE = 48_000
 PEAK_LIMIT = 0.18
 OUT = Path(__file__).resolve().parents[1] / "assets/audio/placeholders"
+EXPECTED = [
+    *(f"mushi_resonance_{i:02d}.wav" for i in range(1, 5)),
+    *(f"forest_insects_{i:02d}.wav" for i in range(1, 4)),
+    *(f"footstep_ground_{i:02d}.wav" for i in range(1, 5)),
+    "lantern_flame_bed.wav",
+    *(f"lantern_rope_creak_{i:02d}.wav" for i in range(1, 3)),
+    *(f"lantern_metal_swing_{i:02d}.wav" for i in range(1, 3)),
+    *(f"shutter_detent_{i:02d}.wav" for i in range(1, 4)),
+    *(f"filter_detent_{i:02d}.wav" for i in range(1, 3)),
+]
 
 
 def env(t: float, duration: float, attack: float = 0.02, release: float = 0.1) -> float:
@@ -122,6 +133,11 @@ def detent(seed: int, pitch: float) -> list[float]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--if-missing", action="store_true", help="Generate only when an expected WAV is absent")
+    args = parser.parse_args()
+    if args.if_missing and all((OUT / name).is_file() for name in EXPECTED):
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     for i, (freq, dur, bend) in enumerate([(282, 1.45, .12), (347, 1.2, .19), (421, 1.55, .09), (236, 1.35, .16)], 1):
         write(f"mushi_resonance_{i:02d}", mushi(100 + i, freq, dur, bend))
