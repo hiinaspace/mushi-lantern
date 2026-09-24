@@ -20,7 +20,7 @@ texture sources; check loop boundaries and subjective looping before release.
 
 | Prefix / name | Intended cue | Duration |
 | --- | --- | ---: |
-| `mushi_resonance_01..04` | Sparse, gently beating glass-harp pairs: two near fifths and two near fourths, with quiet upper harmonics and contact texture | 2.90–3.20 s |
+| `mushi_resonance_01..04` | Sparse glass-harp pairs: two near fifths and two near fourths, with quiet upper harmonics and insect-like contact texture | 2.90–3.20 s |
 | `forest_insects_01..03` | Localized insect/cricket beds | 3.20 s |
 | `footstep_ground_01..04` | Grounded soft thump/crunch variants | 0.32 s |
 | `lantern_flame_bed` | Quiet filtered flame texture | 4.00 s |

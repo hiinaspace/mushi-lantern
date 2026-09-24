@@ -124,17 +124,17 @@ def main() -> None:
         return
     OUT.mkdir(parents=True, exist_ok=True)
     # Two fourths and two fifths, with small tuning differences like separate
-    # pieces of glass. Keep one restrained detuned call for a softer beating
-    # edge; avoid thirds, which color the grove's harmony too strongly.
+    # pieces of glass. The contact texture adds an insect-like edge without
+    # the detuned beating; avoid thirds, which color the harmony too strongly.
     calls = (
-        (3.1, 649.5, BASE_HZ[1] / BASE_HZ[0], "etched"),
-        (2.9, 610.0, 1.336, "etched"),
-        (3.0, 690.0, 1.497, "reese"),
-        (3.2, 575.0, 1.330, "etched"),
+        (3.1, 649.5, BASE_HZ[1] / BASE_HZ[0]),
+        (2.9, 610.0, 1.336),
+        (3.0, 690.0, 1.497),
+        (3.2, 575.0, 1.330),
     )
-    for i, (length, root_hz, ratio, variant) in enumerate(calls, 1):
+    for i, (length, root_hz, ratio) in enumerate(calls, 1):
         write(f"mushi_resonance_{i:02d}",
-              render_glass_pair(length, 100 + i, variant, root_hz, ratio))
+              render_glass_pair(length, 100 + i, "friction", root_hz, ratio))
     for i, (hz, tone) in enumerate([(3.2, 3900), (4.1, 4450), (2.7, 3500)], 1):
         write(f"forest_insects_{i:02d}", insect(200 + i, hz, tone))
     for i, (pitch, grit) in enumerate([(92, .38), (118, .31), (76, .46), (105, .42)], 1):

@@ -59,7 +59,8 @@ close to the reference's roughly 40 dB. This matches one spectral measure,
 not perceived timbre or a verified account of the recording's production.
 The CLI also supports `--interval fourth|fifth` and `--root-hz` for auditions.
 
-The game generator provisionally uses three etched calls and one Reese-like
-call, with two near fourths and two near fifths. It preserves sparse playback
-and small per-play pitch changes. The user still needs to judge the new edge
-and the resulting mix by ear.
+After comparing the three auditions, the user chose the brighter contact
+texture. The game generator now uses `friction` for all four calls, with two
+near fourths and two near fifths. The detuned `reese` version remains an
+audition only. Sparse playback and small per-play pitch changes remain; the
+spatialized result and category mix still need ear review.

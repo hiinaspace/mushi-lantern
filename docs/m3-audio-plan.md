@@ -39,8 +39,10 @@ notes near 650 and 986 Hz with alternating ~2.9 Hz rubbing pulses. A later
 spectral comparison found faint but important high harmonics and moving
 6–9 kHz content missing from the first reconstruction. Three brighter original
 auditions now test an etched edge, gentle detuned beating, and added contact
-noise. The generated in-game calls provisionally use two near fourths and two
-near fifths from the restrained bright versions; ear review remains open.
+noise. The user selected the contact texture, which adds an insect-like high
+edge without the less desirable detuned beating. All four generated in-game
+calls now use that texture, in two near fourths and two near fifths; the
+spatialized mix still needs ear review.
 
 ## Intended sound
 
