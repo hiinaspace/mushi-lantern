@@ -3,9 +3,20 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 fallback_godot="/home/s/.local/share/godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64"
+patched_godot="$project_dir/.local/godot/bin/godot4"
 
 if [[ -n "${GODOT_BIN:-}" ]]; then
   godot_bin="$GODOT_BIN"
+elif [[ -f "$project_dir/addons/godot-steam-audio/bin/libgodot-steam-audio.gdextension" ]]; then
+  if [[ ! -f "$project_dir/addons/godot-steam-audio/bin/libgodot-steam-audio.linux.template_debug.x86_64.so" || ! -f "$project_dir/addons/godot-steam-audio/bin/libphonon.so" ]]; then
+    echo "Steam Audio native libraries are missing. Run ./tools/build-steam-audio.sh." >&2
+    exit 127
+  fi
+  if [[ ! -x "$patched_godot" ]]; then
+    echo "Steam Audio needs patched Godot. Run ./tools/build-godot-audio.sh or set GODOT_BIN to a compatible patched engine." >&2
+    exit 127
+  fi
+  godot_bin="$patched_godot"
 elif command -v godot4 >/dev/null 2>&1; then
   godot_bin="$(command -v godot4)"
 elif command -v godot >/dev/null 2>&1; then

@@ -48,6 +48,7 @@ var staff_tool: Variant
 var xr_player: Variant
 var xr_staff_interaction: Variant
 var lantern: Lantern
+var grove_audio: Node
 var top_camera: Camera3D
 var agent_nodes: Array[Node3D] = []
 var glyph_swarm: GlyphSwarm
@@ -128,6 +129,7 @@ func _ready() -> void:
 	_build_player()
 	if _want_xr:
 		_build_xr_player()
+	_build_audio()
 	_build_ui()
 	panel.visible = debug_visible
 	_apply_preset(current_preset_index, false)
@@ -467,6 +469,14 @@ func _build_xr_player() -> void:
 	staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	xr_staff_interaction = load("res://scripts/xr_staff_interaction.gd").new()
 	xr_staff_interaction.configure(staff_tool, xr_player)
+
+
+func _build_audio() -> void:
+	grove_audio = load("res://scripts/grove_audio.gd").new()
+	grove_audio.name = "GroveAudio"
+	add_child(grove_audio)
+	grove_audio.configure(simulation, world_surface, staff_tool, player, xr_player)
+	grove_audio.set_listener_camera(xr_player.camera if xr_player != null and xr_player.xr_active else player.camera)
 
 
 func _xr_initial_staff_pose() -> Transform3D:
@@ -1017,6 +1027,8 @@ func _reset_run(record_previous: bool) -> void:
 	if not current_preset.energy_dynamics:
 		simulation.mushroom_centers = PackedVector2Array()
 	simulation.reset(fixture_count, current_seed, current_preset)
+	if grove_audio != null:
+		grove_audio.bind_simulation(simulation)
 	_refresh_preset_visuals()
 	_rebuild_agents()
 	accumulator = 0.0

@@ -21,7 +21,7 @@ func _init() -> void:
 
 func _test_preset_contract() -> void:
 	var presets := HerdPreset.builtins()
-	_expect(presets.size() == 8 and presets[5].preset_name == "Living shoals" and presets[6].preset_name == "Longer drift" and presets[7].preset_name == "Drifting trains", "new behavior variants follow the historical presets")
+	_expect(presets.size() == 9 and presets[5].preset_name == "Living shoals" and presets[6].preset_name == "Longer drift" and presets[7].preset_name == "Drifting trains" and presets[8].preset_name == "Loose trains", "new behavior variants follow the historical presets")
 	for index: int in 5:
 		_expect(presets[index].population_variation == 0.0 and presets[index].arousal_contagion_strength == 0.0 and not presets[index].spontaneous_waking_enabled, "preset %d retains disabled ecology defaults" % index)
 	var restored := HerdPreset.from_dict({"preset_name": "old", "max_speed": 1.7})

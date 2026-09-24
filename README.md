@@ -1,6 +1,8 @@
 # Mushi Lantern — night grove and XR staff
 
-The default scene is a 128 m Terrain3D basin with GPU mushi, coarse trunk/rock collision, static leafy trees and grass, and a persistent F2 quality panel. The 128/256 m maps have 9/18 mushroom patches, about 10% free-starting mushi, and stepped terrain with drop-offs and walking detours. The nighttime pass adds an adapting starfield, a tall green goal beacon, faint foliage luminescence near full dark adaptation, subtle bloom and lantern lighting with very low ambient light. The lantern now hangs from a grabbable staff with desktop and OpenXR controls. Basic rendering and earlier controls have been checked on Beyond/Monado; the current swing/face pass and frame delivery still need headset checks.
+The default scene is a 128 m Terrain3D basin with GPU mushi, coarse trunk/rock collision, static leafy trees and grass, and a persistent F2 quality panel. The 128/256 m maps have 9/18 mushroom patches, about 10% free-starting mushi, and stepped terrain with drop-offs and walking detours. The nighttime pass adds an adapting starfield, a tall green goal beacon, faint foliage luminescence near full dark adaptation, subtle bloom and lantern lighting with very low ambient light. The lantern now hangs from a grabbable staff with desktop and OpenXR controls. Rendering, staff interaction, and spatial audio have been checked on Beyond/Monado; measured headset frame delivery remains a follow-up.
+
+Steam Audio positions a bounded pool of nearby mushi calls, tree insects, footsteps, and lantern cues. The current mono clips are generated placeholders; their [generator and provenance](assets/audio/placeholders/README.md) are included.
 
 The accepted 1024-agent simulation and F1 tuning sandbox remain. See [docs/m1-environment.md](docs/m1-environment.md) for the environment test card, measurements and known limits, [docs/m1-environment-plan.md](docs/m1-environment-plan.md) for the approved plan, and [docs/m0g-trios.md](docs/m0g-trios.md) for the accepted trios/tuning checkpoint. Terrain3D is vendored at a pinned version; [dependency provenance](docs/terrain3d-provenance.md) includes its reproducible setup command and license.
 
@@ -8,12 +10,26 @@ The accepted 1024-agent simulation and F1 tuning sandbox remain. See [docs/m1-en
 
 The terrain scene is verified with Godot 4.7.2 and the Mobile renderer on `sayu`. Earlier flat-lab work also ran on `natto`; the new environment has not been qualified there.
 
+For Steam Audio on Linux x86_64, build the pinned extension and audio-patched
+Godot once after cloning:
+
+```bash
+./tools/build-steam-audio.sh
+./tools/build-godot-audio.sh
+```
+
+The first command stages native libraries under `addons/godot-steam-audio/bin`;
+the second creates `.local/godot/bin/godot4`. Their source revisions, patches,
+and notices are in [build-support/steam-audio/README.md](build-support/steam-audio/README.md).
+Only Linux x86_64 debug is built at present. Windows and release exports need
+their own extension builds and checks.
+
 ```bash
 ./launch.sh
 ./launch.sh --xr --count 512 # OpenXR through the active runtime; 512 is a lower-cost first check
 ```
 
-`launch.sh` disables V-Sync and caps desktop rendering at 60 FPS to avoid an observed presentation stall on natto. `--xr` enables OpenXR without the desktop FPS cap. It uses `$GODOT_BIN`, then `godot4`/`godot` from `PATH`, then the current local 4.7.2 install. Optional launch arguments:
+`launch.sh` disables V-Sync and caps desktop rendering at 60 FPS to avoid an observed presentation stall on natto. `--xr` enables OpenXR without the desktop FPS cap. With Steam Audio present it uses `.local/godot/bin/godot4` by default. `GODOT_BIN=/path/to/compatible/godot` overrides that selection. Without Steam Audio it falls back to `godot4`/`godot` from `PATH`, then the local 4.7.2 install. Optional launch arguments:
 
 ```bash
 ./launch.sh --tiny
@@ -64,12 +80,14 @@ Run records are JSON Lines at `user://m0_run_records.jsonl`; named presets are a
 ./check.sh
 ./check-gpu.sh  # retained flat-lab GPU regression checks
 ./check-environment.sh  # terrain, settings, rendered scene and GPU grounding
-godot --headless --xr-mode off --path . --scene res://tests/staff_tool_smoke.tscn --quit-after 120
+./check-audio.sh  # private sink, spatial direction and short 1024-agent source budget
+./check-audio.sh --long  # adds 60-second 24-source and repeated reset/teardown checks
+./.local/godot/bin/godot4 --headless --xr-mode off --path . --scene res://tests/staff_tool_smoke.tscn --quit-after 120
 ```
 
-The headless suite includes simulation/texture checks and an isolated test of real UI save/load, configuration history, CLI selection and reset callbacks. `check-gpu.sh` separately checks CPU/GPU agreement, waking and filter transitions, return/release accounting, resets, GPU texture binding and actual scene backend switching. GPU terrain flight uses shared height data, finite trunk/rock proxies and coarse swept overlap correction. `staff_tool_smoke.tscn` checks tool states and gestures. These checks do not establish herding feel, stereo comfort or export readiness.
+The headless suite includes simulation/texture checks and an isolated test of real UI save/load, configuration history, CLI selection and reset callbacks. `check-gpu.sh` separately checks CPU/GPU agreement, waking and filter transitions, return/release accounting, resets, GPU texture binding and actual scene backend switching. GPU terrain flight uses shared height data, finite trunk/rock proxies and coarse swept overlap correction. `staff_tool_smoke.tscn` checks tool states and gestures. `check-audio.sh` needs `pactl` and a running PulseAudio-compatible server; it routes sound through a temporary null sink and leaves the default sink alone. These checks do not establish herding feel, stereo comfort or export readiness.
 
-The `Windows OpenXR` export preset includes the Terrain3D Windows x86-64 GDExtension. With Godot 4.7.2 export templates installed, export from the editor or run `godot --headless --xr-mode off --path . --export-release "Windows OpenXR" artifacts/export/windows/mushi-lantern.exe`. Launch that build with `--xr` on a Windows OpenXR runtime. The preset has not yet been exported or tested on Windows.
+The `Windows OpenXR` export preset includes the Terrain3D Windows x86-64 GDExtension. Steam Audio currently has only a Linux x86_64 debug build in this repository, so a Windows audio-enabled export is pending a matching extension build and validation.
 
 Project and jam scope are recorded in [docs/charter-2026-09-21.md](docs/charter-2026-09-21.md) and [docs/jam-plan.md](docs/jam-plan.md).
 

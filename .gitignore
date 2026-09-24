@@ -3,3 +3,5 @@
 *.tmp
 screenshots/
 run-records/
+.local/
+/addons/godot-steam-audio/bin/*.so
