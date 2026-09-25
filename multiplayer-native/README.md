@@ -52,6 +52,16 @@ persist locally; mute resets on launch.
 Avatar fit changes apply when the menu closes so XR pointer placement stays
 stable while dragging its sliders.
 
+For an experimental XR broom flight/IK check, set `MUSHI_ROOM_SECRET` and run
+`./launch.sh --xr --host --broom-test`. Hold the staff with both hands,
+bring its shaft roughly horizontal across the hips, and hold that pose for one
+second. This bypasses the planned grove reward for this run only. During
+flight, the Ukon avatar keeps tracked head and arms while its ground leg
+animation and foot planting pause. That flight state rides the existing avatar
+pose byte so peers see dangling legs too. The XR Tools hand meshes are hidden while
+the local multiplayer Ukon avatar is present; their hand nodes still provide
+grab poses and wrist targets.
+
 The game loads `res://multiplayer-native/mushi_multiplayer.gdextension` only
 when launched with `--host` or `--join`, then creates a `MushiNetwork` node.
 The roles are explicit in this prototype; first-participant election is not

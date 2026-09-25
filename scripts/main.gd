@@ -37,6 +37,7 @@ var _network: Variant
 var _network_extension: Resource
 var _voice: MushiVoice
 var _voice_start_unmuted := false
+var _broom_test_enabled := false
 var _voice_input_device := ""
 var _voice_gain_db := 0.0
 var _voice_gate_db := -38.0
@@ -889,6 +890,7 @@ func _build_xr_player() -> void:
 	staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	xr_staff_interaction = load("res://scripts/xr_staff_interaction.gd").new()
 	xr_staff_interaction.configure(staff_tool, xr_player)
+	xr_staff_interaction.broom_unlocked = _broom_test_enabled
 
 
 func _build_audio() -> void:
@@ -2037,6 +2039,9 @@ func _parse_arguments() -> void:
 		elif args[index] == "--voice-unmuted":
 			_voice_start_unmuted = true
 			index += 1
+		elif args[index] == "--broom-test":
+			_broom_test_enabled = true
+			index += 1
 		elif args[index] == "--skip-tutorial":
 			_skip_tutorial_requested = true
 			_force_tutorial = false
@@ -2423,6 +2428,8 @@ func _start_multiplayer(secret: String, hosting: bool) -> void:
 	add_child(_local_avatar)
 	_local_avatar.configure(_local_avatar_hue, true)
 	_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
+	if xr_player != null and xr_player.xr_active:
+		xr_player.set_controller_hand_meshes_visible(false)
 	var presentation := get_node_or_null("MikoPresentation") as Node3D
 	if presentation != null:
 		presentation.visible = false
@@ -2449,6 +2456,8 @@ func _leave_multiplayer() -> void:
 	if _local_avatar != null:
 		_local_avatar.queue_free()
 		_local_avatar = null
+	if xr_player != null and xr_player.xr_active:
+		xr_player.set_controller_hand_meshes_visible(true)
 	var presentation := get_node_or_null("MikoPresentation") as Node3D
 	if presentation != null:
 		presentation.visible = true
@@ -2696,6 +2705,8 @@ func _sample_local_avatar_pose() -> Dictionary:
 		var xr_body := xr_player.get_node("PlayerBody") as CharacterBody3D
 		# Bit 4 marks the XR pose even if both hands temporarily lose tracking.
 		var tracked := 4
+		if xr_player.is_broom_flying():
+			tracked |= MultiplayerAvatarPose.FLYING_FLAG
 		var hands: Array[Transform3D] = []
 		var fingers: Array[Quaternion] = []
 		var masks := PackedInt32Array([0, 0])

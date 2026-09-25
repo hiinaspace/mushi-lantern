@@ -112,6 +112,18 @@ func _ready() -> void:
 	set_menu_open(false)
 	_update_movement()
 
+
+func set_controller_hand_meshes_visible(show_meshes: bool) -> void:
+	# Keep XR Tools hand nodes, skeletons, and grab-point tracking alive for
+	# avatar wrist targets. Only the duplicate rendered meshes are hidden.
+	for controller in [left_controller, right_controller]:
+		var hand := controller.get_node_or_null("Hand") as Node3D
+		if hand == null:
+			continue
+		for mesh in hand.find_children("*", "MeshInstance3D", true, false):
+			(mesh as MeshInstance3D).visible = show_meshes
+
+
 func _process(_delta: float) -> void:
 	if not xr_active:
 		return

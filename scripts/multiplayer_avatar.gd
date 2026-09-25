@@ -44,6 +44,7 @@ var _display_right: Transform3D = Transform3D.IDENTITY
 var _height_calibrated: bool = false
 var _idle_planting: bool = false
 var _foot_plant_weight: float = 0.0
+var _flying: bool = false
 var _last_tracking: int = 0
 var _arm_rest_origins: Dictionary = {}
 var _arm_reach_applied: float = -1.0
@@ -242,6 +243,7 @@ func apply_pose(body_pose: Transform3D, view: Transform3D, left: Transform3D,
 		_delta: float) -> void:
 	if not _valid_pose(view):
 		return
+	set_flying((tracked_hands & MultiplayerAvatarPose.FLYING_FLAG) != 0)
 	if not _height_calibrated and _valid_pose(body_pose):
 		var measured_height := view.origin.y - body_pose.origin.y
 		if measured_height >= 1.1 and measured_height <= 2.1:
@@ -350,7 +352,7 @@ func _apply_display_pose(body_pose: Transform3D, view: Transform3D, left: Transf
 
 
 func _physics_process(delta: float) -> void:
-	if not _ready_pose or placement == null:
+	if not _ready_pose or placement == null or _flying:
 		return
 	placement.update_placement(minf(delta, 0.05))
 	placement.interpolate_transforms(1.0)
@@ -359,11 +361,36 @@ func _physics_process(delta: float) -> void:
 func _update_foot_plant_weight(delta: float) -> void:
 	var has_floor: bool = placement != null and placement.target_foot_is_valid and \
 		(placement.left_ground != null or placement.right_ground != null)
-	var target_weight := 1.0 if _idle_planting and has_floor else 0.0
+	var target_weight := 1.0 if _idle_planting and has_floor and not _flying else 0.0
 	_foot_plant_weight = move_toward(_foot_plant_weight, target_weight, minf(delta, 0.05) * 5.0)
 	for modifier in leg_modifiers:
 		modifier.influence = _foot_plant_weight
 		modifier.active = _foot_plant_weight > 0.001
+
+
+func set_flying(flying: bool) -> void:
+	if _flying == flying:
+		return
+	_flying = flying
+	if _leg_animation != null:
+		_leg_animation.active = not flying
+	if flying:
+		# Leave the authored leg rest pose dangling below the tracked torso.
+		# Ground contacts are recomputed after landing.
+		_foot_plant_weight = 0.0
+		for bone_name in ["Hips", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "Left toe",
+				"RightUpperLeg", "RightLowerLeg", "RightFoot", "Right toe"]:
+			var bone := skeleton.find_bone(bone_name)
+			if bone >= 0:
+				skeleton.set_bone_pose_rotation(bone,
+					skeleton.get_bone_rest(bone).basis.get_rotation_quaternion())
+		for modifier in leg_modifiers:
+			modifier.influence = 0.0
+			modifier.active = false
+		if placement != null:
+			placement.target_foot_is_valid = false
+			placement.left_ground = null
+			placement.right_ground = null
 
 
 func set_locomotion(horizontal_velocity: Vector3, facing: Vector3) -> void:

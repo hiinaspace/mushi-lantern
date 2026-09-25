@@ -5,6 +5,7 @@ extends RefCounted
 ## records, so a lamp and its avatar cannot be attributed to different people.
 const OFFSET := MultiplayerLantern.BYTES
 const VERSION := 3
+const FLYING_FLAG := 32
 const BASE_BYTES := OFFSET + 4 + 4 * 28 + 8
 const V2_BYTES := BASE_BYTES + 4 + 30 * 8 + 10
 const BYTES := V2_BYTES + 1
@@ -21,7 +22,7 @@ static func append(lantern_bytes: PackedByteArray, body: Transform3D, head: Tran
 	var bytes := lantern_bytes.duplicate()
 	bytes.resize(BYTES)
 	bytes.encode_u8(OFFSET, VERSION)
-	bytes.encode_u8(OFFSET + 1, tracking & 31)
+	bytes.encode_u8(OFFSET + 1, tracking & 63)
 	bytes.encode_u8(OFFSET + 2, roundi(fposmod(hue, 1.0) * 255.0))
 	bytes.encode_u8(OFFSET + 3, roundi((clampf(eye_height, 1.1, 2.1) - 1.1) * 255.0))
 	var transforms := [body, head, left, right]
@@ -95,7 +96,7 @@ static func decode(bytes: PackedByteArray, terrain_size: int) -> Dictionary:
 			curls[i] = float(bytes.decode_u8(finger_at + i)) / 255.0
 	var arm_reach := 0.9 + float(bytes.decode_u8(V2_BYTES)) / 255.0 * 0.6 if version == VERSION else 1.3
 	return {"body": poses[0], "head": poses[1], "left": poses[2], "right": poses[3],
-		"tracking": bytes.decode_u8(OFFSET + 1) & 31,
+		"tracking": bytes.decode_u8(OFFSET + 1) & 63,
 		"hue": float(bytes.decode_u8(OFFSET + 2)) / 255.0,
 		"eye_height": 1.1 + float(bytes.decode_u8(OFFSET + 3)) / 255.0,
 		"velocity": velocity, "fingers": fingers, "masks": masks, "curls": curls,

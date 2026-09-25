@@ -13,11 +13,12 @@ func _initialize() -> void:
 	var masks := PackedInt32Array([0x7fff, 0x7fff])
 	var curls := PackedFloat32Array([0.2, 0.8, 0.4, 0.4, 0.4, 0.2, 0.8, 0.4, 0.4, 0.4])
 	var bytes := MultiplayerAvatarPose.append(MultiplayerLantern.encode(17, field),
-		body, head, left, right, 7, 0.45, Vector3(1, 0, -2), 1.6, fingers, masks, curls)
+		body, head, left, right, 7 | MultiplayerAvatarPose.FLYING_FLAG, 0.45,
+		Vector3(1, 0, -2), 1.6, fingers, masks, curls)
 	assert(bytes.size() == MultiplayerAvatarPose.BYTES)
 	assert(int(MultiplayerLantern.decode(bytes, 128).sequence) == 17)
 	var pose := MultiplayerAvatarPose.decode(bytes, 128)
-	assert(pose.tracking == 7)
+	assert(pose.tracking == (7 | MultiplayerAvatarPose.FLYING_FLAG))
 	assert((pose.body.origin - body.origin).length() < 0.001)
 	assert((pose.head.basis.get_rotation_quaternion().normalized().dot(head.basis.get_rotation_quaternion())) > 0.999)
 	assert((pose.velocity - Vector3(1, 0, -2)).length() < 0.001)
