@@ -12,11 +12,24 @@ Build with the project's Rust environment, for example:
 ```sh
 nix develop /home/s/code/prim --command ./multiplayer-native/build.sh debug
 nix develop /home/s/code/prim --command ./multiplayer-native/build.sh test
+nix develop /home/s/code/prim --command ./multiplayer-native/build.sh windows-release
+nix develop /home/s/code/prim --command ./build-support/steam-audio/package-windows.sh
 ```
 
-For the current two-player desktop gate, build `debug` on each machine, then
-launch the same game revision with a private phrase supplied outside the command
-line. The first process explicitly hosts; the second joins:
+The Windows target uses the staged Rust Windows GNU standard library and
+MinGW/Opus toolchain under `/home/s/code/prim/.local/windows` on sayu. Set
+`MUSHI_WINDOWS_MINGW_PREFIX` for another MinGW prefix. The package script
+fetches the SHA-256-pinned ONNX Runtime DLL, exports the Windows GDExtension,
+and includes its required Opus DLL and notices. The packaged executable
+started a private host under Wine; native Windows/OpenXR remains a friend gate.
+
+For the friend build, open the in-game menu and select Room. Enter the same
+three-or-more-character code with the desktop keyboard or XR pointer keyboard,
+then choose Host on one machine and Join on the others. Codes are
+case-insensitive. Room hosting skips the singleplayer tutorial and enables
+two-hand broom flight in XR. Leaving the room returns to offline play.
+For command-line testing, the first process explicitly hosts and the second
+joins:
 
 ```sh
 export MUSHI_ROOM_SECRET='a private phrase shared out of band'
@@ -52,8 +65,9 @@ persist locally; mute resets on launch.
 Avatar fit changes apply when the menu closes so XR pointer placement stays
 stable while dragging its sliders.
 
-For an experimental XR broom flight/IK check, set `MUSHI_ROOM_SECRET` and run
-`./launch.sh --xr --host --broom-test`. Hold the staff with both hands,
+For an experimental offline XR broom flight/IK check, run
+`./launch.sh --xr --broom-test`. Multiplayer enables the gesture by default.
+Hold the staff with both hands,
 then hold both controller triggers for one second, regardless of staff pose.
 Releasing either grip stops flight or starts a controlled landing when high
 above the ground. The flag bypasses the planned grove reward for this run.
@@ -63,11 +77,11 @@ pose byte so peers see dangling legs too. The XR Tools hand meshes are hidden wh
 the local multiplayer Ukon avatar is present; their hand nodes still provide
 grab poses and wrist targets.
 
-The game loads `res://multiplayer-native/mushi_multiplayer.gdextension` only
-when launched with `--host` or `--join`, then creates a `MushiNetwork` node.
-The roles are explicit in this prototype; first-participant election is not
-implemented. Build the release library before making a Linux export. The
-Windows preset needs a Windows build of this extension. OpenLipSync requires
+The game loads `res://multiplayer-native/mushi_multiplayer.gdextension` when
+hosting or joining from the menu or command line, then creates a `MushiNetwork`
+node. The roles are explicit; first-participant election is not implemented.
+Build the release library before making a Linux export. The
+Windows preset uses the Windows build of this extension. OpenLipSync requires
 ONNX Runtime at `res://bin/linux/libonnxruntime.so` or
 `res://bin/windows/onnxruntime.dll`. For local tests,
 `MUSHI_ONNXRUNTIME_LIBRARY` can point to an existing runtime library. Without

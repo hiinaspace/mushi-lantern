@@ -6,3 +6,5 @@ reloadable = true
 [libraries]
 linux.debug.x86_64 = "res://multiplayer-native/target/debug/libmushi_multiplayer_native.so"
 linux.release.x86_64 = "res://multiplayer-native/target/release/libmushi_multiplayer_native.so"
+windows.debug.x86_64 = "res://multiplayer-native/target/x86_64-pc-windows-gnu/debug/mushi_multiplayer_native.dll"
+windows.release.x86_64 = "res://multiplayer-native/target/x86_64-pc-windows-gnu/release/mushi_multiplayer_native.dll"

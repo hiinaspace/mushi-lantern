@@ -106,6 +106,23 @@ func _run() -> void:
 		staff.set_held_world_pose(Transform3D(Basis(Vector3.FORWARD, roll), Vector3(0.0, 1.0, 0.0)))
 		staff.advance(1.0 / 60.0)
 		assert(staff.lantern.forward_direction().dot(Vector3.FORWARD) > 0.97)
+	# Flight heading follows the viewer even when the two-hand shaft solve
+	# reverses. A pendulum aligned with the beam cannot flip the lantern back.
+	staff.set_flight_aim(true, Vector3.RIGHT)
+	staff._bob_world = staff._swing.global_position + Vector3.RIGHT * StaffTool.SUSPENSION_LENGTH
+	staff._orient_swing(staff._swing.global_position, 1.0 / 90.0)
+	assert(staff.lantern.forward_direction().dot(Vector3.RIGHT) > 0.999)
+	assert(staff._swing.global_basis.is_finite())
+	staff.set_flight_aim(true, Vector3(0.0, 1.0, 0.0))
+	staff._orient_swing(staff._swing.global_position, 1.0 / 90.0)
+	assert(staff.lantern.forward_direction().dot(Vector3.RIGHT) > 0.999)
+	staff.set_flight_aim(false, Vector3.ZERO)
+	staff._bob_world = staff._swing.global_position + Vector3.DOWN * StaffTool.SUSPENSION_LENGTH
+	staff._orient_swing(staff._swing.global_position, 1.0 / 90.0)
+	assert(staff.lantern.forward_direction().dot(Vector3.RIGHT) > 0.98)
+	for frame: int in 90:
+		staff._orient_swing(staff._swing.global_position, 1.0 / 90.0)
+	assert(staff.lantern.forward_direction().dot(Vector3.FORWARD) > 0.97)
 	# Desktop camera yaw moves the staff on an orbit around the head. That
 	# apparent pivot travel must not kick the pendulum as if the player ran.
 	var raw_yaw_kick := _camera_yaw_peak_velocity(staff, false)

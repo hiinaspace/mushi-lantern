@@ -65,6 +65,7 @@ var _network_status := "Offline"
 var _last_sent_score: int = -1
 var _multiplayer_cli_mode := ""
 var _multiplayer_previous_skip := false
+var _multiplayer_previous_force_tutorial := false
 var _client_config_reset := false
 var _network_diag_clock := 0.0
 var _snapshot_payload_bytes := 0
@@ -295,6 +296,9 @@ func _ready() -> void:
 	friend_menu.skip_requested.connect(_on_friend_skip)
 	friend_menu.tuning_requested.connect(_on_friend_tuning)
 	friend_menu.menu_visibility_changed.connect(_on_friend_menu_visibility)
+	friend_menu.multiplayer_host_requested.connect(_on_multiplayer_host_requested)
+	friend_menu.multiplayer_join_requested.connect(_on_multiplayer_join_requested)
+	friend_menu.multiplayer_leave_requested.connect(_leave_multiplayer)
 	if not _multiplayer_cli_mode.is_empty():
 		_init_multiplayer_network()
 		_start_multiplayer(OS.get_environment("MUSHI_ROOM_SECRET"), _multiplayer_cli_mode == "host")
@@ -928,6 +932,7 @@ func _update_staff_pose(delta: float) -> void:
 		staff_tool.clear_desktop_yaw_reference()
 		if xr_staff_interaction != null:
 			xr_staff_interaction.update(delta)
+		staff_tool.set_flight_aim(xr_player.is_broom_flying(), -xr_player.camera.global_basis.z)
 		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
 			staff_tool.update_recall(_xr_recall_owner.global_transform, delta)
 	else:
@@ -2391,6 +2396,7 @@ func _show_multiplayer_status(active: bool, hosting: bool, status: String) -> vo
 	_network_status = status
 	if friend_menu != null:
 		friend_menu.set_shared_role("host" if active and hosting else "client" if active else "offline")
+		friend_menu.set_multiplayer_status(status)
 	print("MUSHI_NETWORK_STATUS: ", status)
 
 
@@ -2402,24 +2408,38 @@ func _on_multiplayer_join_requested(secret: String) -> void:
 	_start_multiplayer(secret, false)
 
 
+func _update_broom_access() -> void:
+	if xr_staff_interaction == null:
+		return
+	var enabled := _broom_test_enabled or _multiplayer_role != "offline"
+	xr_staff_interaction.broom_test_override = enabled
+	xr_staff_interaction.broom_unlocked = enabled
+
+
 func _start_multiplayer(secret: String, hosting: bool) -> void:
+	var room_code := secret.strip_edges().to_upper()
+	if room_code.length() < 3:
+		_network_status = "Use a room code of at least three characters"
+		_show_multiplayer_status(false, false, _network_status)
+		return
+	if _network == null:
+		_init_multiplayer_network()
 	if _network == null:
 		_network_status = "Multiplayer transport is not built"
 		_show_multiplayer_status(false, false, _network_status)
 		return
-	if secret.strip_edges().length() < 3:
-		_network_status = "Use a room code of at least three characters"
-		_show_multiplayer_status(false, false, _network_status)
-		return
 	_leave_multiplayer()
 	_multiplayer_previous_skip = _skip_tutorial_requested
+	_multiplayer_previous_force_tutorial = _force_tutorial
 	_multiplayer_role = "host" if hosting else "client"
+	_update_broom_access()
 	_multiplayer_epoch = 1 if hosting else 0
 	_multiplayer_sequence = 0
 	_last_sent_snapshot_revision = -1
 	_last_sent_score = -1
 	_impaired_chunks.clear()
 	_skip_tutorial_requested = true
+	_force_tutorial = false
 	_client_config_reset = not hosting
 	_reset_run(false)
 	_client_config_reset = false
@@ -2435,7 +2455,7 @@ func _start_multiplayer(secret: String, hosting: bool) -> void:
 	if presentation != null:
 		presentation.visible = false
 	simulation_paused = false
-	if not _network.start(secret, "Mushi player", hosting):
+	if not _network.start(room_code, "Mushi player", hosting):
 		_leave_multiplayer()
 		_network_status = "Could not start private session"
 	else:
@@ -2469,8 +2489,10 @@ func _leave_multiplayer() -> void:
 	_impaired_chunks.clear()
 	var was_client := _multiplayer_role == "client"
 	_multiplayer_role = "offline"
+	_update_broom_access()
 	if was_active:
 		_skip_tutorial_requested = _multiplayer_previous_skip
+		_force_tutorial = _multiplayer_previous_force_tutorial
 	_network_status = "Offline"
 	if was_client:
 		_reset_run(false)

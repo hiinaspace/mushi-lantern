@@ -51,6 +51,9 @@ var _float_elapsed := 0.0
 var _float_origin := Transform3D.IDENTITY
 var _park_target := Transform3D.IDENTITY
 var _last_horizontal_aim := Vector3.FORWARD
+var _flight_aim_active := false
+var _flight_horizontal_aim := Vector3.FORWARD
+var _recovering_flight_aim := false
 var _adjusting := false
 var _adjust_reference := Basis.IDENTITY
 var _adjust_yaw_uses_right := false
@@ -69,6 +72,21 @@ var _control_hint_material: StandardMaterial3D
 ## desktop keys or mouse input.
 func desktop_can_control_lantern() -> bool:
 	return placement == Placement.HELD and not external_pose_owned
+
+## During broom flight the beam follows the viewer's horizontal heading. A
+## vertical gaze retains the previous heading, so looking up/down cannot turn
+## the lantern through a projection singularity.
+func set_flight_aim(active: bool, world_forward: Vector3) -> void:
+	if active and not _flight_aim_active:
+		_flight_horizontal_aim = _last_horizontal_aim
+	if not active and _flight_aim_active:
+		_recovering_flight_aim = true
+	_flight_aim_active = active
+	if active:
+		_recovering_flight_aim = false
+		var horizontal := Vector3(world_forward.x, 0.0, world_forward.z)
+		if horizontal.is_finite() and horizontal.length_squared() > 0.0001:
+			_flight_horizontal_aim = horizontal.normalized()
 
 func _ready() -> void:
 	freeze = true
@@ -467,6 +485,8 @@ func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = 
 	global_transform = Transform3D(staff_world.basis.orthonormalized(), staff_world.origin)
 	placement = Placement.HELD if held else Placement.PARKED
 	external_pose_owned = false
+	_flight_aim_active = false
+	_recovering_flight_aim = false
 	_has_xr_rig_reference = false
 	_adjusting = false
 	lantern.end_dial_preview()
@@ -650,28 +670,58 @@ func _orient_swing(pivot: Vector3, dt: float = 0.0) -> void:
 	var down := (_bob_world - pivot).normalized()
 	if down.length_squared() < 0.5:
 		down = Vector3.DOWN
-	var up := -down
+	var physical_up := -down
 	# Aim follows the staff's actual front, independent of the shaft's +Y
 	# direction. The shaft axis is ambiguous under a two-hand grip and can
 	# reverse when XR Tools changes its grab solution. Near vertical front
 	# poses retain the last heading; any genuine reversal is rate-limited.
-	var staff_forward := -global_basis.z
-	staff_forward.y = 0.0
-	if staff_forward.length_squared() > 0.04:
-		var desired := staff_forward.normalized()
-		var angle := atan2(_last_horizontal_aim.cross(desired).y, _last_horizontal_aim.dot(desired))
-		if dt > 0.0 and absf(angle) > 0.9:
-			_last_horizontal_aim = Basis(Vector3.UP, clampf(angle, -12.0 * dt, 12.0 * dt)) * _last_horizontal_aim
-		else:
-			_last_horizontal_aim = desired
+	if _flight_aim_active:
+		_last_horizontal_aim = _flight_horizontal_aim
+	else:
+		var staff_forward := -global_basis.z
+		staff_forward.y = 0.0
+		if staff_forward.length_squared() > 0.04:
+			var desired := staff_forward.normalized()
+			var angle := atan2(_last_horizontal_aim.cross(desired).y, _last_horizontal_aim.dot(desired))
+			if dt > 0.0 and (_recovering_flight_aim or absf(angle) > 0.9):
+				var turn_speed := 3.5 if _recovering_flight_aim else 12.0
+				var turn := clampf(angle, -turn_speed * dt, turn_speed * dt)
+				_last_horizontal_aim = Basis(Vector3.UP, turn) * _last_horizontal_aim
+			else:
+				_last_horizontal_aim = desired
 	var forward := _last_horizontal_aim
-	forward -= up * forward.dot(up)
-	if forward.length_squared() < 0.0001:
-		forward = Vector3.FORWARD - up * Vector3.FORWARD.dot(up)
-	forward = forward.normalized()
+	var up := physical_up
+	if _flight_aim_active:
+		# A pendulum can momentarily point along the beam. Preserve its tilt
+		# where possible, but keep the beam fixed on the horizontal flight aim.
+		# World up is a non-singular fallback for this horizontal forward vector.
+		up = physical_up - forward * physical_up.dot(forward)
+		var upright_blend := 1.0 - smoothstep(0.15, 0.45, up.dot(Vector3.UP))
+		up = up.lerp(Vector3.UP, upright_blend)
+	elif _recovering_flight_aim and dt > 0.0:
+		up = _swing.global_basis.y.slerp(physical_up, 1.0 - exp(-6.0 * dt))
+	if _flight_aim_active:
+		up -= forward * up.dot(forward)
+		if up.length_squared() < 0.0001:
+			up = Vector3.UP
+		up = up.normalized()
+	else:
+		up = up.normalized()
+		forward -= up * forward.dot(up)
+		if forward.length_squared() < 0.0001:
+			forward = _swing.global_basis.z * -1.0
+			forward -= up * forward.dot(up)
+		if forward.length_squared() < 0.0001:
+			forward = Vector3.UP.cross(up)
+		forward = forward.normalized()
 	var z_axis := -forward
 	var x_axis := up.cross(z_axis).normalized()
 	_swing.global_transform = Transform3D(Basis(x_axis, up, z_axis), pivot)
+	if _recovering_flight_aim and up.dot(physical_up) > 0.999:
+		var staff_horizontal := -global_basis.z
+		staff_horizontal.y = 0.0
+		if staff_horizontal.length_squared() > 0.04 and _last_horizontal_aim.dot(staff_horizontal.normalized()) > 0.999:
+			_recovering_flight_aim = false
 
 func _valid_transform(value: Transform3D) -> bool:
 	return is_finite(value.origin.x) and is_finite(value.origin.y) and is_finite(value.origin.z) and is_finite(value.basis.determinant()) and absf(value.basis.determinant()) > 0.01

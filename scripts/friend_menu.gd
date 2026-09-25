@@ -18,6 +18,9 @@ signal voice_gain_changed(gain_db: float)
 signal voice_gate_changed(threshold_db: float)
 signal voice_receive_gain_changed(gain_db: float)
 signal voice_devices_requested
+signal multiplayer_host_requested(secret: String)
+signal multiplayer_join_requested(secret: String)
+signal multiplayer_leave_requested
 
 var _desktop_root: Control
 var _desktop_panel: PanelContainer
@@ -64,6 +67,17 @@ var _desktop_voice_settings: VBoxContainer
 var _desktop_voice_button: Button
 var _voice_settings_sections: Array[VBoxContainer] = []
 var _voice_available := false
+var _room_code := ""
+var _room_note := "Enter the same private code on each computer."
+var _desktop_room_panel: PanelContainer
+var _desktop_room_edit: LineEdit
+var _desktop_room_status: Label
+var _xr_room_code: Label
+var _xr_room_status: Label
+var _room_entry_controls: Array[Control] = []
+var _room_host_buttons: Array[Button] = []
+var _room_join_buttons: Array[Button] = []
+var _room_leave_buttons: Array[Button] = []
 
 
 func _ready() -> void:
@@ -111,6 +125,61 @@ func set_shared_role(role: String) -> void:
 	if _xr_start != null:
 		_xr_start.disabled = role == "client"
 		_xr_start.text = "Start / restart"
+	_refresh_room_ui()
+
+
+func set_multiplayer_status(status: String) -> void:
+	_room_note = status
+	_refresh_room_ui()
+
+
+func set_room_code(code: String) -> void:
+	var normalized := ""
+	for character in code.to_upper():
+		if (character >= "A" and character <= "Z") or (character >= "0" and character <= "9") or character == "-":
+			normalized += character
+		if normalized.length() >= 24:
+			break
+	_room_code = normalized
+	_refresh_room_ui()
+
+
+func _submit_room(hosting: bool) -> void:
+	if _shared_role != "offline":
+		return
+	if _desktop_room_edit != null and _desktop_room_panel.visible:
+		set_room_code(_desktop_room_edit.text)
+	if _room_code.length() < 3:
+		_room_note = "Code needs at least 3 letters or numbers."
+		_refresh_room_ui()
+		return
+	_room_note = "Hosting private game…" if hosting else "Joining private game…"
+	_refresh_room_ui()
+	if hosting:
+		multiplayer_host_requested.emit(_room_code)
+	else:
+		multiplayer_join_requested.emit(_room_code)
+
+
+func _refresh_room_ui() -> void:
+	if _desktop_room_edit != null and _desktop_room_edit.text != _room_code:
+		_desktop_room_edit.text = _room_code
+	if _desktop_room_edit != null:
+		_desktop_room_edit.editable = _shared_role == "offline"
+	if _xr_room_code != null:
+		_xr_room_code.text = _room_code if not _room_code.is_empty() else "Tap the keys below"
+	if _desktop_room_status != null:
+		_desktop_room_status.text = _room_note
+	if _xr_room_status != null:
+		_xr_room_status.text = _room_note
+	for control in _room_entry_controls:
+		control.visible = _shared_role == "offline"
+	for button in _room_host_buttons:
+		button.disabled = _shared_role != "offline" or _room_code.length() < 3
+	for button in _room_join_buttons:
+		button.disabled = _shared_role != "offline" or _room_code.length() < 3
+	for button in _room_leave_buttons:
+		button.visible = _shared_role != "offline"
 
 
 func set_avatar_fit_values(standing_height: float, arm_reach: float) -> void:
@@ -247,6 +316,7 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	if _xr_audio_scroll != null:
 		_xr_audio_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var session := _create_xr_tab("Session")
+	var room := _create_xr_tab("Room")
 	var intro := _create_xr_tab("Intro")
 	for child in intro_nodes:
 		child.reparent(intro)
@@ -273,6 +343,7 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	_add_voice_mute_button(session)
 	var quit := _add_xr_button(session, "Quit", _on_quit)
 	quit.name = "XRQuitButton"
+	_build_xr_room(room)
 	_add_xr_button(_xr_settings, "Quality: Default", func() -> void: quality_profile_requested.emit("default"))
 	_add_xr_button(_xr_settings, "Quality: Performance", func() -> void: quality_profile_requested.emit("performance"))
 	_add_avatar_fit_sliders(_xr_settings)
@@ -287,6 +358,7 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 		_xr_audio = null
 	_add_voice_settings(_xr_voice, true)
 	_xr_tabs.current_tab = 0
+	_refresh_room_ui()
 
 
 func _create_xr_tab(title: String) -> VBoxContainer:
@@ -297,6 +369,72 @@ func _create_xr_tab(title: String) -> VBoxContainer:
 	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_xr_tabs.add_child(page)
 	return page
+
+
+func _build_xr_room(room: VBoxContainer) -> void:
+	var heading := Label.new()
+	heading.text = "PRIVATE ROOM"
+	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	heading.add_theme_font_size_override("font_size", 25)
+	room.add_child(heading)
+	_xr_room_status = Label.new()
+	_xr_room_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_xr_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_xr_room_status.custom_minimum_size.y = 35
+	room.add_child(_xr_room_status)
+	_xr_room_code = Label.new()
+	_xr_room_code.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_xr_room_code.add_theme_font_size_override("font_size", 24)
+	_xr_room_code.custom_minimum_size.y = 35
+	room.add_child(_xr_room_code)
+	var keyboard := VBoxContainer.new()
+	keyboard.name = "RoomKeyboard"
+	keyboard.add_theme_constant_override("separation", 3)
+	room.add_child(keyboard)
+	_room_entry_controls.append(keyboard)
+	for keys in ["1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCVBNM"]:
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 3)
+		keyboard.add_child(row)
+		for character in keys:
+			var key := Button.new()
+			key.text = character
+			key.custom_minimum_size = Vector2(39, 41)
+			key.pressed.connect(func() -> void: set_room_code(_room_code + character))
+			row.add_child(key)
+	var edits := HBoxContainer.new()
+	edits.alignment = BoxContainer.ALIGNMENT_CENTER
+	keyboard.add_child(edits)
+	var backspace := Button.new()
+	backspace.text = "⌫ Backspace"
+	backspace.custom_minimum_size = Vector2(145, 40)
+	backspace.pressed.connect(func() -> void: set_room_code(_room_code.substr(0, maxi(0, _room_code.length() - 1))))
+	edits.add_child(backspace)
+	var clear := Button.new()
+	clear.text = "Clear"
+	clear.custom_minimum_size = Vector2(110, 40)
+	clear.pressed.connect(func() -> void: set_room_code(""))
+	edits.add_child(clear)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	room.add_child(actions)
+	var host := Button.new()
+	host.text = "Host"
+	host.custom_minimum_size.y = 44
+	host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	host.pressed.connect(func() -> void: _submit_room(true))
+	actions.add_child(host)
+	_room_host_buttons.append(host)
+	var join := Button.new()
+	join.text = "Join"
+	join.custom_minimum_size.y = 44
+	join.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	join.pressed.connect(func() -> void: _submit_room(false))
+	actions.add_child(join)
+	_room_join_buttons.append(join)
+	var leave := _add_xr_button(room, "Leave private room", func() -> void: multiplayer_leave_requested.emit())
+	_room_leave_buttons.append(leave)
 
 
 func _move_existing_button(source: VBoxContainer, destination: VBoxContainer, wanted_text: String) -> void:
@@ -375,6 +513,7 @@ func _build_desktop_menu() -> void:
 	stack.add_child(HSeparator.new())
 	_desktop_start = _add_desktop_button(stack, "Start / restart", _on_new_game)
 	_desktop_start.disabled = _shared_role == "client"
+	_add_desktop_button(stack, "Private room", func() -> void: _show_desktop_room(true))
 	_add_desktop_button(stack, "Settings", _on_settings)
 	_add_desktop_button(stack, "Avatar fit", func() -> void:
 		_desktop_avatar_fit.visible = not _desktop_avatar_fit.visible)
@@ -431,6 +570,73 @@ func _build_desktop_menu() -> void:
 		set_open(false)
 	)
 	add_child(_restart_confirm)
+	_build_desktop_room(center)
+	_refresh_room_ui()
+
+
+func _build_desktop_room(center: CenterContainer) -> void:
+	_desktop_room_panel = PanelContainer.new()
+	_desktop_room_panel.name = "PrivateRoom"
+	_desktop_room_panel.custom_minimum_size.x = 520
+	_desktop_room_panel.visible = false
+	center.add_child(_desktop_room_panel)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.055, 0.064, 0.98)
+	style.border_color = Color(0.48, 0.39, 0.62, 0.9)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(16)
+	_desktop_room_panel.add_theme_stylebox_override("panel", style)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 32)
+	margin.add_theme_constant_override("margin_right", 32)
+	margin.add_theme_constant_override("margin_top", 26)
+	margin.add_theme_constant_override("margin_bottom", 26)
+	_desktop_room_panel.add_child(margin)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 12)
+	margin.add_child(stack)
+	var heading := Label.new()
+	heading.text = "PRIVATE ROOM"
+	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	heading.add_theme_font_size_override("font_size", 28)
+	stack.add_child(heading)
+	_desktop_room_status = Label.new()
+	_desktop_room_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_desktop_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(_desktop_room_status)
+	_desktop_room_edit = LineEdit.new()
+	_desktop_room_edit.placeholder_text = "Room code (3–24 characters)"
+	_desktop_room_edit.max_length = 24
+	_desktop_room_edit.custom_minimum_size.y = 48
+	_desktop_room_edit.text_changed.connect(func(value: String) -> void: set_room_code(value))
+	_desktop_room_edit.text_submitted.connect(func(_value: String) -> void: _submit_room(false))
+	stack.add_child(_desktop_room_edit)
+	var actions := HBoxContainer.new()
+	stack.add_child(actions)
+	var host := Button.new()
+	host.text = "Host"
+	host.custom_minimum_size.y = 48
+	host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	host.pressed.connect(func() -> void: _submit_room(true))
+	actions.add_child(host)
+	_room_host_buttons.append(host)
+	var join := Button.new()
+	join.text = "Join"
+	join.custom_minimum_size.y = 48
+	join.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	join.pressed.connect(func() -> void: _submit_room(false))
+	actions.add_child(join)
+	_room_join_buttons.append(join)
+	var leave := _add_desktop_button(stack, "Leave private room", func() -> void: multiplayer_leave_requested.emit())
+	_room_leave_buttons.append(leave)
+	_add_desktop_button(stack, "Back", func() -> void: _show_desktop_room(false))
+
+
+func _show_desktop_room(show: bool) -> void:
+	_desktop_panel.visible = not show
+	_desktop_room_panel.visible = show
+	if show and _shared_role == "offline":
+		_desktop_room_edit.grab_focus()
 
 
 func _add_desktop_button(parent: VBoxContainer, text: String, callback: Callable) -> Button:

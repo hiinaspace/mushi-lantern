@@ -19,6 +19,15 @@ for file in libgodot-steam-audio.linux.template_release.x86_64.so libphonon.so; 
     exit 1
   fi
 done
+multiplayer_library="$project_dir/multiplayer-native/target/release/libmushi_multiplayer_native.so"
+if [[ ! -s "$multiplayer_library" ]]; then
+  echo "Build the multiplayer release library first: nix develop ../prim --command ./multiplayer-native/build.sh release" >&2
+  exit 1
+fi
+if [[ ! -s "$project_dir/bin/linux/libonnxruntime.so" ]]; then
+  echo "Stage the voice runtime first: ./tools/fetch-viseme-runtime.py --platform linux" >&2
+  exit 1
+fi
 
 python3 scripts/generate_audio_placeholders.py --if-missing
 export_dir="$project_dir/artifacts/export/linux"
@@ -42,16 +51,23 @@ mkdir -p "$package_dir/licenses/terrain3d" \
   "$package_dir/licenses/forest" \
   "$package_dir/licenses/renik" \
   "$package_dir/licenses/rpg-animations" \
+	"$package_dir/licenses/multiplayer-voice" \
+	"$package_dir/licenses/viseme-model" \
+	"$package_dir/licenses/onnxruntime" \
   "$package_dir/licenses/godot-engine"
 cp "$export_dir/mushi-lantern.pck" "$package_dir/"
 install -m 755 "$export_dir/mushi-lantern.x86_64" "$package_dir/"
 mkdir -p "$package_dir/addons/terrain_3d/bin" \
   "$package_dir/addons/godot-steam-audio/bin" \
+	"$package_dir/multiplayer-native/target/release" \
+	"$package_dir/lib" \
   "$package_dir/licenses/fonts"
 cp addons/terrain_3d/bin/libterrain.linux.release.x86_64.so \
   "$package_dir/addons/terrain_3d/bin/"
 cp addons/godot-steam-audio/bin/libgodot-steam-audio.linux.template_release.x86_64.so \
   addons/godot-steam-audio/bin/libphonon.so "$package_dir/addons/godot-steam-audio/bin/"
+cp "$multiplayer_library" "$package_dir/multiplayer-native/target/release/"
+cp bin/linux/libonnxruntime.so bin/linux/libonnxruntime_providers_shared.so "$package_dir/lib/"
 cp assets/fonts/DejaVu-LICENSE.txt "$package_dir/licenses/fonts/"
 install -m 755 scripts/friend-desktop.sh scripts/friend-vr.sh "$package_dir/"
 cp addons/terrain_3d/LICENSE.txt "$package_dir/licenses/terrain3d/"
@@ -63,6 +79,11 @@ cp build-support/steam-audio/STEAM_AUDIO_SDK_LICENSE.md \
 cp assets/forest/PROVENANCE.md assets/forest/licenses/* "$package_dir/licenses/forest/"
 cp addons/renik/LICENSE.txt "$package_dir/licenses/renik/"
 cp assets/animations/LICENSE assets/animations/README.md "$package_dir/licenses/rpg-animations/"
+cp multiplayer-native/vendor/godot-network-audio/LICENSE "$package_dir/licenses/multiplayer-voice/"
+cp multiplayer-native/viseme-model/LICENSE multiplayer-native/viseme-model/NOTICE.md \
+	multiplayer-native/viseme-model/THIRD_PARTY_NOTICES.md "$package_dir/licenses/viseme-model/"
+cp .local/viseme-runtime/linux/LICENSE .local/viseme-runtime/linux/ThirdPartyNotices.txt \
+	"$package_dir/licenses/onnxruntime/"
 cp build-support/godot/licenses/LICENSE.txt build-support/godot/licenses/COPYRIGHT.txt \
   build-support/godot/licenses/AUTHORS.md "$package_dir/licenses/godot-engine/"
 patchelf_bin="$(command -v patchelf || true)"
@@ -82,6 +103,7 @@ python3 build-support/install-linux-glibc.py "$package_dir" --glibc "$glibc_dir"
 mv "$package_dir/mushi-lantern.pck" "$package_dir/lib/ld-linux-x86-64.so.pck"
 # Godot also resolves unpacked GDExtension paths relative to /proc/self/exe.
 mv "$package_dir/addons" "$package_dir/lib/addons"
+mv "$package_dir/multiplayer-native" "$package_dir/lib/multiplayer-native"
 glibc_source="$(nix-instantiate --eval --strict --json --expr '(import ./build-support/linux-glibc.nix {}).src.outPath' | python3 -c 'import json,sys; print(json.load(sys.stdin))')"
 mkdir -p "$package_dir/licenses/glibc"
 tar -xOf "$glibc_source" glibc-2.43/COPYING.LIB > "$package_dir/licenses/glibc/COPYING.LIB"
@@ -94,6 +116,12 @@ selection is normally provided by the user's OpenXR runtime configuration.
 Both launchers use the same saved game data and start a fresh session. The
 archive includes its standalone game executable; no Godot installation is
 needed.
+
+For multiplayer, open the menu, choose Room, enter the same code (at least
+three characters) on each computer, then choose Host on one and Join on the
+others. Codes are case-insensitive. The XR menu has a pointer keyboard. Mics
+start muted; use the Voice tab to choose a mic, adjust levels, and unmute.
+The two-hand broom flight gesture is enabled in multiplayer.
 
 The game needs a Vulkan-capable graphics driver. Steam Audio's optional GPU
 utilities may need OpenCL from the graphics driver. Game libraries and a

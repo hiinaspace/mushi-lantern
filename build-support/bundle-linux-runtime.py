@@ -60,6 +60,9 @@ seeds = [
     package / "addons/terrain_3d/bin/libterrain.linux.release.x86_64.so",
     package / "addons/godot-steam-audio/bin/libgodot-steam-audio.linux.template_release.x86_64.so",
     package / "addons/godot-steam-audio/bin/libphonon.so",
+    package / "multiplayer-native/target/release/libmushi_multiplayer_native.so",
+    package / "lib/libonnxruntime.so",
+    package / "lib/libonnxruntime_providers_shared.so",
 ]
 search_paths: list[str] = []
 
