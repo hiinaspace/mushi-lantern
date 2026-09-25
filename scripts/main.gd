@@ -8,6 +8,8 @@ const PATCH_CENTERS := [Vector2(-14.4, -13.2), Vector2(14.6, -12.0), Vector2(15.
 const ARENA_LAYOUT := "wide-60m-v1"
 const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
 const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
+const AVATAR_FIT_PATH := "user://mushi_avatar_fit.json"
+const VOICE_SETTINGS_PATH := "user://mushi_voice_settings.json"
 
 var environment_enabled: bool = true
 var terrain_size: int = 128
@@ -31,6 +33,48 @@ var _menu_was_paused: bool = false
 var _friend_was_paused: bool = false
 var _xr_menu_was_paused: bool = false
 var _desktop_tuning_open: bool = false
+var _network: Variant
+var _network_extension: Resource
+var _voice: MushiVoice
+var _voice_start_unmuted := false
+var _voice_input_device := ""
+var _voice_gain_db := 0.0
+var _voice_gate_db := -38.0
+var _voice_receive_gain_db := 0.0
+var _multiplayer_role := "offline" # offline, host, client
+var _multiplayer_epoch: int = 0
+var _multiplayer_sequence: int = 0
+var _last_sent_snapshot_revision: int = -1
+var _lantern_send_clock: float = 0.0
+var _peer_fields: Dictionary = {}
+var _peer_last_input_msec: Dictionary = {}
+var _peer_last_sequence: Dictionary = {}
+var _peer_lanterns: Dictionary = {}
+var _peer_staffs: Dictionary = {}
+var _peer_avatars: Dictionary = {}
+var _local_avatar: MushiMultiplayerAvatar
+var _local_avatar_hue: float = 0.0
+var _avatar_eye_height_override: float = 0.0
+var _avatar_arm_reach: float = 1.3
+var _xr_avatar_scale_ready := false
+var _xr_avatar_calibration_seconds := 0.0
+var _xr_avatar_raw_eye_height := 0.0
+var _joined_peers: Dictionary = {}
+var _network_status := "Offline"
+var _last_sent_score: int = -1
+var _multiplayer_cli_mode := ""
+var _multiplayer_previous_skip := false
+var _client_config_reset := false
+var _network_diag_clock := 0.0
+var _snapshot_payload_bytes := 0
+var _snapshot_chunks_sent := 0
+var _snapshot_chunks_received := 0
+var _impaired_chunks: Array[Dictionary] = []
+var _impair_rng := RandomNumberGenerator.new()
+var _impair_jitter_ms := 0
+var _impair_loss_percent := 0.0
+var _impair_dropped := 0
+var _max_remote_spots := 3
 
 var simulation: Variant = FlockSimulation.new()
 var flight_enabled: bool = true
@@ -147,6 +191,16 @@ func _ready() -> void:
 	_quality_settings = quality_menu.get_settings()
 	fixture_count = int(_quality_settings.get("population", 1024))
 	_parse_arguments()
+	_load_avatar_fit()
+	_load_voice_settings()
+	_voice_start_unmuted = _voice_start_unmuted or OS.get_environment("MUSHI_VOICE_UNMUTED") == "1" or OS.get_environment("MUSHI_VOICE_TRANSMIT") == "1"
+	_impair_rng.seed = 40721
+	_impair_jitter_ms = maxi(0, int(OS.get_environment("MUSHI_NET_JITTER_MS")))
+	_impair_loss_percent = clampf(float(OS.get_environment("MUSHI_NET_LOSS_PERCENT")), 0.0, 100.0)
+	if not OS.get_environment("MUSHI_MAX_REMOTE_LIGHTS").is_empty():
+		_max_remote_spots = clampi(int(OS.get_environment("MUSHI_MAX_REMOTE_LIGHTS")), 0, 7)
+	if not OS.get_environment("MUSHI_AVATAR_EYE_HEIGHT").is_empty():
+		_avatar_eye_height_override = clampf(float(OS.get_environment("MUSHI_AVATAR_EYE_HEIGHT")), 1.1, 2.1)
 	if DisplayServer.get_name() == "headless":
 		environment_enabled = false
 		_want_xr = false
@@ -222,6 +276,16 @@ func _ready() -> void:
 	_apply_quality(_quality_settings)
 	friend_menu = FriendMenu.new()
 	add_child(friend_menu)
+	friend_menu.avatar_fit_changed.connect(_on_avatar_fit_changed)
+	friend_menu.voice_mute_changed.connect(_on_voice_mute_changed)
+	friend_menu.voice_input_device_changed.connect(_on_voice_input_device_changed)
+	friend_menu.voice_gain_changed.connect(_on_voice_gain_changed)
+	friend_menu.voice_gate_changed.connect(_on_voice_gate_changed)
+	friend_menu.voice_receive_gain_changed.connect(_on_voice_receive_gain_changed)
+	friend_menu.voice_devices_requested.connect(_refresh_voice_controls)
+	friend_menu.set_avatar_fit_values(
+		_avatar_eye_height_override if _avatar_eye_height_override > 0.0 else 1.6,
+		_avatar_arm_reach)
 	friend_menu.new_game_requested.connect(_on_friend_new_game)
 	friend_menu.settings_requested.connect(_on_friend_settings)
 	friend_menu.audio_settings_requested.connect(_on_friend_audio_settings)
@@ -230,6 +294,10 @@ func _ready() -> void:
 	friend_menu.skip_requested.connect(_on_friend_skip)
 	friend_menu.tuning_requested.connect(_on_friend_tuning)
 	friend_menu.menu_visibility_changed.connect(_on_friend_menu_visibility)
+	if not _multiplayer_cli_mode.is_empty():
+		_init_multiplayer_network()
+		_start_multiplayer(OS.get_environment("MUSHI_ROOM_SECRET"), _multiplayer_cli_mode == "host")
+	_refresh_voice_controls()
 	if xr_player != null and xr_player.xr_active:
 		var friend_xr_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
 		if friend_xr_surface.scene_node is Control:
@@ -250,7 +318,10 @@ func _physics_process(delta: float) -> void:
 	_update_staff_pose(delta)
 
 func _process(delta: float) -> void:
+	if _voice != null and friend_menu != null:
+		friend_menu.set_voice_meter(_voice.get_input_meter_db())
 	if xr_player != null and xr_player.xr_active:
+		_calibrate_xr_avatar_scale(delta)
 		player.camera.global_transform = xr_player.camera.global_transform
 	if _active_backend == "gpu":
 		if not simulation.gpu_error.is_empty():
@@ -270,7 +341,8 @@ func _process(delta: float) -> void:
 			return
 	if _tutorial_locks_shutter() and lantern.shutter_openness < 0.999:
 		lantern.set_shutter(1.0, false)
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter():
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter() \
+			and staff_tool != null and staff_tool.desktop_can_control_lantern():
 		var shutter_delta := Input.get_axis("shutter_close", "shutter_open")
 		if shutter_delta != 0.0:
 			lantern.adjust_shutter(shutter_delta * delta * 0.6)
@@ -283,7 +355,10 @@ func _process(delta: float) -> void:
 			# other controls cannot interrupt the first sky/ground composition.
 			lantern.set_shutter(0.0)
 		elif environment_enabled:
-			lantern.advance_adaptation(delta, _viewer_lantern_exposure())
+			if _multiplayer_role == "offline":
+				lantern.advance_adaptation(delta, _viewer_lantern_exposure())
+			else:
+				lantern.advance_adaptation_to(delta, _viewer_multiplayer_adaptation_target())
 		tutorial_director.advance(delta, int(lantern.mode), lantern.shutter_openness, lantern.night_vision)
 		if tutorial_director.stage == TutorialDirector.Stage.ADAPTATION:
 			lantern.reset_adaptation(tutorial_director.adaptation_progress)
@@ -313,13 +388,25 @@ func _process(delta: float) -> void:
 		light_field.half_angle_degrees = lantern.BEHAVIOR_HALF_ANGLE_DEGREES
 		light_field.range_m = lantern.spot.spot_range
 	light_field.mode_strength = strength_slider.value if strength_slider != null else 1.0
-	if not simulation_paused:
+	_update_multiplayer(delta)
+	if not simulation_paused and _multiplayer_role != "client":
 		accumulator = minf(accumulator + delta, active_step * (4.0 if fixture_count >= 256 else 8.0))
 		while accumulator >= active_step:
 			var step_start := Time.get_ticks_usec()
-			simulation.step(active_step, light_field, social_slider.value, wander_slider.value)
+			if _multiplayer_role == "host" and _active_backend == "gpu":
+				var fields: Array[LightField] = [light_field]
+				for peer_id: String in _peer_fields:
+					if Time.get_ticks_msec() - int(_peer_last_input_msec.get(peer_id, 0)) <= 500:
+						fields.append(_peer_fields[peer_id] as LightField)
+				simulation.step(active_step, light_field, social_slider.value, wander_slider.value, fields)
+			else:
+				simulation.step(active_step, light_field, social_slider.value, wander_slider.value)
 			sim_step_ms = lerpf(sim_step_ms, float(Time.get_ticks_usec() - step_start) / 1000.0, 0.05)
 			accumulator -= active_step
+	if _multiplayer_role == "client" and simulation is RemoteFlightSimulation:
+		simulation.advance_replica(delta)
+	if _multiplayer_role == "host":
+		_broadcast_multiplayer_state()
 	if tutorial_director != null and simulation.score != _last_tutorial_score:
 		_last_tutorial_score = simulation.score
 		tutorial_director.observe_score(simulation.score)
@@ -327,7 +414,7 @@ func _process(delta: float) -> void:
 		tutorial_ui.update_director(tutorial_director, xr_player != null and xr_player.xr_active)
 	_update_xr_tutorial_chain_cue()
 	if friend_menu != null and tutorial_director != null:
-		friend_menu.update_session(tutorial_director.status_text, tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY, _tutorial_sandbox_available())
+		friend_menu.update_session(tutorial_director.status_text + " · " + _network_status, tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY, _tutorial_sandbox_available())
 	var visual_start := Time.get_ticks_usec()
 	_update_agent_visuals(accumulator / active_step, delta)
 	visual_update_ms = lerpf(visual_update_ms, float(Time.get_ticks_usec() - visual_start) / 1000.0, 0.05)
@@ -370,7 +457,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if (quality_menu != null and quality_menu.is_open()) or (audio_mix_menu != null and audio_mix_menu.is_open()):
 		return
-	if (xr_player == null or not xr_player.xr_active) and event is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter():
+	if (xr_player == null or not xr_player.xr_active) and event is InputEventMouseButton \
+			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter() \
+			and staff_tool != null and staff_tool.desktop_can_control_lantern():
 		var mouse := event as InputEventMouseButton
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_UP:
 			lantern.adjust_shutter(0.08)
@@ -401,14 +490,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			staff_tool.end_recall()
 			get_viewport().set_input_as_handled()
 			return
-	if event.is_action_pressed("mode_clear"):
+	var lamp_controls_enabled: bool = xr_player != null and xr_player.xr_active or \
+		(staff_tool != null and staff_tool.desktop_can_control_lantern())
+	if event.is_action_pressed("mode_clear") and lamp_controls_enabled:
 		lantern.request_mode(LightField.Mode.CLEAR)
-	elif event.is_action_pressed("mode_blue"):
+	elif event.is_action_pressed("mode_blue") and lamp_controls_enabled:
 		lantern.request_mode(LightField.Mode.BLUE)
-	elif event.is_action_pressed("mode_orange"):
+	elif event.is_action_pressed("mode_orange") and lamp_controls_enabled:
 		lantern.request_mode(LightField.Mode.ORANGE)
 	elif event.is_action_pressed("shutter_toggle"):
-		if _tutorial_locks_shutter():
+		if _tutorial_locks_shutter() or not lamp_controls_enabled:
 			get_viewport().set_input_as_handled()
 			return
 		if xr_player == null or not xr_player.xr_active:
@@ -441,8 +532,141 @@ func _notification(what: int) -> void:
 		_write_run_record("window_close")
 
 func _exit_tree() -> void:
+	if _xr_avatar_scale_ready:
+		if xr_player != null:
+			xr_player.world_scale = 1.0
+		XRServer.world_scale = 1.0
 	if simulation.has_method("dispose"):
 		simulation.dispose()
+
+
+func _calibrate_xr_avatar_scale(delta: float) -> void:
+	if _xr_avatar_scale_ready or _local_avatar == null or xr_player == null:
+		return
+	# Sample the unscaled tracked height once the headset has a stable pose.
+	# Reapplying a factor measured after XRServer.world_scale changes would feed
+	# the mapping back into itself. The environment override is a standing-height
+	# calibration for a session that begins while seated or crouched.
+	var raw_height: float = xr_player.camera.transform.origin.y
+	if not is_finite(raw_height) or raw_height < 1.1 or raw_height > 2.1:
+		return
+	_xr_avatar_raw_eye_height = maxf(_xr_avatar_raw_eye_height, raw_height)
+	_xr_avatar_calibration_seconds += minf(delta, 0.1)
+	if _xr_avatar_calibration_seconds < 0.5:
+		return
+	var player_height := _avatar_eye_height_override if _avatar_eye_height_override > 0.0 else _xr_avatar_raw_eye_height
+	var authored_height := _local_avatar.get_authored_eye_height()
+	xr_player.world_scale = clampf(authored_height / player_height, 0.6, 1.25)
+	_xr_avatar_scale_ready = true
+	if friend_menu != null and _avatar_eye_height_override <= 0.0:
+		friend_menu.set_avatar_fit_values(player_height, _avatar_arm_reach)
+	print("MUSHI_AVATAR_SCALE authored_eye=%.3f player_eye=%.3f world_scale=%.3f" % [
+		authored_height, player_height, xr_player.world_scale])
+
+
+func _load_avatar_fit() -> void:
+	if not FileAccess.file_exists(AVATAR_FIT_PATH):
+		return
+	var file := FileAccess.open(AVATAR_FIT_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var saved: Variant = JSON.parse_string(file.get_as_text())
+	if saved is Dictionary:
+		_avatar_eye_height_override = clampf(float(saved.get("standing_height", 0.0)), 0.0, 2.1)
+		if _avatar_eye_height_override > 0.0:
+			_avatar_eye_height_override = maxf(_avatar_eye_height_override, 1.1)
+		_avatar_arm_reach = clampf(float(saved.get("arm_reach", 1.3)), 0.9, 1.5)
+
+
+func _on_avatar_fit_changed(standing_height: float, arm_reach: float) -> void:
+	_avatar_eye_height_override = clampf(standing_height, 1.1, 2.1)
+	_avatar_arm_reach = clampf(arm_reach, 0.9, 1.5)
+	if _local_avatar != null:
+		_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
+	if _xr_avatar_scale_ready and xr_player != null and xr_player.xr_active and _local_avatar != null:
+		xr_player.world_scale = clampf(_local_avatar.get_authored_eye_height() /
+			_avatar_eye_height_override, 0.6, 1.25)
+	var file := FileAccess.open(AVATAR_FIT_PATH, FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify({"standing_height": _avatar_eye_height_override,
+			"arm_reach": _avatar_arm_reach}))
+
+
+func _load_voice_settings() -> void:
+	if not FileAccess.file_exists(VOICE_SETTINGS_PATH):
+		return
+	var file := FileAccess.open(VOICE_SETTINGS_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var saved: Variant = JSON.parse_string(file.get_as_text())
+	if saved is Dictionary:
+		_voice_input_device = str(saved.get("input_device", ""))
+		_voice_gain_db = clampf(float(saved.get("gain_db", 0.0)), -24.0, 24.0)
+		_voice_gate_db = clampf(float(saved.get("gate_db", -38.0)), -60.0, -20.0)
+		_voice_receive_gain_db = clampf(float(saved.get("receive_gain_db", 0.0)), -30.0, 12.0)
+
+
+func _save_voice_settings() -> void:
+	var file := FileAccess.open(VOICE_SETTINGS_PATH, FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify({"input_device": _voice_input_device,
+			"gain_db": _voice_gain_db, "gate_db": _voice_gate_db,
+			"receive_gain_db": _voice_receive_gain_db}))
+
+
+func _refresh_voice_controls() -> void:
+	if friend_menu == null:
+		return
+	friend_menu.set_voice_available(_voice != null)
+	if _voice == null:
+		friend_menu.set_voice_controls(true, "Default", PackedStringArray(["Default"]),
+			_voice_gain_db, _voice_gate_db, _voice_receive_gain_db)
+		return
+	friend_menu.set_voice_controls(_voice.is_muted(), _voice.get_input_device(),
+		_voice.get_input_devices(), _voice.get_input_gain_db(),
+		_voice.get_gate_threshold_db(), _voice.get_receive_gain_db())
+
+
+func _on_voice_mute_changed(muted: bool) -> void:
+	if _voice != null:
+		_voice.set_muted(muted)
+	_refresh_voice_controls()
+
+
+func _on_voice_input_device_changed(device: String) -> void:
+	if _voice == null:
+		return
+	_voice.set_input_device(device)
+	_voice_input_device = _voice.get_input_device()
+	_save_voice_settings()
+	_refresh_voice_controls()
+
+
+func _on_voice_gain_changed(gain_db: float) -> void:
+	if _voice == null:
+		return
+	_voice.set_input_gain_db(gain_db)
+	_voice_gain_db = _voice.get_input_gain_db()
+	_save_voice_settings()
+	_refresh_voice_controls()
+
+
+func _on_voice_gate_changed(threshold_db: float) -> void:
+	if _voice == null:
+		return
+	_voice.set_gate_threshold_db(threshold_db)
+	_voice_gate_db = _voice.get_gate_threshold_db()
+	_save_voice_settings()
+	_refresh_voice_controls()
+
+
+func _on_voice_receive_gain_changed(gain_db: float) -> void:
+	if _voice == null:
+		return
+	_voice.set_receive_gain_db(gain_db)
+	_voice_receive_gain_db = _voice.get_receive_gain_db()
+	_save_voice_settings()
+	_refresh_voice_controls()
 
 func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
@@ -600,6 +824,9 @@ func _add_miko_presentation() -> void:
 func _build_player() -> void:
 	player = DesktopPlayer.new()
 	player.name = "DesktopPlayer"
+	# RenIK foot rays use layer 1 for terrain. The player capsule only needs
+	# a collision mask for movement, and should not be hit by foot rays or peers.
+	player.collision_layer = 0
 	player.world_surface = world_surface
 	player.position = Vector3(0.0, 0.0, 9.2)
 	var collision := CollisionShape3D.new()
@@ -683,7 +910,8 @@ func _desktop_staff_pose() -> Transform3D:
 
 
 func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
-	if xr_player != null and xr_player.xr_active:
+	if xr_player != null and xr_player.xr_active or staff_tool == null \
+			or not staff_tool.desktop_can_control_lantern():
 		return
 	_desktop_aim += Vector2(relative.x * 0.004, -relative.y * 0.004)
 	_desktop_aim.x = clampf(_desktop_aim.x, -1.0, 1.0)
@@ -718,6 +946,16 @@ func _viewer_lantern_exposure() -> float:
 		return 1.0
 	var eye: Vector3 = xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
 	return 1.0 - smoothstep(3.0, 14.0, eye.distance_to(lantern.global_position))
+
+
+func _viewer_multiplayer_adaptation_target() -> float:
+	var eye: Vector3 = xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
+	var fresh_peers: Array[LightField] = []
+	for peer_id: String in _peer_fields:
+		if Time.get_ticks_msec() - int(_peer_last_input_msec.get(peer_id, 0)) > 500:
+			continue
+		fresh_peers.append(_peer_fields[peer_id] as LightField)
+	return NightAdaptation.multiplayer_target(light_field, fresh_peers, eye)
 
 
 func _on_xr_recall_requested(controller: XRController3D) -> void:
@@ -1348,6 +1586,8 @@ func _update_agent_visuals(alpha: float, delta: float) -> void:
 	if flight_enabled:
 		glyph_swarm.update_swarm(simulation, alpha, current_preset)
 		return_handoff.update_handoffs(simulation, delta, simulation.goal_position, _ground_height(simulation.goal_position))
+		if simulation is RemoteFlightSimulation:
+			simulation.committed_this_step = PackedInt32Array()
 		return
 	for index: int in agent_nodes.size():
 		var node := agent_nodes[index]
@@ -1456,6 +1696,8 @@ func _apply_preset(index: int, restart: bool) -> void:
 		_reset_run(false)
 
 func _reset_run(record_previous: bool) -> void:
+	if _multiplayer_role == "client" and not _client_config_reset:
+		return
 	if record_previous and elapsed > 0.1:
 		_write_run_record("reset")
 	if not flight_enabled:
@@ -1468,7 +1710,7 @@ func _reset_run(record_previous: bool) -> void:
 	backend_picker.visible = not environment_enabled
 	active_step = 1.0 / 30.0 if flight_enabled and fixture_count >= 256 else FIXED_STEP
 	current_seed = roundi(seed_box.value) if seed_box != null else current_seed
-	var desired_backend := simulation_backend if flight_enabled else "cpu"
+	var desired_backend := "remote" if _multiplayer_role == "client" else simulation_backend if flight_enabled else "cpu"
 	if desired_backend == "gpu" and (DisplayServer.get_name() == "headless" or RenderingServer.get_current_rendering_method() == "gl_compatibility"):
 		desired_backend = "cpu"
 		_backend_notice = "This renderer uses the CPU reference"
@@ -1479,6 +1721,8 @@ func _reset_run(record_previous: bool) -> void:
 			simulation.dispose()
 		if desired_backend == "gpu":
 			simulation = load("res://scripts/gpu_flight_simulation.gd").new()
+		elif desired_backend == "remote":
+			simulation = RemoteFlightSimulation.new()
 		else:
 			simulation = FlightSimulation.new() if flight_enabled else FlockSimulation.new()
 		_active_backend = desired_backend
@@ -1515,6 +1759,10 @@ func _reset_run(record_previous: bool) -> void:
 	mode_times = PackedFloat32Array([0.0, 0.0, 0.0])
 	var authored_intro := tutorial_director != null and tutorial_director.tutorial_enabled and environment_enabled
 	player.position = Vector3(TUTORIAL_XZ.x, 0.0, TUTORIAL_XZ.y) if authored_intro else Vector3(active_patches[0].x, 0.0, active_patches[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
+	# The first two players need distinct starting positions: overlapping beams
+	# made the other player's color and shutter look like local lamp state.
+	if _multiplayer_role == "client" and fixture_count != 3:
+		player.position.x += 3.5
 	player.position.y = _ground_height(Vector2(player.position.x, player.position.z)) + (0.05 if environment_enabled else 0.0)
 	player.reset_look()
 	_xr_tutorial_centered = false
@@ -1565,6 +1813,9 @@ func _reset_run(record_previous: bool) -> void:
 		NightEnvironment.set_night_vision(night_environment, 0.0)
 		terrain_environment.set_night_vision(0.0)
 		goal_shrine.set_night_vision(0.0)
+	if _multiplayer_role == "host" and not _joined_peers.is_empty():
+		_multiplayer_epoch += 1
+		_broadcast_multiplayer_config()
 
 func _on_variation_changed(value: float) -> void:
 	_write_run_record("population_variation_change")
@@ -1600,6 +1851,10 @@ func _set_flight(enabled: bool) -> void:
 	_reset_run(false)
 
 func _set_fixture(count: int) -> void:
+	if _multiplayer_role == "client":
+		if quality_menu != null:
+			quality_menu.sync_population(fixture_count)
+		return
 	_write_run_record("fixture_change")
 	fixture_count = count
 	if quality_menu != null:
@@ -1779,9 +2034,16 @@ func _parse_arguments() -> void:
 		elif args[index] == "--desktop":
 			_want_xr = false
 			index += 1
+		elif args[index] == "--voice-unmuted":
+			_voice_start_unmuted = true
+			index += 1
 		elif args[index] == "--skip-tutorial":
 			_skip_tutorial_requested = true
 			_force_tutorial = false
+			index += 1
+		elif args[index] == "--host" or args[index] == "--join":
+			_multiplayer_cli_mode = args[index].substr(2)
+			_skip_tutorial_requested = true
 			index += 1
 		elif args[index] == "--tutorial":
 			_force_tutorial = true
@@ -1988,7 +2250,7 @@ func _apply_quality(settings: Dictionary) -> void:
 	if sun_light != null:
 		sun_light.directional_shadow_max_distance = 65.0 if high_shadows else 28.0
 	if lantern != null and lantern.spot != null:
-		lantern.spot.shadow_enabled = high_shadows
+		lantern.set_beam_shadows_enabled(high_shadows)
 	if terrain_environment != null and terrain_environment.has_method("apply_quality"):
 		terrain_environment.apply_quality(settings)
 	if current_preset != null and elapsed > 0.0:
@@ -2026,6 +2288,8 @@ func _on_audio_mix_visibility(open: bool) -> void:
 
 
 func _on_friend_new_game() -> void:
+	if _multiplayer_role == "client":
+		return
 	_reset_run(true)
 	if xr_player != null and xr_player.xr_active:
 		xr_player.set_menu_open(false)
@@ -2064,9 +2328,11 @@ func _on_friend_menu_visibility(open: bool) -> void:
 		return
 	if open:
 		_friend_was_paused = simulation_paused
-		simulation_paused = true
+		if _multiplayer_role == "offline":
+			simulation_paused = true
 	else:
-		simulation_paused = _friend_was_paused
+		if _multiplayer_role == "offline":
+			simulation_paused = _friend_was_paused
 	player.controls_enabled = not open
 	player.look_enabled = not open and not top_down
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED
@@ -2075,6 +2341,485 @@ func _on_friend_menu_visibility(open: bool) -> void:
 func _on_xr_menu_toggled(open: bool) -> void:
 	if open:
 		_xr_menu_was_paused = simulation_paused
-		simulation_paused = true
+		if _multiplayer_role == "offline":
+			simulation_paused = true
 	else:
-		simulation_paused = _xr_menu_was_paused
+		if friend_menu != null:
+			friend_menu.commit_avatar_fit()
+		if _multiplayer_role == "offline":
+			simulation_paused = _xr_menu_was_paused
+
+
+func _init_multiplayer_network() -> void:
+	_network_extension = load("res://multiplayer-native/mushi_multiplayer.gdextension")
+	if not ClassDB.class_exists("MushiNetwork"):
+		_network_status = "Multiplayer transport is not built"
+		_show_multiplayer_status(false, false, _network_status)
+		return
+	_network = ClassDB.instantiate("MushiNetwork")
+	add_child(_network)
+	_network.session_ready.connect(_on_network_ready)
+	_network.peer_joined.connect(_on_network_peer_joined)
+	_network.peer_left.connect(_on_network_peer_left)
+	_network.lantern_received.connect(_on_network_lantern)
+	_network.snapshot_chunk_received.connect(_on_network_snapshot)
+	_network.control_received.connect(_on_network_control)
+	_network.network_error.connect(_on_network_error)
+	_network.session_ended.connect(_on_network_session_ended)
+	_voice = MushiVoice.new()
+	_voice.name = "MultiplayerVoice"
+	add_child(_voice)
+	_voice.setup(_network, xr_player != null and xr_player.xr_active)
+	_voice.set_input_gain_db(_voice_gain_db)
+	_voice.set_gate_threshold_db(_voice_gate_db)
+	_voice.set_receive_gain_db(_voice_receive_gain_db)
+	if not _voice_input_device.is_empty():
+		_voice.set_input_device(_voice_input_device)
+	_voice.set_muted(not _voice_start_unmuted)
+	_voice.set_listener_camera(xr_player.camera if xr_player != null and xr_player.xr_active else player.camera)
+	_refresh_voice_controls()
+	_show_multiplayer_status(false, false, "Offline")
+
+
+func _show_multiplayer_status(active: bool, hosting: bool, status: String) -> void:
+	_network_status = status
+	if friend_menu != null:
+		friend_menu.set_shared_role("host" if active and hosting else "client" if active else "offline")
+	print("MUSHI_NETWORK_STATUS: ", status)
+
+
+func _on_multiplayer_host_requested(secret: String) -> void:
+	_start_multiplayer(secret, true)
+
+
+func _on_multiplayer_join_requested(secret: String) -> void:
+	_start_multiplayer(secret, false)
+
+
+func _start_multiplayer(secret: String, hosting: bool) -> void:
+	if _network == null:
+		_network_status = "Multiplayer transport is not built"
+		_show_multiplayer_status(false, false, _network_status)
+		return
+	if secret.strip_edges().length() < 3:
+		_network_status = "Use a room code of at least three characters"
+		_show_multiplayer_status(false, false, _network_status)
+		return
+	_leave_multiplayer()
+	_multiplayer_previous_skip = _skip_tutorial_requested
+	_multiplayer_role = "host" if hosting else "client"
+	_multiplayer_epoch = 1 if hosting else 0
+	_multiplayer_sequence = 0
+	_last_sent_snapshot_revision = -1
+	_last_sent_score = -1
+	_impaired_chunks.clear()
+	_skip_tutorial_requested = true
+	_client_config_reset = not hosting
+	_reset_run(false)
+	_client_config_reset = false
+	_local_avatar_hue = randf()
+	_local_avatar = MushiMultiplayerAvatar.new()
+	_local_avatar.name = "LocalPlayerAvatar"
+	add_child(_local_avatar)
+	_local_avatar.configure(_local_avatar_hue, true)
+	_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
+	var presentation := get_node_or_null("MikoPresentation") as Node3D
+	if presentation != null:
+		presentation.visible = false
+	simulation_paused = false
+	if not _network.start(secret, "Mushi player", hosting):
+		_leave_multiplayer()
+		_network_status = "Could not start private session"
+	else:
+		_network_status = "Hosting private game…" if hosting else "Joining private game…"
+	_show_multiplayer_status(_multiplayer_role != "offline", hosting, _network_status)
+
+
+func _leave_multiplayer() -> void:
+	var was_active := _multiplayer_role != "offline"
+	if _voice != null:
+		_voice.stop_session()
+	if _network != null:
+		_network.stop()
+	for peer_id: String in _peer_lanterns.keys():
+		_remove_remote_staff_and_lantern(peer_id)
+	for avatar: MushiMultiplayerAvatar in _peer_avatars.values():
+		avatar.queue_free()
+	_peer_avatars.clear()
+	if _local_avatar != null:
+		_local_avatar.queue_free()
+		_local_avatar = null
+	var presentation := get_node_or_null("MikoPresentation") as Node3D
+	if presentation != null:
+		presentation.visible = true
+	_peer_fields.clear()
+	_peer_last_input_msec.clear()
+	_peer_last_sequence.clear()
+	_joined_peers.clear()
+	_impaired_chunks.clear()
+	var was_client := _multiplayer_role == "client"
+	_multiplayer_role = "offline"
+	if was_active:
+		_skip_tutorial_requested = _multiplayer_previous_skip
+	_network_status = "Offline"
+	if was_client:
+		_reset_run(false)
+	if friend_menu != null:
+		_show_multiplayer_status(false, false, _network_status)
+
+
+func _on_network_ready(_local_peer_id: String, hosting: bool) -> void:
+	if _multiplayer_role == "offline":
+		return
+	if _voice != null:
+		_voice.session_ready()
+	_network_status = "Hosting private game" if hosting else "Connected; waiting for host state"
+	_show_multiplayer_status(true, hosting, _network_status)
+	if xr_player != null and xr_player.xr_active:
+		xr_player.set_menu_open(false)
+	else:
+		friend_menu.set_open(false)
+
+
+func _on_network_peer_joined(peer_id: String) -> void:
+	if _multiplayer_role == "offline":
+		return
+	_joined_peers[peer_id] = true
+	if _voice != null and _peer_avatars.has(peer_id):
+		_voice.peer_joined(peer_id, (_peer_avatars[peer_id] as MushiMultiplayerAvatar).head_target)
+	if _multiplayer_role == "host":
+		_send_multiplayer_config(peer_id)
+	_network_status = "Private game · %d players" % (_joined_peers.size() + 1)
+	_show_multiplayer_status(true, _multiplayer_role == "host", _network_status)
+
+
+func _on_network_peer_left(peer_id: String) -> void:
+	if _multiplayer_role == "offline":
+		return
+	_joined_peers.erase(peer_id)
+	_peer_fields.erase(peer_id)
+	_peer_last_input_msec.erase(peer_id)
+	_peer_last_sequence.erase(peer_id)
+	if _voice != null:
+		_voice.peer_left(peer_id)
+	_remove_remote_staff_and_lantern(peer_id)
+	if _peer_avatars.has(peer_id):
+		(_peer_avatars[peer_id] as MushiMultiplayerAvatar).queue_free()
+		_peer_avatars.erase(peer_id)
+	if _multiplayer_role == "client":
+		_leave_multiplayer()
+		_show_multiplayer_status(false, false, "Host left; shared game ended")
+		return
+	_network_status = "Private game · %d players" % (_joined_peers.size() + 1)
+	_show_multiplayer_status(true, true, _network_status)
+
+
+func _remove_remote_staff_and_lantern(peer_id: String) -> void:
+	if _peer_staffs.has(peer_id):
+		(_peer_staffs[peer_id] as RemoteStaffVisual).queue_free()
+		_peer_staffs.erase(peer_id)
+	elif _peer_lanterns.has(peer_id):
+		(_peer_lanterns[peer_id] as Lantern).queue_free()
+	_peer_lanterns.erase(peer_id)
+
+
+func _on_network_error(message: String) -> void:
+	_network_status = "Network: " + message
+	_show_multiplayer_status(_multiplayer_role != "offline", _multiplayer_role == "host", _network_status)
+
+
+func _on_network_session_ended() -> void:
+	if _multiplayer_role == "client":
+		_leave_multiplayer()
+		_show_multiplayer_status(false, false, "Host session ended")
+
+
+func _update_multiplayer(delta: float) -> void:
+	if _network == null or _multiplayer_role == "offline":
+		return
+	if not _impaired_chunks.is_empty():
+		var now := Time.get_ticks_msec()
+		var waiting: Array[Dictionary] = []
+		for item: Dictionary in _impaired_chunks:
+			if int(item.at) <= now:
+				_apply_network_snapshot(item.bytes)
+			else:
+				waiting.append(item)
+		_impaired_chunks = waiting
+	_network_diag_clock += delta
+	if _network_diag_clock >= 5.0:
+		var seconds := _network_diag_clock
+		_network_diag_clock = 0.0
+		if _multiplayer_role == "host":
+			var tick_lag := maxi(0, simulation.state_revision - simulation.snapshot_revision) if _active_backend == "gpu" else 0
+			print("MUSHI_NET_DIAG role=host peers=%d chunks=%d payload_Mbps=%.3f readback_tick_lag=%d apply_ms=%.3f" % [
+				_joined_peers.size(), _snapshot_chunks_sent,
+				float(_snapshot_payload_bytes * _joined_peers.size()) * 8.0 / seconds / 1000000.0,
+				tick_lag, simulation.snapshot_apply_ms if _active_backend == "gpu" else 0.0])
+		else:
+			print("MUSHI_NET_DIAG role=client chunks=%d received_agents=%d stale_500ms=%d dropped=%d score=%d" % [
+				_snapshot_chunks_received, simulation.received_count if simulation is RemoteFlightSimulation else 0,
+				simulation.stale_agents(0.5) if simulation is RemoteFlightSimulation else 0, _impair_dropped, simulation.score])
+		_snapshot_payload_bytes = 0
+		_snapshot_chunks_sent = 0
+		_snapshot_chunks_received = 0
+		_impair_dropped = 0
+	_lantern_send_clock += delta
+	if _lantern_send_clock >= 0.05:
+		_lantern_send_clock = 0.0
+		_multiplayer_sequence += 1
+		var pose := _sample_local_avatar_pose()
+		var packet := MultiplayerAvatarPose.append(MultiplayerLantern.encode(_multiplayer_sequence, light_field),
+			pose.body, pose.head, pose.left, pose.right, pose.tracking, _local_avatar_hue,
+			pose.velocity, pose.eye_height, pose.fingers, pose.masks, pose.curls, _avatar_arm_reach)
+		packet = MultiplayerStaffPose.append(packet, staff_tool.global_transform, int(staff_tool.placement))
+		_network.send_lantern(packet)
+	if _local_avatar != null:
+		var local_pose := _sample_local_avatar_pose()
+		if xr_player != null and xr_player.xr_active:
+			_local_avatar.set_player_eye_height(local_pose.eye_height)
+		else:
+			_local_avatar.set_eye_height(local_pose.eye_height)
+		_local_avatar.apply_pose(local_pose.body, local_pose.head, local_pose.left,
+			local_pose.right, local_pose.tracking, local_pose.velocity, delta)
+		_local_avatar.apply_fingers(local_pose.fingers, local_pose.masks, local_pose.curls)
+		_update_avatar_voice(_local_avatar, _voice.get_local_level() if _voice != null else 0.0,
+			_voice.get_local_visemes() if _voice != null else PackedFloat32Array(), delta)
+	if _voice != null:
+		for peer_id: String in _peer_avatars:
+			_update_avatar_voice(_peer_avatars[peer_id] as MushiMultiplayerAvatar,
+				_voice.get_peer_level(peer_id), _voice.get_peer_visemes(peer_id), delta)
+	for peer_id: String in _peer_staffs:
+		(_peer_staffs[peer_id] as RemoteStaffVisual).advance_remote(delta)
+	for peer_id: String in _peer_lanterns:
+		var visual := _peer_lanterns[peer_id] as Lantern
+		visual.reset_adaptation(lantern.night_vision)
+	_limit_remote_lights()
+
+
+func _update_avatar_voice(avatar: MushiMultiplayerAvatar, level: float,
+		visemes: PackedFloat32Array, delta: float) -> void:
+	if avatar == null or avatar.body == null:
+		return
+	avatar.body.call("set_voice_level", level)
+	avatar.body.call("apply_voice_visemes", visemes, delta)
+
+
+func _limit_remote_lights() -> void:
+	if _peer_lanterns.is_empty():
+		return
+	var eye: Vector3 = xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
+	var ranked: Array[Dictionary] = []
+	for peer_id: String in _peer_lanterns:
+		var visual := _peer_lanterns[peer_id] as Lantern
+		ranked.append({"id": peer_id, "distance": eye.distance_squared_to(visual.global_position)})
+	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.distance < b.distance)
+	for index: int in ranked.size():
+		var visual := _peer_lanterns[ranked[index].id] as Lantern
+		var beam_visible := index < _max_remote_spots and visual.shutter_openness > 0.01
+		visual.set_beam_shadows_enabled(beam_visible and str(_quality_settings.get("shadows", "high")) == "high")
+		visual.spot.visible = beam_visible
+		visual.housing_fill.visible = false
+
+
+func _on_network_lantern(peer_id: String, bytes: PackedByteArray) -> void:
+	if _multiplayer_role == "offline":
+		return
+	var sample := MultiplayerLantern.decode(bytes, terrain_size)
+	if sample.is_empty() or int(sample.sequence) <= int(_peer_last_sequence.get(peer_id, -1)):
+		return
+	_peer_last_sequence[peer_id] = sample.sequence
+	_peer_last_input_msec[peer_id] = Time.get_ticks_msec()
+	var field: LightField = _peer_fields.get(peer_id)
+	if field == null:
+		field = LightField.new()
+		field.world_surface = world_surface
+		_peer_fields[peer_id] = field
+	field.update_transform(sample.position, sample.direction)
+	field.mode = sample.mode as LightField.Mode
+	field.shutter_openness = sample.shutter
+	field.half_angle_degrees = Lantern.BEHAVIOR_HALF_ANGLE_DEGREES
+	field.range_m = 20.0 if field.mode == LightField.Mode.CLEAR else 10.5
+	field.mode_strength = light_field.mode_strength
+	var staff_pose := MultiplayerStaffPose.decode(bytes, terrain_size)
+	if not staff_pose.is_empty() and not _peer_staffs.has(peer_id):
+		_remove_remote_staff_and_lantern(peer_id)
+		var staff_visual := RemoteStaffVisual.new()
+		staff_visual.name = "PeerStaff"
+		add_child(staff_visual)
+		_peer_staffs[peer_id] = staff_visual
+		_peer_lanterns[peer_id] = staff_visual.lantern
+		print("MUSHI_PEER_STAFF: peer=%s" % peer_id)
+	if not _peer_lanterns.has(peer_id):
+		var visual := Lantern.new()
+		visual.name = "PeerLantern"
+		add_child(visual)
+		visual.housing_fill.visible = false
+		visual.set_beam_shadows_enabled(false)
+		_peer_lanterns[peer_id] = visual
+	var peer_visual := _peer_lanterns[peer_id] as Lantern
+	if _peer_staffs.has(peer_id) and not staff_pose.is_empty():
+		(_peer_staffs[peer_id] as RemoteStaffVisual).apply_remote_pose(
+			staff_pose.pose, sample.position, sample.direction, staff_pose.placement)
+	elif not _peer_staffs.has(peer_id):
+		peer_visual.global_position = sample.position
+		var up := Vector3.FORWARD if absf(sample.direction.y) > 0.98 else Vector3.UP
+		peer_visual.global_basis = Basis.looking_at(sample.direction, up)
+	if peer_visual.mode != field.mode:
+		peer_visual.set_mode(field.mode)
+	peer_visual.set_shutter(field.shutter_openness)
+	peer_visual.housing_fill.visible = false
+	var avatar_pose := MultiplayerAvatarPose.decode(bytes, terrain_size)
+	if not avatar_pose.is_empty():
+		if not _peer_avatars.has(peer_id):
+			var avatar := MushiMultiplayerAvatar.new()
+			avatar.name = "PeerAvatar"
+			add_child(avatar)
+			avatar.configure(avatar_pose.hue, false)
+			_peer_avatars[peer_id] = avatar
+			if _voice != null:
+				_voice.peer_joined(peer_id, avatar.head_target)
+			print("MUSHI_PEER_AVATAR: peer=%s hue=%.3f" % [peer_id, avatar_pose.hue])
+		var remote_avatar := _peer_avatars[peer_id] as MushiMultiplayerAvatar
+		remote_avatar.set_arm_reach_scale(avatar_pose.arm_reach)
+		if avatar_pose.tracking & 4:
+			remote_avatar.set_player_eye_height(avatar_pose.eye_height)
+		else:
+			remote_avatar.set_eye_height(avatar_pose.eye_height)
+		remote_avatar.apply_pose(avatar_pose.body, avatar_pose.head, avatar_pose.left,
+			avatar_pose.right, avatar_pose.tracking, avatar_pose.velocity, 0.05)
+		remote_avatar.apply_fingers(avatar_pose.fingers, avatar_pose.masks, avatar_pose.curls)
+
+
+func _sample_local_avatar_pose() -> Dictionary:
+	if xr_player != null and xr_player.xr_active:
+		var xr_body := xr_player.get_node("PlayerBody") as CharacterBody3D
+		# Bit 4 marks the XR pose even if both hands temporarily lose tracking.
+		var tracked := 4
+		var hands: Array[Transform3D] = []
+		var fingers: Array[Quaternion] = []
+		var masks := PackedInt32Array([0, 0])
+		var curls := PackedFloat32Array()
+		for index in range(2):
+			var controller: XRController3D = xr_player.left_controller if index == 0 else xr_player.right_controller
+			var tracker := XRServer.get_tracker("/user/hand_tracker/left" if index == 0 else "/user/hand_tracker/right") as XRHandTracker
+			var hand := MushiHandPose.sample(tracker, controller.get_is_active())
+			fingers.append_array(hand.rotations)
+			masks[index] = hand.mask
+			curls.append_array(MushiHandPose.curls(controller))
+			var wrist := MushiHandPose.wrist(xr_player, controller, tracker, index == 0)
+			hands.append(wrist.pose)
+			if wrist.valid:
+				tracked |= (1 << index) | (8 << index)
+		var motion := xr_body.velocity
+		motion.y = 0.0
+		var measured_height := clampf(xr_player.camera.global_position.y - xr_body.global_position.y, 1.1, 2.1)
+		return {"body": xr_body.global_transform, "head": xr_player.camera.global_transform,
+			"left": hands[0], "right": hands[1],
+			"tracking": tracked, "velocity": motion,
+			"fingers": fingers, "masks": masks, "curls": curls,
+			"eye_height": _avatar_eye_height_override if _avatar_eye_height_override > 0.0 else measured_height}
+	var view := player.camera.global_transform
+	var body := player.global_transform
+	var left := Transform3D.IDENTITY
+	var right := Transform3D.IDENTITY
+	var tracked := 0
+	if staff_tool != null and staff_tool.placement == StaffTool.Placement.HELD:
+		right = Transform3D(staff_tool.global_basis, staff_tool.grip_world_position(staff_tool.grip_index))
+		tracked = 2
+	var motion := player.velocity
+	motion.y = 0.0
+	var empty_fingers: Array[Quaternion] = []
+	return {"body": body, "head": view, "left": left, "right": right,
+		"tracking": tracked, "velocity": motion,
+		"fingers": empty_fingers, "masks": PackedInt32Array([0, 0]),
+		"curls": PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+		# Saved XR standing height calibrates the device, never the fixed desktop camera.
+		"eye_height": clampf(view.origin.y - body.origin.y, 1.1, 2.1)}
+
+
+func _broadcast_multiplayer_state() -> void:
+	if _network == null or _joined_peers.is_empty() or _active_backend != "gpu":
+		return
+	if simulation.snapshot_revision > _last_sent_snapshot_revision and simulation.snapshot_revision >= 0:
+		_last_sent_snapshot_revision = simulation.snapshot_revision
+		var chunks := MultiplayerSnapshot.encode_chunks(_multiplayer_epoch, simulation.snapshot_revision,
+			simulation.state_revision, simulation, terrain_size)
+		for chunk: PackedByteArray in chunks:
+			_network.broadcast_snapshot_chunk(chunk)
+			_snapshot_payload_bytes += chunk.size()
+			_snapshot_chunks_sent += 1
+	if simulation.score != _last_sent_score:
+		_last_sent_score = simulation.score
+		var score_message := JSON.stringify({"kind": "score", "epoch": _multiplayer_epoch, "score": simulation.score}).to_utf8_buffer()
+		for peer_id: String in _joined_peers:
+			_network.send_control(peer_id, score_message)
+
+
+func _on_network_snapshot(_peer_id: String, bytes: PackedByteArray) -> void:
+	if _multiplayer_role != "client" or not simulation is RemoteFlightSimulation:
+		return
+	if _impair_rng.randf() * 100.0 < _impair_loss_percent:
+		_impair_dropped += 1
+		return
+	if _impair_jitter_ms > 0:
+		if _impaired_chunks.size() >= 512:
+			_impaired_chunks.pop_front()
+			_impair_dropped += 1
+		_impaired_chunks.append({"at": Time.get_ticks_msec() + _impair_rng.randi_range(0, _impair_jitter_ms), "bytes": bytes})
+		return
+	_apply_network_snapshot(bytes)
+
+
+func _apply_network_snapshot(bytes: PackedByteArray) -> void:
+	var chunk := MultiplayerSnapshot.decode_chunk(bytes)
+	if chunk.is_empty() or int(chunk.get("epoch", -1)) != _multiplayer_epoch:
+		return
+	(simulation as RemoteFlightSimulation).apply_chunk(chunk)
+	_snapshot_chunks_received += 1
+
+
+func _send_multiplayer_config(peer_id: String) -> void:
+	if _network == null:
+		return
+	var config := {"kind": "reset", "version": 1, "epoch": _multiplayer_epoch,
+		"seed": current_seed, "count": fixture_count, "terrain_size": terrain_size,
+		"preset": current_preset.to_dict(), "score": simulation.score}
+	_network.send_control(peer_id, JSON.stringify(config).to_utf8_buffer())
+
+
+func _broadcast_multiplayer_config() -> void:
+	_last_sent_snapshot_revision = -1
+	_last_sent_score = -1
+	print("MUSHI_NET_RESET role=host epoch=%d count=%d peers=%d" % [_multiplayer_epoch, fixture_count, _joined_peers.size()])
+	for peer_id: String in _joined_peers:
+		_send_multiplayer_config(peer_id)
+
+
+func _on_network_control(_peer_id: String, bytes: PackedByteArray) -> void:
+	if _multiplayer_role != "client" or bytes.size() > 4096:
+		return
+	var data: Variant = JSON.parse_string(bytes.get_string_from_utf8())
+	if not data is Dictionary:
+		return
+	if data.get("kind") == "reset":
+		if int(data.get("version", 0)) != 1 or int(data.get("terrain_size", 0)) != terrain_size:
+			_network_status = "Host map/version does not match this build"
+			_show_multiplayer_status(true, false, _network_status)
+			return
+		var count := int(data.get("count", 0))
+		if count not in [512, 1024]:
+			return
+		_multiplayer_epoch = int(data.get("epoch", 0))
+		_impaired_chunks.clear()
+		fixture_count = count
+		current_seed = int(data.get("seed", DEFAULT_SEED))
+		seed_box.set_value_no_signal(current_seed)
+		current_preset = HerdPreset.from_dict(data.get("preset", {}))
+		_client_config_reset = true
+		_reset_run(false)
+		_client_config_reset = false
+		simulation.score = int(data.get("score", 0))
+		print("MUSHI_NET_RESET role=client epoch=%d count=%d score=%d" % [_multiplayer_epoch, fixture_count, simulation.score])
+	elif data.get("kind") == "score" and int(data.get("epoch", -1)) == _multiplayer_epoch:
+		simulation.score = clampi(int(data.get("score", 0)), 0, fixture_count)

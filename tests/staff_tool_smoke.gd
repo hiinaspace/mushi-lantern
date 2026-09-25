@@ -7,6 +7,7 @@ func _run() -> void:
 	var staff := StaffTool.new()
 	add_child(staff)
 	staff.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0)))
+	assert(staff.desktop_can_control_lantern())
 	assert(staff.lantern != null)
 	assert(staff.control_world_position().distance_to(staff.lantern.global_position) > 0.20)
 	assert(staff.original_collision_layer == 4)
@@ -21,16 +22,19 @@ func _run() -> void:
 	assert(is_equal_approx(staff.lantern.shutter_openness, 0.35))
 	staff.release_final()
 	assert(staff.placement == StaffTool.Placement.FLOATING)
+	assert(not staff.desktop_can_control_lantern())
 	assert(is_equal_approx(staff.lantern.shutter_openness, 0.35))
 	for frame: int in 100:
 		staff.advance(1.0 / 60.0)
 	assert(staff.placement == StaffTool.Placement.PARKED)
+	assert(not staff.desktop_can_control_lantern())
 	assert(is_equal_approx(staff.lantern.shutter_openness, 0.35))
 	assert(staff.global_position.y > 0.7)
 	assert(absf(staff.lantern.forward_direction().y) < 0.08)
 	assert(staff.control_world_position().y < staff.lantern.global_position.y - 0.15)
 	staff.begin_recall(Transform3D(Basis.IDENTITY, Vector3(3.0, 1.0, 0.0)))
 	assert(staff.placement == StaffTool.Placement.RECALL_HOVER)
+	assert(not staff.desktop_can_control_lantern())
 	staff.update_recall(Transform3D(Basis.IDENTITY, Vector3(3.0, 1.0, 0.0)), 0.5)
 	assert(staff.global_position.x > 1.0)
 	staff.end_recall()
@@ -95,6 +99,13 @@ func _run() -> void:
 	staff.advance(1.0 / 60.0)
 	assert(staff._bob_world.distance_to(bob_before) < 0.002)
 	assert(staff.lantern.forward_direction().dot(Vector3.FORWARD) < 0.8)
+	# A two-hand solve can roll the shaft through horizontal. Its +Y axis then
+	# changes hemispheres, but the staff front and beam must stay forward.
+	staff.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0)))
+	for roll: float in [-0.5, 0.5]:
+		staff.set_held_world_pose(Transform3D(Basis(Vector3.FORWARD, roll), Vector3(0.0, 1.0, 0.0)))
+		staff.advance(1.0 / 60.0)
+		assert(staff.lantern.forward_direction().dot(Vector3.FORWARD) > 0.97)
 	# Desktop camera yaw moves the staff on an orbit around the head. That
 	# apparent pivot travel must not kick the pendulum as if the player ran.
 	var raw_yaw_kick := _camera_yaw_peak_velocity(staff, false)

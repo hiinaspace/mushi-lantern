@@ -45,6 +45,7 @@ var _movement_neutral_required: bool = false
 var _active_move_deadzone: float = 0.22
 var _active_turn_deadzone: float = 0.22
 var _single_controller_side: int = -1 # -1: both/neither, 0: left only, 1: right only
+var _controller_active_mask: int = -1 # Force an initial route refresh before either controller is active.
 var _recall_pressed_at: Dictionary = {}
 var _recall_active: Dictionary = {}
 var _last_ground_recovery_msec: int = -10000
@@ -436,9 +437,11 @@ func _update_locomotion_route() -> void:
 	var left_active: bool = left_controller.get_is_active()
 	var right_active: bool = right_controller.get_is_active()
 	var side := 0 if left_active and not right_active else (1 if right_active and not left_active else -1)
-	if side == _single_controller_side:
+	var active_mask := int(left_active) | (int(right_active) << 1)
+	if side == _single_controller_side and active_mask == _controller_active_mask:
 		return
 	_single_controller_side = side
+	_controller_active_mask = active_mask
 	_update_movement()
 
 func _locomotion_is_neutral() -> bool:

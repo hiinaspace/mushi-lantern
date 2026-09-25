@@ -10,6 +10,13 @@ The accepted 1024-agent simulation and F1 tuning sandbox remain. See [docs/m1-en
 
 The terrain scene is verified with Godot 4.7.2 and the Mobile renderer on `sayu`. Earlier flat-lab work also ran on `natto`; the new environment has not been qualified there.
 
+An experimental two-player, host-authoritative multiplayer slice is available
+on Linux. It includes shared lantern influence, synchronized Ukon player poses,
+head/arm IK, and lower-body locomotion from the free RPG animation sample.
+Headset avatar fit and hand tracking remain to be tested. See
+[the transport and CLI instructions](multiplayer-native/README.md) and
+[the measured feasibility gate](docs/multiplayer-feasibility-plan.md).
+
 For Steam Audio on Linux x86_64, build the pinned extension and audio-patched
 Godot once after cloning:
 
@@ -33,7 +40,7 @@ friend exports also require a matching Linux release extension.
 ./launch.sh --xr --count 512 # OpenXR through the active runtime; 512 is a lower-cost first check
 ```
 
-`launch.sh` disables V-Sync and caps desktop rendering at 60 FPS to avoid an observed presentation stall on natto. `--xr` enables OpenXR without the desktop FPS cap. With Steam Audio present it uses `.local/godot/bin/godot4` by default. `GODOT_BIN=/path/to/compatible/godot` overrides that selection. Without Steam Audio it falls back to `godot4`/`godot` from `PATH`, then the local 4.7.2 install. Optional launch arguments:
+`launch.sh` disables V-Sync and caps desktop rendering at 60 FPS to avoid an observed presentation stall on natto. OpenXR is disabled by default in the project, avoiding a missing-headset startup dialog; `--xr` explicitly enables it without the desktop FPS cap. With Steam Audio present it uses `.local/godot/bin/godot4` by default. `GODOT_BIN=/path/to/compatible/godot` overrides that selection. Without Steam Audio it falls back to `godot4`/`godot` from `PATH`, then the local 4.7.2 install. Optional launch arguments:
 
 ```bash
 ./launch.sh --tiny

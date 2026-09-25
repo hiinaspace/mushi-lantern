@@ -12,6 +12,10 @@ config/features=PackedStringArray("4.7", "Mobile")
 XRToolsUserSettings="*res://addons/godot-xr-tools/user_settings/user_settings.gd"
 XRToolsRumbleManager="*res://addons/godot-xr-tools/rumble/rumble_manager.gd"
 
+[audio]
+
+driver/enable_input=true
+
 [display]
 
 window/size/viewport_width=1440
@@ -34,5 +38,5 @@ environment/defaults/default_clear_color=Color(0.13, 0.17, 0.21, 1)
 
 [xr]
 
-openxr/enabled=true
+openxr/enabled=false
 shaders/enabled=true

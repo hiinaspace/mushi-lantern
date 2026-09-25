@@ -11,6 +11,9 @@ const MAX_AGENTS := 2048
 const GRID_SIDE := 32
 const MAX_OBSTACLES := 16
 const MAX_MUSHROOMS := 32
+const MAX_LANTERNS := 8
+const LANTERN_WORDS := 12 # three vec4 records per lantern
+const LANTERN_SOURCE_OFFSET := MAX_OBSTACLES * 2 + MAX_MUSHROOMS
 const MAX_TERRAIN_OBSTACLES := 1024
 const OBSTACLE_GRID_SIDE := 32
 const OBSTACLES_PER_CELL := 64
@@ -274,14 +277,15 @@ func is_finite_and_bounded() -> bool:
 	return true
 
 
-func step(delta: float, field: LightField, social_multiplier: float = 1.0, wander_multiplier: float = 1.0) -> void:
+func step(delta: float, field: LightField, social_multiplier: float = 1.0, wander_multiplier: float = 1.0, lanterns: Array[LightField] = []) -> void:
 	if not gpu_ready:
 		return
 	_sync_flight_height()
 	_gpu_time += delta
 	var params := _encode_params(delta, field, social_multiplier, wander_multiplier)
 	params.encode_float(73 * 4, 1.0 if preset.formation_follow_weight > 0.0 and state_revision % 6 == 0 else 0.0)
-	var sources := _encode_sources(field)
+	var sources := _encode_sources(field, lanterns)
+	params.encode_float(79 * 4, float(mini(lanterns.size(), MAX_LANTERNS)) if lanterns.size() > 1 else 0.0)
 	params.encode_float(67 * 4, 1.0 if _last_gpu_field_mode != field.mode else 0.0)
 	_last_gpu_field_mode = field.mode
 	var epoch := _epoch
@@ -461,9 +465,9 @@ func _encode_params(delta: float, field: LightField, social_multiplier: float, w
 	return p.to_byte_array()
 
 
-func _encode_sources(field: LightField) -> PackedByteArray:
+func _encode_sources(field: LightField, lanterns: Array[LightField] = []) -> PackedByteArray:
 	var p := PackedFloat32Array()
-	p.resize(4 * (MAX_OBSTACLES * 2 + MAX_MUSHROOMS))
+	p.resize(4 * LANTERN_SOURCE_OFFSET + MAX_LANTERNS * LANTERN_WORDS)
 	for i: int in mini(obstacle_centers.size(), MAX_OBSTACLES):
 		p[4 * i] = obstacle_centers[i].x
 		p[4 * i + 1] = obstacle_centers[i].y
@@ -477,6 +481,22 @@ func _encode_sources(field: LightField) -> PackedByteArray:
 		var k := 4 * (MAX_OBSTACLES * 2 + i)
 		p[k] = mushroom_centers[i].x
 		p[k + 1] = mushroom_centers[i].y
+	for i: int in mini(lanterns.size(), MAX_LANTERNS):
+		var lamp := lanterns[i]
+		if lamp == null:
+			continue
+		var k := 4 * LANTERN_SOURCE_OFFSET + i * LANTERN_WORDS
+		p[k] = lamp.source_position.x
+		p[k + 1] = lamp.source_position.y
+		p[k + 2] = lamp.source_position.z
+		p[k + 3] = maxf(lamp.range_m, 0.001)
+		p[k + 4] = lamp.source_direction.x
+		p[k + 5] = lamp.source_direction.y
+		p[k + 6] = lamp.source_direction.z
+		p[k + 7] = lamp.half_angle_degrees
+		p[k + 8] = lamp.edge_softness
+		p[k + 9] = clampf(lamp.mode_strength * lamp.shutter_openness, 0.0, 1.0)
+		p[k + 10] = float(lamp.mode)
 	return p.to_byte_array()
 
 
@@ -503,7 +523,7 @@ func _create_gpu(epoch: int, spirv: RDShaderSPIRV, initial: PackedByteArray, tra
 	zero_events.fill(0)
 	_events_buffer = _rd.storage_buffer_create(count * 4, zero_events)
 	_traits_buffer = _rd.storage_buffer_create(count * 8 * 4, traits)
-	_sources_buffer = _rd.storage_buffer_create((MAX_OBSTACLES * 2 + MAX_MUSHROOMS) * 16, PackedByteArray())
+	_sources_buffer = _rd.storage_buffer_create((LANTERN_SOURCE_OFFSET * 4 + MAX_LANTERNS * LANTERN_WORDS) * 4, PackedByteArray())
 	_cell_counts_buffer = _rd.storage_buffer_create(GRID_SIDE * GRID_SIDE * 4, PackedByteArray())
 	_cell_ids_buffer = _rd.storage_buffer_create(GRID_SIDE * GRID_SIDE * MAX_AGENTS * 4, PackedByteArray())
 	_formation_choices_buffer = _rd.storage_buffer_create(count * 8, PackedByteArray())

@@ -41,6 +41,8 @@ mkdir -p "$package_dir/licenses/terrain3d" \
   "$package_dir/licenses/steam-audio-sdk" \
   "$package_dir/licenses/mcfgthread" \
   "$package_dir/licenses/forest" \
+  "$package_dir/licenses/renik" \
+  "$package_dir/licenses/rpg-animations" \
   "$package_dir/licenses/fonts" \
   "$package_dir/licenses/godot-engine"
 
@@ -58,6 +60,8 @@ cp .local/steam-audio-windows/share/licenses/mcfgthread/LICENSE.md \
   "$package_dir/licenses/mcfgthread/"
 cp assets/forest/PROVENANCE.md assets/forest/licenses/* \
   "$package_dir/licenses/forest/"
+cp addons/renik/LICENSE.txt "$package_dir/licenses/renik/"
+cp assets/animations/LICENSE assets/animations/README.md "$package_dir/licenses/rpg-animations/"
 cp assets/fonts/DejaVu-LICENSE.txt "$package_dir/licenses/fonts/"
 cp build-support/godot/licenses/LICENSE.txt \
   build-support/godot/licenses/COPYRIGHT.txt \

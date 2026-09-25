@@ -26,3 +26,41 @@ func advance(delta: float, mode: LightField.Mode, openness: float, viewer_exposu
 
 func lantern_gain() -> float:
 	return 1.0 + 0.7 * night_vision
+
+
+static func multiplayer_target(local_field: LightField, peer_fields: Array[LightField], viewer_position: Vector3) -> float:
+	"""Compute viewer adaptation from nearby lanterns, independent of beam aim.
+
+	Clear sources add as illuminance; filtered sources are capped at the strongest
+	single filtered lamp. This is visual-only and intentionally ignores cone and
+	occlusion so standing beside a lantern affects adaptation even outside its beam.
+	"""
+	var clear_remaining := 1.0
+	var strongest_filtered := 0.0
+	if local_field != null:
+		var accumulated := _accumulate_exposure(local_field, viewer_position, clear_remaining, strongest_filtered)
+		clear_remaining = accumulated.x
+		strongest_filtered = accumulated.y
+	for field: LightField in peer_fields:
+		if field != null:
+			var accumulated := _accumulate_exposure(field, viewer_position, clear_remaining, strongest_filtered)
+			clear_remaining = accumulated.x
+			strongest_filtered = accumulated.y
+	var clear_exposure := 1.0 - clear_remaining
+	var combined := 1.0 - (1.0 - clear_exposure) * (1.0 - strongest_filtered)
+	return 1.0 - clampf(combined, 0.0, 1.0)
+
+
+static func _accumulate_exposure(field: LightField, viewer_position: Vector3,
+		clear_remaining: float, strongest_filtered: float) -> Vector2:
+	# An open colored lamp must suppress the stream throughout the useful
+	# nearby beam. A wide plateau also avoids partial stream reveal when the
+	# viewer moves around within that light. Clear keeps its existing falloff.
+	var radial := 1.0 - smoothstep(3.0 if field.mode == LightField.Mode.CLEAR else 8.0,
+		14.0, viewer_position.distance_to(field.source_position))
+	var exposure := clampf(field.shutter_openness * field.mode_strength * radial, 0.0, 1.0)
+	if field.mode == LightField.Mode.CLEAR:
+		clear_remaining *= 1.0 - exposure
+	else:
+		strongest_filtered = maxf(strongest_filtered, exposure)
+	return Vector2(clear_remaining, strongest_filtered)

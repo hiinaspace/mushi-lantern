@@ -40,6 +40,8 @@ mkdir -p "$package_dir/licenses/terrain3d" \
   "$package_dir/licenses/godot-cpp" \
   "$package_dir/licenses/steam-audio-sdk" \
   "$package_dir/licenses/forest" \
+  "$package_dir/licenses/renik" \
+  "$package_dir/licenses/rpg-animations" \
   "$package_dir/licenses/godot-engine"
 cp "$export_dir/mushi-lantern.pck" "$package_dir/"
 install -m 755 "$export_dir/mushi-lantern.x86_64" "$package_dir/"
@@ -59,6 +61,8 @@ cp build-support/steam-audio/GODOT_CPP_LICENSE.md "$package_dir/licenses/godot-c
 cp build-support/steam-audio/STEAM_AUDIO_SDK_LICENSE.md \
   build-support/steam-audio/STEAM_AUDIO_SDK_THIRDPARTY.md "$package_dir/licenses/steam-audio-sdk/"
 cp assets/forest/PROVENANCE.md assets/forest/licenses/* "$package_dir/licenses/forest/"
+cp addons/renik/LICENSE.txt "$package_dir/licenses/renik/"
+cp assets/animations/LICENSE assets/animations/README.md "$package_dir/licenses/rpg-animations/"
 cp build-support/godot/licenses/LICENSE.txt build-support/godot/licenses/COPYRIGHT.txt \
   build-support/godot/licenses/AUTHORS.md "$package_dir/licenses/godot-engine/"
 patchelf_bin="$(command -v patchelf || true)"

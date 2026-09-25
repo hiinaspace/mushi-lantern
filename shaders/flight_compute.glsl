@@ -250,6 +250,40 @@ float light_sample(vec3 xyz) {
     return saturate(pf(13) * angular * (1.0 - smoothstep(0.18, 1.0, distance / pf(7))));
 }
 
+// Multiplayer lamps occupy three vec4 records after the static source data.
+// The one-lamp path above remains unchanged for the accepted solo tuning.
+float multi_light_sample(vec3 xyz, int lamp) {
+    int base = 64 + lamp * 3;
+    vec4 origin = sources[base];
+    vec4 aim = sources[base + 1];
+    vec4 settings = sources[base + 2];
+    if (int(round(settings.z)) == 0 || settings.y <= 0.0001) return 0.0;
+    vec3 offset = xyz - origin.xyz;
+    float distance = length(offset);
+    if (distance <= 0.001 || distance >= origin.w) return 0.0;
+    vec3 direction = safe_normal(aim.xyz);
+    float half_angle = radians(aim.w);
+    float angular = smoothstep(cos(half_angle), cos(half_angle * (1.0 - settings.x)), dot(direction, offset / distance));
+    if (angular <= 0.0) return 0.0;
+    for (int i = 0; i < int(pf(66)); i++) {
+        vec4 obstacle = sources[16 + i];
+        if (segment_circle(origin.xz, xyz.xz, obstacle.xy, obstacle.z)) return 0.0;
+    }
+    if (pf(74) > 0.5) {
+        for (int step = 1; step <= 4; step++) {
+            vec3 point = mix(origin.xyz, xyz, float(step) / 5.0);
+            if (point.y < ground_height(point.xz) + 0.04) return 0.0;
+            int cell = obstacle_cell_base(point.xz);
+            for (int j = 0; j < min(terrain_obstacle_index[cell], 64); j++) {
+                int i = terrain_obstacle_index[cell + 1 + j];
+                vec4 obs = terrain_obstacles[i * 2];
+                if (obstacle_at_height(obs, terrain_obstacles[i * 2 + 1].x, point.y) && segment_circle(origin.xz, xyz.xz, obs.xy, obs.z)) return 0.0;
+            }
+        }
+    }
+    return saturate(settings.y * angular * (1.0 - smoothstep(0.18, 1.0, distance / origin.w)));
+}
+
 void mushroom_field(vec3 xyz, vec3 velocity, out float exposure, out vec3 force) {
     exposure = 0.0;
     force = vec3(0.0);
@@ -383,6 +417,29 @@ vec3 lantern_force(vec3 xyz, vec3 velocity, float stimulus) {
     if (distance <= 0.001) return -velocity * 0.8;
     vec3 direction = to_target / distance;
     if (int(pf(3)) == 2) {
+        vec3 desired = -direction * pf(16);
+        desired.y *= 0.35;
+        return (desired - velocity) * pf(24) * stimulus * 0.62;
+    }
+    float speed = pf(16) * smoothstep(0.0, pf(26) * 2.2, distance);
+    if (distance >= pf(26)) speed = max(speed, 1.05);
+    return (direction * speed - velocity) * pf(24) * stimulus;
+}
+
+vec3 multi_lantern_force(vec3 xyz, vec3 velocity, float stimulus, int lamp) {
+    int base = 64 + lamp * 3;
+    int mode = int(round(sources[base + 2].z));
+    if (stimulus <= 0.0001 || mode == 0) return vec3(0.0);
+    vec3 source = sources[base].xyz;
+    vec3 target = source + sources[base + 1].xyz * 3.0;
+    float target_ground = ground_height(target.xz);
+    target.y = clamp(target.y, target_ground + pf(57), target_ground + pf(58));
+    if (mode == 2) target = source;
+    vec3 to_target = target - xyz;
+    float distance = length(to_target);
+    if (distance <= 0.001) return -velocity * 0.8;
+    vec3 direction = to_target / distance;
+    if (mode == 2) {
         vec3 desired = -direction * pf(16);
         desired.y *= 0.35;
         return (desired - velocity) * pf(24) * stimulus * 0.62;
@@ -574,7 +631,25 @@ void main() {
         candidates_for(id, selected);
         float contagion = 0.0;
         vec3 social = social_force(id, selected, xyz, velocity, e, contagion) * pf(14);
-        float stimulus = light_sample(xyz);
+        float stimulus = 0.0;
+        float blue_exposure = 0.0;
+        float orange_exposure = 0.0;
+        vec3 combined_lantern_force = vec3(0.0);
+        if (pf(79) > 1.5) {
+            for (int lamp = 0; lamp < int(pf(79)); lamp++) {
+                float sample_value = multi_light_sample(xyz, lamp);
+                int mode = int(round(sources[64 + lamp * 3 + 2].z));
+                if (mode == 1) blue_exposure += sample_value;
+                if (mode == 2) orange_exposure += sample_value;
+                combined_lantern_force += multi_lantern_force(xyz, velocity, sample_value, lamp);
+            }
+            // Multiple lamps strengthen the effect, but neither exposure nor
+            // steering can grow without bound as players overlap.
+            blue_exposure = min(blue_exposure, 2.0);
+            orange_exposure = min(orange_exposure, 2.0);
+            stimulus = saturate(blue_exposure + orange_exposure);
+            combined_lantern_force = limited(combined_lantern_force, pf(17));
+        } else stimulus = light_sample(xyz);
         old_v.w = move_towards(pf(67) > 0.5 ? 0.0 : old_v.w, stimulus, dt * 4.0);
         float mushroom_exposure;
         vec3 mushroom_force;
@@ -588,11 +663,12 @@ void main() {
             float mushroom_rate = max(0.0, pf(38)) * mushroom_exposure * trait1(id).z;
             rate += mushroom_rate;
             weighted += mushroom_rate * pf(39);
-            if (int(pf(3)) == 1) {
-                float blue_rate = max(0.0, pf(40)) * old_v.w * trait1(id).y;
+            if (int(pf(3)) == 1 || pf(79) > 1.5) {
+                float blue_rate = max(0.0, pf(40)) * (pf(79) > 1.5 ? blue_exposure : old_v.w) * trait1(id).y;
                 rate += blue_rate; weighted += blue_rate * pf(39);
-            } else if (int(pf(3)) == 2) {
-                float orange_rate = max(0.0, pf(42)) * old_v.w * trait1(id).y;
+            }
+            if (int(pf(3)) == 2 || pf(79) > 1.5) {
+                float orange_rate = max(0.0, pf(42)) * (pf(79) > 1.5 ? orange_exposure : old_v.w) * trait1(id).y;
                 rate += orange_rate; weighted += orange_rate * pf(41);
             }
             if (contagion > neutral) {
@@ -617,7 +693,12 @@ void main() {
         } else if (pf(55) < 0.5) e = pf(29);
         else {
             float target = pf(29);
-            if (int(pf(3)) == 1) target = mix(target, 0.08, old_v.w);
+            if (pf(79) > 1.5) {
+                float blue_weight = blue_exposure;
+                float orange_weight = orange_exposure * 1.25;
+                float total_weight = blue_weight + orange_weight;
+                if (total_weight > 0.0) target = mix(target, (blue_weight * 0.08 + orange_weight * 0.92) / total_weight, saturate(total_weight));
+            } else if (int(pf(3)) == 1) target = mix(target, 0.08, old_v.w);
             else if (int(pf(3)) == 2) target = mix(target, 0.92, old_v.w);
             float rate = old_v.w > 0.02 ? pf(30) : pf(30) * 0.32;
             e = mix(e, target, 1.0 - exp(-dt * rate));
@@ -626,10 +707,11 @@ void main() {
         int leader = int(round(extra.z)) - 1;
         bool coupled = pf(70) > 0.0 && leader >= 0 && life(leader) == ACTIVE;
         float follower_scale = coupled ? 0.5 : 1.0;
-        vec3 force = pre_update_wander + social + lantern_force(xyz, velocity, old_v.w) * follower_scale;
+        vec3 force = pre_update_wander + social + (pf(79) > 1.5 ? combined_lantern_force : lantern_force(xyz, velocity, old_v.w)) * follower_scale;
         if (pf(31) > 0.5) {
             mushroom_force *= trait1(id).z;
-            if (int(pf(3)) == 2) mushroom_force *= 1.0 - old_v.w * 0.85;
+            if (pf(79) > 1.5) mushroom_force *= 1.0 - saturate(orange_exposure) * 0.85;
+            else if (int(pf(3)) == 2) mushroom_force *= 1.0 - old_v.w * 0.85;
             if (aux.w > 0.0) mushroom_force *= 0.05;
             force += mushroom_force * follower_scale;
         }

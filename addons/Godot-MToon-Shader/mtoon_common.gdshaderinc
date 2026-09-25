@@ -83,6 +83,10 @@ uniform float _MToonVersion = 33;
 // Miko avatar preview controls. Defaults keep every imported VRM unchanged.
 uniform float _MikoHueShift : hint_range(0.0, 1.0) = 0.0;
 uniform float _MikoEyeGlow : hint_range(0.0, 24.0) = 0.0;
+uniform float _MikoVoiceGlow : hint_range(0.0, 8.0) = 0.0;
+// Lanterns in this scene use high intensity to light the environment. Compress
+// per-light MToon response before it washes out the atlas colors and shading.
+uniform float _MikoLightCompression : hint_range(0.0, 4.0) = 0.0;
 
 // const
 const float PI_2 = 6.283185307180;
@@ -158,6 +162,7 @@ vec3 calculateLighting(vec2 mainUv, float dotNL, float lightAttenuation, vec4 sh
 	col = mix(shade_arg.rgb, lit_arg.rgb, lightIntensity);
 	// Direct Light
 	vec3 lighting = lightColor / 3.14159;
+	lighting = lighting / (vec3(1.0) + max(lighting, vec3(0.0)) * _MikoLightCompression);
 	lighting = mix(lighting, max(vec3(EPS_COL), max(lighting.x, max(lighting.y, lighting.z))), _LightColorAttenuation); // color atten
 	return lighting;
 }
@@ -250,6 +255,7 @@ void fragment() {
 
 	// main tex
 	vec4 mainTex = texture(_MainTex, mainUv);
+	vec3 authoredTex = mainTex.rgb;
 	mainTex.rgb = miko_hue_rotate(mainTex.rgb);
 	// alpha
 	float alpha = _Color.a * mainTex.a;
@@ -270,6 +276,19 @@ void fragment() {
 	// Emitting the authored texel keeps its shading and highlight detail, with
 	// exactly the same hue shift as the lit albedo.
 	emission += eye_mask * _MikoEyeGlow * 0.5 * mainTex.rgb;
+	// The saturated red fabric and accessories share atlas surfaces with skin.
+	// Select those authored texels before hue rotation; keep the constant iris
+	// glow independent of voice level.
+	float authoredHi = max(authoredTex.r, max(authoredTex.g, authoredTex.b));
+	float authoredLo = min(authoredTex.r, min(authoredTex.g, authoredTex.b));
+	float fabricSat = (authoredHi - authoredLo) / max(authoredHi, 0.0001);
+	float redDominance = authoredTex.r - max(authoredTex.g, authoredTex.b);
+	// Voice glow should stay on the strongly red authored cloth/accessory
+	// colors. The atlas also contains warm skin and bright hair highlights;
+	// their lower saturation and weaker red dominance keep them below these
+	// tighter thresholds.
+	float fabricMask = smoothstep(0.42, 0.62, fabricSat) * smoothstep(0.05, 0.12, redDominance);
+	emission += fabricMask * (1.0 - eye_mask) * _MikoVoiceGlow * mainTex.rgb;
 
 	vec3 tangentNormal = vec3(0.0,0.0,1.0);
 	if (_NORMALMAP) {

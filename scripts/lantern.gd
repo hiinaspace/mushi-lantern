@@ -206,6 +206,12 @@ func _box(label: String, size: Vector3, at: Vector3, material: Material, parent:
 	return part
 
 func _update_cookie() -> void:
+	# Godot's projector UVs use the spotlight shadow matrix. Without a shadow
+	# atlas entry the matrix can be stale, making the cookie follow the viewer.
+	if not spot.shadow_enabled:
+		spot.light_projector = null
+		_projector_key = ""
+		return
 	var step := 0 if shutter_openness <= 0.005 else COOKIE_STEPS if shutter_openness >= 0.995 else clampi(roundi(shutter_openness * COOKIE_STEPS), 1, COOKIE_STEPS - 1)
 	var split_step := _preview_split_step()
 	var split_active := _preview_has_rgb_split()
@@ -253,6 +259,13 @@ func _update_cookie() -> void:
 	_projector_textures[key] = ImageTexture.create_from_image(image)
 	spot.light_projector = _projector_textures[key]
 	_projector_key = key
+
+func set_beam_shadows_enabled(enabled: bool) -> void:
+	if spot == null or spot.shadow_enabled == enabled:
+		return
+	spot.shadow_enabled = enabled
+	_projector_key = ""
+	_update_cookie()
 
 func _preview_split_step() -> int:
 	return clampi(roundi(_dial_preview_amount * COOKIE_STEPS), 0, COOKIE_STEPS) if _dial_preview_active or _settling_split else 0
@@ -450,8 +463,12 @@ func advance_flame(delta: float) -> void:
 	_apply_visual()
 
 func advance_adaptation(delta: float, viewer_exposure: float = 1.0) -> void:
+	advance_adaptation_to(delta, _adaptation.target(mode, shutter_openness, viewer_exposure))
+
+
+func advance_adaptation_to(delta: float, destination: float) -> void:
 	if delta > 0.0:
-		var destination := _adaptation.target(mode, shutter_openness, viewer_exposure)
+		destination = clampf(destination, 0.0, 1.0)
 		var seconds := dark_adaptation_seconds if destination > night_vision else light_adaptation_seconds
 		night_vision = clampf(lerpf(night_vision, destination, 1.0 - exp(-delta / maxf(seconds, 0.01))), 0.0, 1.0)
 		_adaptation.night_vision = night_vision

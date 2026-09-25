@@ -17,7 +17,7 @@ var _pitch: float = -0.12
 # Desktop holds the lantern staff like a low, off-side FPS tool. Keeping the
 # transform calculation on the desktop driver makes its relation to the view
 # explicit while the staff itself remains a world-space object.
-const STAFF_HOLD_OFFSET := Vector3(0.56, -0.06, -0.72)
+const STAFF_HOLD_OFFSET := Vector3(0.38, -0.10, -0.46)
 
 func _ready() -> void:
 	camera = get_node("Camera") as Camera3D

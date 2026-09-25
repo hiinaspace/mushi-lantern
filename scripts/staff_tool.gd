@@ -28,6 +28,7 @@ const SWING_DRAG := 5.2
 const SWING_ACCELERATION_FOLLOW := 0.55
 const SWING_STEP := 1.0 / 120.0
 const SWING_JUMP_DISTANCE := 0.55
+const STAFF_GRAB_POINT = preload("res://scripts/staff_grab_point.gd")
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -62,6 +63,12 @@ var _recall_hand := Transform3D.IDENTITY
 var external_pose_owned := false
 var _shaft_hint_material: StandardMaterial3D
 var _control_hint_material: StandardMaterial3D
+
+## Desktop lamp controls are available only while the desktop driver owns the
+## held staff. A parked, recalling, or XR-owned staff cannot be adjusted via
+## desktop keys or mouse input.
+func desktop_can_control_lantern() -> bool:
+	return placement == Placement.HELD and not external_pose_owned
 
 func _ready() -> void:
 	freeze = true
@@ -233,7 +240,7 @@ func _set_hint_strength(mat: StandardMaterial3D, strength: float) -> void:
 func _build_grab_points() -> void:
 	for hand_side: int in 2:
 		for point_index: int in GRIP_Y.size():
-			var point := XRToolsGrabPointHand.new()
+			var point := STAFF_GRAB_POINT.new() as XRToolsGrabPointHand
 			point.name = ("Left" if hand_side == 0 else "Right") + "ShaftGrip%d" % point_index
 			point.hand = XRToolsGrabPointHand.Hand.LEFT if hand_side == 0 else XRToolsGrabPointHand.Hand.RIGHT
 			point.mode = XRToolsGrabPointHand.Mode.GENERAL
@@ -602,7 +609,7 @@ func _update_swing(dt: float) -> void:
 		_previous_desktop_yaw_reference = _desktop_yaw_reference
 	if _has_xr_rig_reference:
 		_previous_xr_rig_reference = _xr_rig_reference
-	_orient_swing(pivot)
+	_orient_swing(pivot, dt)
 
 func _update_xr_rig_reference() -> void:
 	if not external_pose_owned or not is_instance_valid(_grab_driver) or not is_instance_valid(_grab_driver.primary):
@@ -639,20 +646,24 @@ func _desktop_yaw_arc(previous_pivot: Vector3, previous_camera: Transform3D, cur
 	var previous_relative := previous_pivot - previous_camera.origin
 	return Basis(Vector3.UP, yaw_delta) * previous_relative - previous_relative
 
-func _orient_swing(pivot: Vector3) -> void:
+func _orient_swing(pivot: Vector3, dt: float = 0.0) -> void:
 	var down := (_bob_world - pivot).normalized()
 	if down.length_squared() < 0.5:
 		down = Vector3.DOWN
 	var up := -down
-	# Keep the lantern's yaw tied to the shaft in near-horizontal grips. The
-	# staff's local -Z axis becomes nearly vertical as the shaft pitches, so
-	# projecting it directly can reverse the lamp when it crosses horizontal.
-	# Local +Y is the shaft axis; retain the last useful horizontal heading when
-	# the shaft points mostly up/down. Bob orientation remains independent.
-	var shaft_heading := global_basis.y
-	shaft_heading.y = 0.0
-	if shaft_heading.length_squared() > 0.04:
-		_last_horizontal_aim = shaft_heading.normalized()
+	# Aim follows the staff's actual front, independent of the shaft's +Y
+	# direction. The shaft axis is ambiguous under a two-hand grip and can
+	# reverse when XR Tools changes its grab solution. Near vertical front
+	# poses retain the last heading; any genuine reversal is rate-limited.
+	var staff_forward := -global_basis.z
+	staff_forward.y = 0.0
+	if staff_forward.length_squared() > 0.04:
+		var desired := staff_forward.normalized()
+		var angle := atan2(_last_horizontal_aim.cross(desired).y, _last_horizontal_aim.dot(desired))
+		if dt > 0.0 and absf(angle) > 0.9:
+			_last_horizontal_aim = Basis(Vector3.UP, clampf(angle, -12.0 * dt, 12.0 * dt)) * _last_horizontal_aim
+		else:
+			_last_horizontal_aim = desired
 	var forward := _last_horizontal_aim
 	forward -= up * forward.dot(up)
 	if forward.length_squared() < 0.0001:

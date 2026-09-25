@@ -8,6 +8,8 @@ __pycache__/
 /addons/godot-steam-audio/bin/*.so
 /addons/godot-steam-audio/bin/*.dll
 /addons/godot-steam-audio/bin/*.lib
+/bin/linux/*.so
+/bin/windows/*.dll
 /assets/audio/placeholders/*.wav
 /assets/audio/auditions/
 /assets/forest/ez-tree/*-lod[0-2]_[0-3].png

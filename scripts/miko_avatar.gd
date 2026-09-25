@@ -1,5 +1,7 @@
 extends Node3D
 
+const VOICE_EXPRESSIONS = preload("res://scripts/miko_voice_expressions.gd")
+
 ## Per-instance atlas hue offset, measured in turns. Zero keeps the authored red.
 @export_range(0.0, 1.0, 0.001) var hue_shift: float = 0.0:
 	set(value):
@@ -12,7 +14,14 @@ extends Node3D
 		eye_glow = maxf(value, 0.0)
 		_update_materials()
 
+var voice_glow: float = 0.0:
+	set(value):
+		voice_glow = clampf(value, 0.0, 1.0)
+		_update_materials()
+
+
 var _instance_materials: Array[ShaderMaterial] = []
+var _voice_expressions: RefCounted
 
 
 func _ready() -> void:
@@ -32,6 +41,8 @@ func _ready() -> void:
 				mesh_instance.set_surface_override_material(surface, local)
 				_instance_materials.append(local)
 	_update_materials()
+	_voice_expressions = VOICE_EXPRESSIONS.new()
+	_voice_expressions.call("configure", self)
 
 
 func set_avatar_color(hue_turns: float, glow_strength: float = 2.5) -> void:
@@ -40,7 +51,25 @@ func set_avatar_color(hue_turns: float, glow_strength: float = 2.5) -> void:
 	eye_glow = glow_strength
 
 
+func set_voice_level(level: float) -> void:
+	voice_glow = level
+
+
+
+
+func apply_voice_visemes(weights: PackedFloat32Array, delta: float) -> void:
+	if _voice_expressions != null:
+		_voice_expressions.call("apply", weights, delta)
+
+
+func _exit_tree() -> void:
+	if _voice_expressions != null:
+		_voice_expressions.call("reset")
+
+
 func _update_materials() -> void:
 	for material in _instance_materials:
 		material.set_shader_parameter("_MikoHueShift", hue_shift)
 		material.set_shader_parameter("_MikoEyeGlow", eye_glow)
+		material.set_shader_parameter("_MikoVoiceGlow", pow(voice_glow, 0.7) * 1.5)
+		material.set_shader_parameter("_MikoLightCompression", 0.8)

@@ -1,0 +1,26 @@
+[package]
+name = "mushi_multiplayer_native"
+version = "0.1.0"
+edition = "2021"
+license = "Unlicense AND Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow = "1"
+blake3 = "1"
+bytes = "1"
+godot = { version = "0.5.5", features = ["api-4-7"] }
+godot_network_audio = { path = "vendor/godot-network-audio/gdext", default-features = false }
+iroh = "1.1.0"
+iroh-base = "1.1.0"
+pkarr = { version = "5", default-features = false, features = ["dht"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-24"] }
+rustfft = "6.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "io-util", "macros", "net"] }
+
+[patch.crates-io]
+neteq = { git = "https://github.com/hiinaspace/videocall-rs.git", rev = "69c6ccb08afe56d0d1b1cd9e5a7de011679fa152" }

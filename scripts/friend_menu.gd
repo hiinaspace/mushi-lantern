@@ -11,6 +11,13 @@ signal skip_requested
 signal tuning_requested
 signal quit_requested
 signal menu_visibility_changed(open: bool)
+signal avatar_fit_changed(standing_height: float, arm_reach: float)
+signal voice_mute_changed(muted: bool)
+signal voice_input_device_changed(device: String)
+signal voice_gain_changed(gain_db: float)
+signal voice_gate_changed(threshold_db: float)
+signal voice_receive_gain_changed(gain_db: float)
+signal voice_devices_requested
 
 var _desktop_root: Control
 var _desktop_panel: PanelContainer
@@ -19,11 +26,44 @@ var _desktop_status: Label
 var _desktop_skip: Button
 var _desktop_tuning: Button
 var _xr_contents: VBoxContainer
+var _xr_tabs: TabContainer
 var _xr_settings: VBoxContainer
 var _xr_audio: VBoxContainer
+var _xr_voice: VBoxContainer
 var _xr_audio_scroll: ScrollContainer
 var _xr_status: Label
 var _font_theme: Theme
+var _shared_role := "offline"
+var _desktop_start: Button
+var _xr_start: Button
+var _restart_confirm: ConfirmationDialog
+var _xr_restart_armed := false
+var _desktop_avatar_fit: VBoxContainer
+var _avatar_fit_height := 1.6
+var _avatar_fit_reach := 1.3
+var _avatar_fit_controls: Array[Dictionary] = []
+var _avatar_fit_pending := false
+var _voice_muted := true
+var _voice_device := "Default"
+var _voice_devices: PackedStringArray = PackedStringArray(["Default"])
+var _voice_gain_db := 0.0
+var _voice_gate_db := -38.0
+var _voice_receive_gain_db := 0.0
+var _voice_buttons: Array[Button] = []
+var _voice_device_options: Array[OptionButton] = []
+var _voice_device_cycle_buttons: Array[Button] = []
+var _voice_gain_sliders: Array[HSlider] = []
+var _voice_gain_labels: Array[Label] = []
+var _voice_gate_sliders: Array[HSlider] = []
+var _voice_gate_labels: Array[Label] = []
+var _voice_receive_sliders: Array[HSlider] = []
+var _voice_receive_labels: Array[Label] = []
+var _voice_meter_bars: Array[ProgressBar] = []
+var _voice_meter_labels: Array[Label] = []
+var _desktop_voice_settings: VBoxContainer
+var _desktop_voice_button: Button
+var _voice_settings_sections: Array[VBoxContainer] = []
+var _voice_available := false
 
 
 func _ready() -> void:
@@ -37,6 +77,8 @@ func _ready() -> void:
 func set_open(open: bool) -> void:
 	if _desktop_root == null or _desktop_visible == open:
 		return
+	if not open:
+		commit_avatar_fit()
 	_desktop_visible = open
 	_desktop_root.visible = open
 	if open:
@@ -59,6 +101,87 @@ func update_session(status: String, tutorial_active: bool, tuning_unlocked: bool
 		_desktop_tuning.visible = tuning_unlocked
 	if _xr_status != null:
 		_xr_status.text = "Paused · " + status
+
+
+func set_shared_role(role: String) -> void:
+	_shared_role = role
+	_xr_restart_armed = false
+	if _desktop_start != null:
+		_desktop_start.disabled = role == "client"
+	if _xr_start != null:
+		_xr_start.disabled = role == "client"
+		_xr_start.text = "Start / restart"
+
+
+func set_avatar_fit_values(standing_height: float, arm_reach: float) -> void:
+	_avatar_fit_height = clampf(standing_height, 1.1, 2.1)
+	_avatar_fit_reach = clampf(arm_reach, 0.9, 1.5)
+	_avatar_fit_pending = false
+	for control in _avatar_fit_controls:
+		var current := _avatar_fit_height if control.key == "height" else _avatar_fit_reach
+		(control.slider as HSlider).set_value_no_signal(current)
+		(control.value_label as Label).text = "%.2f" % current
+
+
+func commit_avatar_fit() -> void:
+	if not _avatar_fit_pending:
+		return
+	_avatar_fit_pending = false
+	avatar_fit_changed.emit(_avatar_fit_height, _avatar_fit_reach)
+
+
+func set_voice_controls(muted: bool, device: String, devices: PackedStringArray,
+		gain_db: float, gate_db: float = -38.0, receive_gain_db: float = 0.0) -> void:
+	_voice_muted = muted
+	_voice_device = device
+	_voice_devices = devices if not devices.is_empty() else PackedStringArray(["Default"])
+	_voice_gain_db = clampf(gain_db, -24.0, 24.0)
+	_voice_gate_db = clampf(gate_db, -60.0, -20.0)
+	_voice_receive_gain_db = clampf(receive_gain_db, -30.0, 12.0)
+	for button in _voice_buttons:
+		button.text = "Unmute mic" if _voice_muted else "Mute mic"
+	for option in _voice_device_options:
+		option.clear()
+		var selected := 0
+		for index in _voice_devices.size():
+			option.add_item(_voice_devices[index])
+			if _voice_devices[index] == _voice_device:
+				selected = index
+		option.select(selected)
+	for button in _voice_device_cycle_buttons:
+		button.text = "Mic: " + _voice_device
+	for slider in _voice_gain_sliders:
+		slider.set_value_no_signal(_voice_gain_db)
+	for label in _voice_gain_labels:
+		label.text = "%+.0f dB" % _voice_gain_db
+	for slider in _voice_gate_sliders:
+		slider.set_value_no_signal(_voice_gate_db)
+	for label in _voice_gate_labels:
+		label.text = "%.0f dBFS" % _voice_gate_db
+	for slider in _voice_receive_sliders:
+		slider.set_value_no_signal(_voice_receive_gain_db)
+	for label in _voice_receive_labels:
+		label.text = "%+.0f dB" % _voice_receive_gain_db
+
+
+func set_voice_meter(level_db: float) -> void:
+	var db := clampf(level_db, -80.0, 0.0)
+	for bar in _voice_meter_bars:
+		bar.value = db
+	for label in _voice_meter_labels:
+		label.text = "Mic level: %.0f dBFS" % db
+
+
+func set_voice_available(available: bool) -> void:
+	_voice_available = available
+	for button in _voice_buttons:
+		button.visible = available
+	if _desktop_voice_button != null:
+		_desktop_voice_button.visible = available
+		if not available and _desktop_voice_settings != null:
+			_desktop_voice_settings.visible = false
+	for section in _voice_settings_sections:
+		section.visible = available
 
 
 ## Adds the same actions to the existing world-anchored XR Tools menu.
@@ -114,22 +237,29 @@ func _wrap_xr_audio_section(contents: VBoxContainer) -> void:
 
 
 func _build_xr_session(contents: VBoxContainer) -> void:
-	var session := VBoxContainer.new()
-	session.name = "FriendSession"
-	session.add_theme_constant_override("separation", 8)
-	contents.add_child(session)
-	contents.move_child(session, 0)
+	var intro_nodes := contents.get_children()
+	_xr_tabs = TabContainer.new()
+	_xr_tabs.name = "FriendTabs"
+	_xr_tabs.custom_minimum_size.y = 455.0
+	_xr_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_xr_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	contents.add_child(_xr_tabs)
+	if _xr_audio_scroll != null:
+		_xr_audio_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var session := _create_xr_tab("Session")
+	var intro := _create_xr_tab("Intro")
+	for child in intro_nodes:
+		child.reparent(intro)
+	_xr_settings = _create_xr_tab("Avatar")
+	_xr_voice = _create_xr_tab("Voice")
+	var mix := _create_xr_tab("Mix")
+	var mushi := _create_xr_tab("Mushi")
 	var title := Label.new()
 	title.text = "MUSHI LANTERN"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Color("e2d8f1"))
 	session.add_child(title)
-	var subtitle := Label.new()
-	subtitle.text = "A quiet night walk through the grove"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 15)
-	session.add_child(subtitle)
 	_xr_status = Label.new()
 	_xr_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_xr_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -138,24 +268,35 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	session.add_child(HSeparator.new())
 	var start := _add_xr_button(session, "Start / restart", _on_new_game)
 	start.name = "XRStartButton"
-	var settings := _add_xr_button(session, "Settings", _toggle_xr_settings)
-	settings.name = "XRSettingsButton"
-	var audio := _add_xr_button(session, "Audio", _toggle_xr_audio)
-	audio.name = "XRAudioButton"
+	_xr_start = start
+	_xr_start.disabled = _shared_role == "client"
+	_add_voice_mute_button(session)
 	var quit := _add_xr_button(session, "Quit", _on_quit)
 	quit.name = "XRQuitButton"
-	_move_existing_button(contents, session, "Skip introduction")
-	_move_existing_button(contents, session, "Open tuning sandbox")
-	_move_existing_button(contents, session, "Close tuning sandbox")
-	_xr_settings = VBoxContainer.new()
-	_xr_settings.name = "XRQualitySettings"
-	_xr_settings.visible = false
-	_xr_settings.add_theme_constant_override("separation", 6)
-	session.add_child(_xr_settings)
 	_add_xr_button(_xr_settings, "Quality: Default", func() -> void: quality_profile_requested.emit("default"))
 	_add_xr_button(_xr_settings, "Quality: Performance", func() -> void: quality_profile_requested.emit("performance"))
+	_add_avatar_fit_sliders(_xr_settings)
 	if _xr_audio != null:
-		session.add_child(_xr_audio)
+		var bus_rows := 0
+		for child in _xr_audio.get_children():
+			var bus_row := child is HBoxContainer and bus_rows < 5
+			if bus_row:
+				bus_rows += 1
+			child.reparent(mix if bus_rows < 5 or bus_row else mushi)
+		_xr_audio.queue_free()
+		_xr_audio = null
+	_add_voice_settings(_xr_voice, true)
+	_xr_tabs.current_tab = 0
+
+
+func _create_xr_tab(title: String) -> VBoxContainer:
+	var page := VBoxContainer.new()
+	page.name = title
+	page.add_theme_constant_override("separation", 7)
+	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_xr_tabs.add_child(page)
+	return page
 
 
 func _move_existing_button(source: VBoxContainer, destination: VBoxContainer, wanted_text: String) -> void:
@@ -181,6 +322,7 @@ func _toggle_xr_audio() -> void:
 		return
 	_xr_audio.visible = not _xr_audio.visible
 	if _xr_audio.visible and _xr_audio_scroll != null:
+		voice_devices_requested.emit()
 		_xr_audio_scroll.call_deferred("ensure_control_visible", _xr_audio)
 
 
@@ -231,9 +373,26 @@ func _build_desktop_menu() -> void:
 	subtitle.add_theme_color_override("font_color", Color("bdc9c5"))
 	stack.add_child(subtitle)
 	stack.add_child(HSeparator.new())
-	_add_desktop_button(stack, "Start / restart", _on_new_game)
+	_desktop_start = _add_desktop_button(stack, "Start / restart", _on_new_game)
+	_desktop_start.disabled = _shared_role == "client"
 	_add_desktop_button(stack, "Settings", _on_settings)
+	_add_desktop_button(stack, "Avatar fit", func() -> void:
+		_desktop_avatar_fit.visible = not _desktop_avatar_fit.visible)
+	_desktop_avatar_fit = VBoxContainer.new()
+	_desktop_avatar_fit.visible = false
+	stack.add_child(_desktop_avatar_fit)
+	_add_avatar_fit_sliders(_desktop_avatar_fit)
 	_add_desktop_button(stack, "Audio", func() -> void: audio_settings_requested.emit())
+	_add_voice_mute_button(stack)
+	_desktop_voice_button = _add_desktop_button(stack, "Microphone", func() -> void:
+		_desktop_voice_settings.visible = not _desktop_voice_settings.visible
+		if _desktop_voice_settings.visible:
+			voice_devices_requested.emit())
+	_desktop_voice_button.visible = _voice_available
+	_desktop_voice_settings = VBoxContainer.new()
+	_desktop_voice_settings.visible = false
+	stack.add_child(_desktop_voice_settings)
+	_add_voice_settings(_desktop_voice_settings)
 	_add_desktop_button(stack, "Quit", _on_quit)
 	stack.add_child(HSeparator.new())
 	_desktop_status = Label.new()
@@ -264,15 +423,24 @@ func _build_desktop_menu() -> void:
 	close_hint.add_theme_font_size_override("font_size", 13)
 	close_hint.add_theme_color_override("font_color", Color("8b9b98"))
 	stack.add_child(close_hint)
+	_restart_confirm = ConfirmationDialog.new()
+	_restart_confirm.title = "Restart shared game?"
+	_restart_confirm.dialog_text = "Reset the mushi and score for everyone in this session?"
+	_restart_confirm.confirmed.connect(func() -> void:
+		new_game_requested.emit()
+		set_open(false)
+	)
+	add_child(_restart_confirm)
 
 
-func _add_desktop_button(parent: VBoxContainer, text: String, callback: Callable) -> void:
+func _add_desktop_button(parent: VBoxContainer, text: String, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.custom_minimum_size.y = 48.0
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(callback)
 	parent.add_child(button)
+	return button
 
 
 func _add_xr_button(parent: VBoxContainer, text: String, callback: Callable) -> Button:
@@ -286,6 +454,18 @@ func _add_xr_button(parent: VBoxContainer, text: String, callback: Callable) -> 
 
 
 func _on_new_game() -> void:
+	if _shared_role == "client":
+		return
+	if _shared_role == "host":
+		if _desktop_visible:
+			_restart_confirm.popup_centered()
+			return
+		if not _xr_restart_armed:
+			_xr_restart_armed = true
+			_xr_start.text = "Confirm restart for everyone"
+			return
+		_xr_restart_armed = false
+		_xr_start.text = "Start / restart"
 	new_game_requested.emit()
 	if _desktop_visible:
 		set_open(false)
@@ -293,6 +473,183 @@ func _on_new_game() -> void:
 
 func _on_settings() -> void:
 	settings_requested.emit()
+
+
+func _add_avatar_fit_sliders(parent: VBoxContainer) -> void:
+	_add_avatar_fit_slider(parent, "XR standing eye height (m)", "height", 1.1, 2.1, _avatar_fit_height)
+	_add_avatar_fit_slider(parent, "Arm reach", "reach", 0.9, 1.5, _avatar_fit_reach)
+
+
+func _add_avatar_fit_slider(parent: VBoxContainer, title: String, key: String,
+		minimum: float, maximum: float, initial: float) -> void:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var label := Label.new()
+	label.text = title
+	label.custom_minimum_size.x = 190.0
+	row.add_child(label)
+	var slider := HSlider.new()
+	slider.min_value = minimum
+	slider.max_value = maximum
+	slider.step = 0.01
+	slider.value = initial
+	slider.custom_minimum_size.x = 135.0
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(slider)
+	var value_label := Label.new()
+	value_label.text = "%.2f" % initial
+	value_label.custom_minimum_size.x = 38.0
+	row.add_child(value_label)
+	_avatar_fit_controls.append({"key": key, "slider": slider, "value_label": value_label})
+	slider.value_changed.connect(_on_avatar_fit_slider_changed.bind(key))
+
+
+func _on_avatar_fit_slider_changed(value: float, key: String) -> void:
+	if key == "height":
+		_avatar_fit_height = value
+	else:
+		_avatar_fit_reach = value
+	_avatar_fit_pending = true
+	for control in _avatar_fit_controls:
+		var current := _avatar_fit_height if control.key == "height" else _avatar_fit_reach
+		(control.slider as HSlider).set_value_no_signal(current)
+		(control.value_label as Label).text = "%.2f" % current
+
+
+func _add_voice_mute_button(parent: VBoxContainer) -> void:
+	var button := Button.new()
+	button.text = "Unmute mic" if _voice_muted else "Mute mic"
+	button.visible = _voice_available
+	button.custom_minimum_size.y = 46.0
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.pressed.connect(func() -> void:
+		_voice_muted = not _voice_muted
+		for other in _voice_buttons:
+			other.text = "Unmute mic" if _voice_muted else "Mute mic"
+		voice_mute_changed.emit(_voice_muted))
+	parent.add_child(button)
+	_voice_buttons.append(button)
+
+
+func _add_voice_settings(parent: VBoxContainer, xr_cycle: bool = false) -> void:
+	var section := VBoxContainer.new()
+	section.visible = _voice_available
+	parent.add_child(section)
+	_voice_settings_sections.append(section)
+	var title := Label.new()
+	title.text = "Microphone input"
+	section.add_child(title)
+	if xr_cycle:
+		var cycle := Button.new()
+		cycle.text = "Mic: " + _voice_device
+		cycle.custom_minimum_size.y = 46.0
+		cycle.pressed.connect(func() -> void:
+			var index := _voice_devices.find(_voice_device)
+			_voice_device = _voice_devices[(index + 1) % _voice_devices.size()]
+			voice_input_device_changed.emit(_voice_device))
+		section.add_child(cycle)
+		_voice_device_cycle_buttons.append(cycle)
+	else:
+		var option := OptionButton.new()
+		option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		section.add_child(option)
+		_voice_device_options.append(option)
+		option.item_selected.connect(func(index: int) -> void:
+			_voice_device = option.get_item_text(index)
+			voice_input_device_changed.emit(_voice_device))
+	var refresh := Button.new()
+	refresh.text = "Refresh microphones"
+	refresh.pressed.connect(func() -> void: voice_devices_requested.emit())
+	section.add_child(refresh)
+	var row := HBoxContainer.new()
+	section.add_child(row)
+	var label := Label.new()
+	label.text = "Input gain"
+	row.add_child(label)
+	var slider := HSlider.new()
+	slider.min_value = -24.0
+	slider.max_value = 24.0
+	slider.step = 1.0
+	slider.custom_minimum_size.x = 160.0
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(slider)
+	_voice_gain_sliders.append(slider)
+	var value_label := Label.new()
+	value_label.custom_minimum_size.x = 55.0
+	row.add_child(value_label)
+	_voice_gain_labels.append(value_label)
+	slider.value_changed.connect(func(value: float) -> void:
+		_voice_gain_db = value
+		for other in _voice_gain_sliders:
+			other.set_value_no_signal(value)
+		for other in _voice_gain_labels:
+			other.text = "%+.0f dB" % value
+		voice_gain_changed.emit(value))
+	var gate_row := HBoxContainer.new()
+	section.add_child(gate_row)
+	var gate_title := Label.new()
+	gate_title.text = "Noise gate"
+	gate_row.add_child(gate_title)
+	var gate := HSlider.new()
+	gate.min_value = -60.0
+	gate.max_value = -20.0
+	gate.step = 1.0
+	gate.custom_minimum_size.x = 160.0
+	gate.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gate_row.add_child(gate)
+	_voice_gate_sliders.append(gate)
+	var gate_value := Label.new()
+	gate_value.custom_minimum_size.x = 75.0
+	gate_row.add_child(gate_value)
+	_voice_gate_labels.append(gate_value)
+	gate.value_changed.connect(func(value: float) -> void:
+		_voice_gate_db = value
+		for other in _voice_gate_sliders:
+			other.set_value_no_signal(value)
+		for other in _voice_gate_labels:
+			other.text = "%.0f dBFS" % value
+		voice_gate_changed.emit(value))
+	var receive_row := HBoxContainer.new()
+	section.add_child(receive_row)
+	var receive_title := Label.new()
+	receive_title.text = "Other voices"
+	receive_row.add_child(receive_title)
+	var receive := HSlider.new()
+	receive.min_value = -30.0
+	receive.max_value = 12.0
+	receive.step = 1.0
+	receive.custom_minimum_size.x = 160.0
+	receive.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	receive_row.add_child(receive)
+	_voice_receive_sliders.append(receive)
+	var receive_value := Label.new()
+	receive_value.custom_minimum_size.x = 55.0
+	receive_row.add_child(receive_value)
+	_voice_receive_labels.append(receive_value)
+	receive.value_changed.connect(func(value: float) -> void:
+		_voice_receive_gain_db = value
+		for other in _voice_receive_sliders:
+			other.set_value_no_signal(value)
+		for other in _voice_receive_labels:
+			other.text = "%+.0f dB" % value
+		voice_receive_gain_changed.emit(value))
+	var meter := ProgressBar.new()
+	meter.min_value = -80.0
+	meter.max_value = 0.0
+	meter.show_percentage = false
+	meter.custom_minimum_size.y = 18.0
+	section.add_child(meter)
+	_voice_meter_bars.append(meter)
+	var meter_label := Label.new()
+	section.add_child(meter_label)
+	_voice_meter_labels.append(meter_label)
+	var hint := Label.new()
+	hint.text = "Meter is local even while muted. Set the gate above room noise."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	section.add_child(hint)
+	set_voice_controls(_voice_muted, _voice_device, _voice_devices, _voice_gain_db,
+		_voice_gate_db, _voice_receive_gain_db)
+	set_voice_meter(-80.0)
 
 
 func _toggle_xr_settings() -> void:
