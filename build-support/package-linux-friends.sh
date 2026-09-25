@@ -67,6 +67,20 @@ if [[ -z "$patchelf_bin" ]]; then
   patchelf_bin="$patchelf_out/bin/patchelf"
 fi
 python3 build-support/bundle-linux-runtime.py "$package_dir" --patchelf "$patchelf_bin"
+glibc_dir="${GLIBC_RUNTIME:-}"
+if [[ -z "$glibc_dir" ]]; then
+  mkdir -p .local
+  glibc_dir="$(nix-build build-support/linux-glibc.nix -o .local/linux-glibc --cores "${JOBS:-4}")"
+fi
+python3 build-support/install-linux-glibc.py "$package_dir" --glibc "$glibc_dir" --patchelf "$patchelf_bin"
+# With the bundled loader as /proc/self/exe, Godot looks for this PCK name
+# next to the loader. This template disables --main-pack path overrides.
+mv "$package_dir/mushi-lantern.pck" "$package_dir/lib/ld-linux-x86-64.so.pck"
+# Godot also resolves unpacked GDExtension paths relative to /proc/self/exe.
+mv "$package_dir/addons" "$package_dir/lib/addons"
+glibc_source="$(nix-instantiate --eval --strict --json --expr '(import ./build-support/linux-glibc.nix {}).src.outPath' | python3 -c 'import json,sys; print(json.load(sys.stdin))')"
+mkdir -p "$package_dir/licenses/glibc"
+tar -xOf "$glibc_source" glibc-2.43/COPYING.LIB > "$package_dir/licenses/glibc/COPYING.LIB"
 cat > "$package_dir/README-Linux.txt" <<'EOF'
 Mushi Lantern Linux x86_64 friend build
 
@@ -78,16 +92,16 @@ archive includes its standalone game executable; no Godot installation is
 needed.
 
 The game needs a Vulkan-capable graphics driver. Steam Audio's optional GPU
-utilities may need OpenCL from the graphics driver. Non-glibc game libraries
-are bundled; graphics drivers, the OpenXR runtime, and system glibc come from
-your Linux install. This package requires glibc 2.38 or newer. Third-party
-notices are in the licenses directory.
+utilities may need OpenCL from the graphics driver. Game libraries and a
+matched glibc 2.43 runtime are bundled; graphics drivers and the OpenXR
+runtime come from your Linux install. Third-party notices are in the licenses
+directory.
 
-Portability smoke: tested on natto (Ubuntu 26.04.1 x86_64, glibc 2.43) with
-/nix hidden. The game started under isolated Sway/Wayland, rendered through
-Vulkan 1.4.335 on AMD Radeon 780M (RADV PHOENIX), and exited cleanly after 240
-frames. This checks startup, rendering, and exit; it does not qualify headset
-behavior, OpenXR, performance on other hardware, or VR comfort.
+Portability smoke: tested on natto (Ubuntu 26.04.1 x86_64) with /nix hidden.
+The game started under isolated Sway/Wayland, rendered through Vulkan 1.4.335
+on AMD Radeon 780M (RADV PHOENIX), and exited cleanly after 240 frames. This
+checks startup, rendering, and exit; it does not qualify headset behavior,
+OpenXR, performance on other hardware, or VR comfort.
 EOF
 
 python3 - "$package_dir" "$archive" <<'PY'
