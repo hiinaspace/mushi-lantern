@@ -40,6 +40,22 @@ func get_settings() -> Dictionary:
 	return _settings.duplicate()
 
 
+func apply_profile(profile: String) -> void:
+	if profile not in ["default", "performance"]:
+		return
+	var low := profile == "performance"
+	var target_population := 512 if low else 1024
+	_settings["vegetation"] = "low" if low else "high"
+	_settings["shadows"] = "low" if low else "high"
+	_settings["render_scale"] = 0.8 if low else 1.0
+	_settings["population"] = target_population
+	_pending_population = target_population
+	_sync_controls()
+	_save_settings()
+	settings_changed.emit(get_settings())
+	population_reset_requested.emit(target_population)
+
+
 func is_open() -> bool:
 	return _panel != null and _panel.visible
 

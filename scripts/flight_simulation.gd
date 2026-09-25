@@ -30,8 +30,10 @@ var lantern_response_factors := PackedFloat32Array()
 var mushroom_response_factors := PackedFloat32Array()
 var neighbor_visits: int = 0
 var goal_position := Vector2.ZERO
-var goal_radius: float = 2.05
+var goal_radius: float = 2.65
 var goal_dwell_seconds: float = 0.45
+## Tutorial gate: progress is accepted only after the scripted reveal completes.
+var goal_accepting: bool = true
 var obstacle_centers := PackedVector2Array()
 var obstacle_radii := PackedFloat32Array()
 var mushroom_centers := PackedVector2Array()
@@ -651,6 +653,11 @@ func _goal_resistance(position: Vector3) -> Vector3:
 
 
 func _update_goal(index: int, position: Vector3, delta: float) -> void:
+	if lifecycles[index] != Lifecycle.ACTIVE:
+		return
+	if not goal_accepting:
+		_goal_dwells[index] = 0.0
+		return
 	if Vector2(position.x, position.z).distance_to(goal_position) <= goal_radius:
 		_goal_dwells[index] += delta
 		if _goal_dwells[index] >= goal_dwell_seconds:

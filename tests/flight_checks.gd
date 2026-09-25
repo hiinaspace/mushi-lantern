@@ -12,6 +12,7 @@ func _init() -> void:
 	_test_sleep_settle_and_orange_wake()
 	_test_blue_target_and_orange_direction()
 	_test_goal_scores_once()
+	_test_goal_acceptance_requires_fresh_dwell()
 	_test_mixed_run_finite()
 	_benchmark(24)
 	_benchmark(64)
@@ -124,6 +125,26 @@ func _test_goal_scores_once() -> void:
 		sim.step(1.0 / 60.0, _clear_field())
 	_expect(sim.score == 1 and sim.lifecycles[0] == FlightSimulation.Lifecycle.RELEASED, "flight-band goal scores once and completes ascent")
 	_expect(sim.active_count() == 0, "released flyer leaves social population")
+
+
+func _test_goal_acceptance_requires_fresh_dwell() -> void:
+	var sim := _single_agent_sim(_isolated_preset())
+	sim.goal_position = Vector2.ZERO
+	sim.goal_radius = 2.0
+	sim.goal_dwell_seconds = 0.12
+	sim.goal_accepting = false
+	for _tick: int in 30:
+		sim._update_goal(0, sim.positions[0], 1.0 / 60.0)
+	_expect(sim._goal_dwells[0] == 0.0 and sim.score == 0 and sim.lifecycles[0] == FlightSimulation.Lifecycle.ACTIVE, "closed goal gate clears dwell without changing active state or score")
+	sim.goal_accepting = true
+	for _tick: int in 7:
+		sim._update_goal(0, sim.positions[0], 1.0 / 60.0)
+	_expect(sim.score == 0 and sim._goal_dwells[0] < sim.goal_dwell_seconds, "reopened goal requires a fresh dwell interval")
+	sim._update_goal(0, sim.positions[0], 1.0 / 60.0)
+	_expect(sim.score == 1 and sim.lifecycles[0] == FlightSimulation.Lifecycle.COMMITTED, "fresh dwell commits after the gate opens")
+	for _tick: int in 30:
+		sim._update_goal(0, sim.positions[0], 1.0 / 60.0)
+	_expect(sim.score == 1, "goal acceptance scores each agent once")
 
 
 func _test_mixed_run_finite() -> void:

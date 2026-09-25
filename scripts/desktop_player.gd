@@ -8,10 +8,16 @@ signal lamp_aim_motion(relative: Vector2)
 
 var world_surface: Variant
 var controls_enabled: bool = true
+var movement_enabled: bool = true
 
 var camera: Camera3D
 var look_enabled: bool = true
 var _pitch: float = -0.12
+
+# Desktop holds the lantern staff like a low, off-side FPS tool. Keeping the
+# transform calculation on the desktop driver makes its relation to the view
+# explicit while the staff itself remains a world-space object.
+const STAFF_HOLD_OFFSET := Vector3(0.56, -0.06, -0.72)
 
 func _ready() -> void:
 	camera = get_node("Camera") as Camera3D
@@ -22,10 +28,10 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	if not controls_enabled or (look_enabled and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED) or get_viewport().gui_get_focus_owner() is LineEdit:
+	if not controls_enabled or not movement_enabled or (look_enabled and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED) or get_viewport().gui_get_focus_owner() is LineEdit:
 		input = Vector2.ZERO
-	if Input.is_key_pressed(KEY_SHIFT):
-		input *= 0.3
+	if not Input.is_key_pressed(KEY_SHIFT):
+		input *= 0.6
 	var local_direction := Vector3(input.x, 0.0, input.y)
 	var world_direction := global_basis * local_direction
 	velocity.x = world_direction.x * move_speed
@@ -63,7 +69,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and controls_enabled and look_enabled and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-			lamp_aim_motion.emit(motion.relative)
+			# Give the cursor a useful reach across the view while captured. The
+			# lantern remains staff-driven, but a modest gain makes it feel like
+			# pointing into the scene instead of nudging a tiny wrist arc.
+			lamp_aim_motion.emit(motion.relative * 1.8)
 			return
 		rotate_y(-motion.relative.x * mouse_sensitivity)
 		_pitch = clampf(_pitch - motion.relative.y * mouse_sensitivity, -1.3, 1.05)
@@ -78,3 +87,11 @@ func reset_look() -> void:
 	velocity = Vector3.ZERO
 	if camera != null:
 		camera.rotation = Vector3(_pitch, 0.0, 0.0)
+
+
+func staff_hold_transform(aim: Vector2) -> Transform3D:
+	if camera == null:
+		return global_transform
+	var offset := STAFF_HOLD_OFFSET + Vector3(aim.x * 0.38, aim.y * 0.24, 0.0)
+	var staff_basis := camera.global_basis * Basis.from_euler(Vector3(-0.10 + aim.y * 0.52, aim.x * 0.58, 0.0))
+	return Transform3D(staff_basis.orthonormalized(), camera.global_transform * offset)

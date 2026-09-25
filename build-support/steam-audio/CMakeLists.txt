@@ -4,6 +4,9 @@ add_subdirectory("${GODOT_CPP_SOURCE}" godot-cpp)
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_library(godot-steam-audio SHARED ${SOURCES})
 target_include_directories(godot-steam-audio PRIVATE src "${STEAM_AUDIO_SDK}/include")
+if(NOT DEFINED GODOTCPP_TARGET)
+  set(GODOTCPP_TARGET "template_debug")
+endif()
 if(WIN32)
   set(STEAM_AUDIO_PLATFORM "windows")
   target_link_libraries(godot-steam-audio PRIVATE godot-cpp "${STEAM_AUDIO_SDK}/lib/windows-x64/phonon.lib")
@@ -17,5 +20,5 @@ else()
 endif()
 target_compile_features(godot-steam-audio PRIVATE cxx_std_17)
 set_target_properties(godot-steam-audio PROPERTIES
-  OUTPUT_NAME "godot-steam-audio.${STEAM_AUDIO_PLATFORM}.template_debug.x86_64"
+  OUTPUT_NAME "godot-steam-audio.${STEAM_AUDIO_PLATFORM}.${GODOTCPP_TARGET}.x86_64"
   BUILD_RPATH "$ORIGIN")

@@ -24,11 +24,17 @@ tracker = &"left_hand"
 max_speed = 2.8
 strafe = true
 
+[node name="MovementTurn" parent="LeftController" instance=ExtResource("4")]
+turn_mode = 2
+smooth_turn_speed = 2.0
+step_turn_angle = 30.0
+
 [node name="Hand" parent="LeftController" instance=ExtResource("5")]
 
 [node name="Pointer" parent="LeftController" instance=ExtResource("7")]
 enabled = false
 distance = 4.0
+laser_length = 1
 
 [node name="Pickup" parent="LeftController" instance=ExtResource("10")]
 pickup_axis_action = "grip"
@@ -38,6 +44,10 @@ ranged_enable = false
 
 [node name="RightController" type="XRController3D" parent="."]
 tracker = &"right_hand"
+
+[node name="MovementDirect" parent="RightController" instance=ExtResource("3")]
+max_speed = 2.8
+strafe = true
 
 [node name="MovementTurn" parent="RightController" instance=ExtResource("4")]
 turn_mode = 2
@@ -49,6 +59,7 @@ step_turn_angle = 30.0
 [node name="Pointer" parent="RightController" instance=ExtResource("7")]
 enabled = false
 distance = 4.0
+laser_length = 1
 
 [node name="Pickup" parent="RightController" instance=ExtResource("10")]
 pickup_axis_action = "grip"
@@ -66,7 +77,7 @@ push_rigid_bodies = false
 
 [node name="MenuSurface" parent="Camera" instance=ExtResource("8")]
 visible = false
-position = Vector3(0, -0.04, -1.35)
+position = Vector3(0, -0.12, -0.78)
 screen_size = Vector2(0.9, 0.55)
 viewport_size = Vector2(900, 550)
 scene = ExtResource("9")

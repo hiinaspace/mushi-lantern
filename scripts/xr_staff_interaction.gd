@@ -15,7 +15,6 @@ const ADJUST_HAPTIC_MAX_SPEED := 1.4
 const RECALL_HAPTIC_INTERVAL := 0.62
 const RECALL_HAPTIC := 0.045
 const GRIP_THRESHOLD := 0.65
-const HIGHLIGHT_RING := preload("res://addons/godot-xr-tools/objects/highlight/highlight_ring.tscn")
 
 class ControlHighlight extends Node3D:
 	signal highlight_updated(pickable: Node3D, enabled: bool)
@@ -40,8 +39,8 @@ var _pending_drop: bool = false
 var _tracking_suspended: bool = false
 var _saved_hand_pose: Transform3D = Transform3D.IDENTITY
 var _hint: ControlHighlight
-var _shaft_ring: XRToolsHighlightRing
 var _shaft_highlight_requested := false
+var _highlight_phase := 0.0
 var _adjust_haptic_elapsed := 0.0
 var _adjust_haptic_shutter := 0.0
 var _adjust_haptic_dial := 0.0
@@ -55,19 +54,9 @@ func configure(tool: StaffTool, player_rig: MushiXRPlayer) -> void:
 	_controllers = [rig.left_controller, rig.right_controller]
 	_pickups = [rig.left_pickup, rig.right_pickup]
 	staff.dropped.connect(_on_staff_dropped)
-	_shaft_ring = HIGHLIGHT_RING.instantiate() as XRToolsHighlightRing
-	_shaft_ring.name = "ShaftGripHighlight"
-	_shaft_ring.mesh = _shaft_ring.mesh.duplicate()
-	(_shaft_ring.mesh as QuadMesh).size = Vector2(0.17, 0.17)
-	staff.add_child(_shaft_ring)
 	staff.highlight_updated.connect(_on_shaft_highlight_updated)
 	_hint = ControlHighlight.new()
 	_hint.name = "LanternControlGripHint"
-	var control_ring := HIGHLIGHT_RING.instantiate() as XRToolsHighlightRing
-	control_ring.name = "ControlGripHighlight"
-	control_ring.mesh = control_ring.mesh.duplicate()
-	(control_ring.mesh as QuadMesh).size = Vector2(0.13, 0.13)
-	_hint.add_child(control_ring)
 	rig.add_child(_hint)
 
 
@@ -141,7 +130,11 @@ func update(delta: float) -> void:
 	_hint.set_hovered(show_hint and _adjust_owner == null)
 	if _hint.hovered:
 		_hint.global_position = staff.control_world_position()
-	_shaft_ring.visible = _shaft_highlight_requested and not rig.is_menu_open() and not show_hint and _adjust_owner == null
+	_highlight_phase = fposmod(_highlight_phase + maxf(delta, 0.0) * 5.0, TAU)
+	var pulse := 0.28 + 0.32 * (0.5 + 0.5 * sin(_highlight_phase))
+	var shaft_hint := _shaft_highlight_requested and not rig.is_menu_open() and not show_hint and _adjust_owner == null
+	var control_hint := _hint.hovered and not rig.is_menu_open() and _adjust_owner == null
+	staff.set_interaction_hint(pulse if shaft_hint else 0.0, pulse if control_hint else 0.0)
 	_update_recall_haptics(delta)
 
 
@@ -269,5 +262,5 @@ func reset_for_run() -> void:
 		rig.set_pickups_enabled(true)
 	if _hint != null:
 		_hint.set_hovered(false)
-	if _shaft_ring != null:
-		_shaft_ring.visible = false
+	if staff != null:
+		staff.set_interaction_hint(0.0, 0.0)

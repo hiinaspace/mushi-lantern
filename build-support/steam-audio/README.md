@@ -14,8 +14,59 @@ a dependency on Prim's mutable checkout.
 GDExtension and its Steam Audio runtime into `addons/godot-steam-audio/bin`.
 The staged native libraries are ignored by Git; rerun the script after a fresh
 clone. The descriptor and icons are tracked. The descriptor lists other upstream
-platforms, but only Linux x86_64 debug is built by this recipe. Release and
-Windows export need separate pinned builds and tests.
+platforms, but only Linux x86_64 debug is built by that recipe.
+
+## Windows x86_64 release extension
+
+The pinned SDK runtime can be staged without a compiler build:
+
+```bash
+./build-support/steam-audio/stage-windows-sdk.sh
+```
+
+Then build the Windows release GDExtension on x86_64 Linux with Nix:
+
+```bash
+./build-support/steam-audio/build-windows.sh
+```
+
+The build uses the pinned nixpkgs revision's `pkgsCross.mingwW64` toolchain
+and the same pinned extension, godot-cpp, Steam Audio SDK, and patches as the
+Linux build. The stage script puts the Windows SDK runtime DLLs and import
+library in the addon's `bin` directory. The build script stages those again,
+plus `libgodot-steam-audio.windows.template_release.x86_64.dll` and the
+`libmcfgthread-2.dll` MinGW threading runtime. These generated binaries are
+intentionally ignored by Git and must be staged after a fresh checkout before
+Windows export. The matching mcfgthread license files are retained in the Nix
+output under `.local/steam-audio-windows/share/licenses/mcfgthread`.
+
+The Steam Audio helper DLLs depend on the Microsoft Visual C++ 2015–2022 x64
+redistributable and the OpenCL runtime supplied by the GPU driver. The package
+script documents these prerequisites and does not bundle Microsoft's runtime.
+
+The release preset uses this project's patched Godot 4.7.2 Windows template.
+Build it with `./tools/build-godot-windows-template.sh`; the package script
+does this automatically. The official Windows template is not equivalent,
+because it lacks the Steam Audio teardown fix. The pinned custom template
+build is documented in `build-support/godot/README.md`.
+
+Export with:
+
+```bash
+godot4 --headless --path . --export-release 'Windows OpenXR'
+```
+
+The preset writes `artifacts/export/windows/mushi-lantern.exe`. Its include
+filter carries the Steam Audio and godot-cpp license notices from this
+directory. Export and assemble a ZIP of the EXE, PCK, native DLLs, and notices
+with:
+
+```bash
+./build-support/steam-audio/package-windows.sh
+```
+
+A Wine desktop smoke test can catch packaging/loader mistakes but does not
+qualify native Windows or OpenXR PCVR behavior.
 
 The extension is MIT licensed (`UPSTREAM_EXTENSION_LICENSE.md`). The
 statically linked godot-cpp binding has its MIT notice in `GODOT_CPP_LICENSE.md`. Steam Audio's

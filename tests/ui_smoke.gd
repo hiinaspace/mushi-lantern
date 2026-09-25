@@ -70,7 +70,7 @@ func run_checks() -> void:
 	lab._load_named_preset(1) # Alphabetically smoke-flight before smoke-saved.
 	assert(lab.flight_enabled and lab.flight_toggle.button_pressed)
 	assert(lab.fixture_count == 64 and lab.simulation is FlightSimulation)
-	lab._update_agent_visuals(1.0)
+	lab._update_agent_visuals(1.0, 1.0 / 60.0)
 	assert(lab.agent_nodes.is_empty())
 	assert(lab.glyph_swarm != null)
 	assert(lab.glyph_swarm.instance_count == 64)

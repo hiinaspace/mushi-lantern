@@ -48,6 +48,18 @@ static func set_night_vision(environment: Environment, value: float) -> void:
 		sky_material.set_shader_parameter("night_vision", clampf(value, 0.0, 1.0))
 
 
+static func set_visual_tuning(environment: Environment, values: Dictionary) -> void:
+	if environment.sky == null:
+		return
+	var material := environment.sky.sky_material as ShaderMaterial
+	if material == null:
+		return
+	material.set_shader_parameter("star_reveal_start", float(values.get("star_start", 0.14)))
+	material.set_shader_parameter("star_reveal_end", float(values.get("star_end", 0.89)))
+	material.set_shader_parameter("milky_way_reveal_start", float(values.get("milky_start", 0.64)))
+	material.set_shader_parameter("milky_way_reveal_end", float(values.get("milky_end", 0.96)))
+
+
 static func add_beacon(parent: Node3D, ground_height: float) -> Node3D:
 	var beacon := Node3D.new()
 	beacon.name = "GoalSkyBeacon"

@@ -3,7 +3,6 @@ extends Node3D
 
 signal changed
 
-const FILTER_HALF_TIME := 0.12
 const BEHAVIOR_HALF_ANGLE_DEGREES := 55.0
 const BLIND_COUNT := 7
 const COOKIE_SIZE := 64
@@ -11,15 +10,21 @@ const COOKIE_STEPS := 16
 const HOUSING_SCALE := 0.7
 const DIAL_RANGE_YAW := 0.55
 const COLOR_SETTLE_TIME := 0.42
+const KEYBOARD_SHUTTER_SECONDS := 0.28
 
 var mode: LightField.Mode = LightField.Mode.BLUE
 var shutter_openness: float = 1.0
 var _last_open: float = 1.0
+var _shutter_tween: Tween
+var _shutter_target: float = 1.0
 var spot: SpotLight3D
+var housing_fill: OmniLight3D
 var glow_mesh: MeshInstance3D
 var filter_mesh: MeshInstance3D
 var night_vision: float = 1.0
 var _adaptation := NightAdaptation.new()
+var dark_adaptation_seconds := 6.0
+var light_adaptation_seconds := 1.5
 var _front_glow_material: ShaderMaterial
 var _glyph_materials: Array[StandardMaterial3D] = []
 var _side_glow_material: ShaderMaterial
@@ -40,7 +45,6 @@ var _last_visual_openness: float = -1.0
 var _requested_mode: LightField.Mode = LightField.Mode.BLUE
 var _transition_phase: int = 0
 var _transition_elapsed: float = 0.0
-var _transition_open: float = 1.0
 var _flame_time := 0.0
 var _flame_gain := 1.0
 var _projector_key := ""
@@ -67,6 +71,15 @@ func _build_visual() -> void:
 	spot.light_energy = 0.0
 	spot.light_volumetric_fog_energy = 0.0
 	add_child(spot)
+	# A restrained local source warms the lantern body and nearby hand or staff.
+	# It has no cookie or shadows; only the directional beam lights the scene.
+	housing_fill = OmniLight3D.new()
+	housing_fill.name = "LanternHousingFill"
+	housing_fill.position = Vector3(0.0, 0.0, -0.015)
+	housing_fill.omni_range = 0.72
+	housing_fill.omni_attenuation = 1.65
+	housing_fill.shadow_enabled = false
+	add_child(housing_fill)
 
 	var metal := _material(Color("514751"), 0.0)
 	var glass := _material(Color("2e3036"), 0.0)
@@ -268,6 +281,7 @@ func _mode_color(filter_mode: LightField.Mode) -> Color:
 
 func set_mode(new_mode: LightField.Mode) -> void:
 	_transition_phase = 0
+	_dial_preview_active = false
 	if not _dial_preview_active:
 		_settling_split = false
 		_settle_elapsed = 1.0
@@ -277,6 +291,7 @@ func set_mode(new_mode: LightField.Mode) -> void:
 	changed.emit()
 
 func begin_dial_preview() -> void:
+	_transition_phase = 0
 	_settling_split = false
 	_dial_preview_active = true
 	_dial_preview_amount = 0.0
@@ -319,31 +334,33 @@ func request_mode(new_mode: LightField.Mode) -> void:
 	if new_mode == _requested_mode:
 		return
 	_requested_mode = new_mode
-	if _transition_phase == 0:
-		_transition_open = shutter_openness
-		_transition_elapsed = 0.0
-		_transition_phase = 1
+	_transition_elapsed = 0.0
+	_transition_phase = 1
+	_settling_split = false
+	_dial_preview_active = true
+	_dial_preview_source = mode
+	_dial_preview_target = new_mode
+	_dial_preview_amount = 0.0
+	_apply_visual()
 
 func advance_transition(delta: float) -> void:
 	if _transition_phase == 0:
 		return
 	_transition_elapsed += clampf(delta, 0.0, 0.1)
-	var t := clampf(_transition_elapsed / FILTER_HALF_TIME, 0.0, 1.0)
-	if _transition_phase == 1:
-		shutter_openness = _transition_open * (1.0 - t)
-		if t >= 1.0:
-			mode = _requested_mode
-			_transition_phase = 2
-			_transition_elapsed = 0.0
-	else:
-		shutter_openness = _transition_open * t
-		if t >= 1.0:
-			_transition_phase = 0
+	var t := clampf(_transition_elapsed / COLOR_SETTLE_TIME, 0.0, 1.0)
+	_dial_preview_amount = smoothstep(0.0, 1.0, t)
+	if t >= 0.5:
+		mode = _requested_mode
+	if t >= 1.0:
+		_transition_phase = 0
+		_dial_preview_active = false
+		set_dial_preview(_mode_dial_position(mode))
 	_apply_visual()
 	changed.emit()
 
 func toggle_shutter() -> void:
-	_transition_phase = 0
+	_cancel_shutter_tween()
+	_cancel_keyboard_transition()
 	if shutter_openness > 0.02:
 		_last_open = shutter_openness
 		shutter_openness = 0.0
@@ -352,8 +369,37 @@ func toggle_shutter() -> void:
 	_apply_visual()
 	changed.emit()
 
+
+func toggle_shutter_animated() -> void:
+	# Desktop F is a visible physical shutter motion. Wheel and direct XR
+	# manipulation remain immediate and cancel this keyboard-only animation.
+	_cancel_keyboard_transition()
+	var closing := _shutter_target > 0.02 if _shutter_tween != null and _shutter_tween.is_running() else shutter_openness > 0.02
+	if closing:
+		_last_open = maxf(shutter_openness, _last_open)
+		_shutter_target = 0.0
+	else:
+		_shutter_target = maxf(_last_open, 0.55)
+	_cancel_shutter_tween()
+	_shutter_tween = create_tween()
+	_shutter_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_shutter_tween.tween_method(_apply_shutter_tween_value, shutter_openness, _shutter_target, KEYBOARD_SHUTTER_SECONDS)
+
+
+func _apply_shutter_tween_value(value: float) -> void:
+	shutter_openness = clampf(value, 0.0, 1.0)
+	_apply_visual()
+	changed.emit()
+
+
+func _cancel_shutter_tween() -> void:
+	if _shutter_tween != null and _shutter_tween.is_running():
+		_shutter_tween.kill()
+	_shutter_tween = null
+
 func adjust_shutter(amount: float) -> void:
-	_transition_phase = 0
+	_cancel_shutter_tween()
+	_cancel_keyboard_transition()
 	shutter_openness = clampf(shutter_openness + amount, 0.0, 1.0)
 	if shutter_openness > 0.02:
 		_last_open = shutter_openness
@@ -361,17 +407,24 @@ func adjust_shutter(amount: float) -> void:
 	changed.emit()
 
 func set_shutter(value: float, cancel_transition: bool = true) -> void:
+	_cancel_shutter_tween()
 	var bounded := clampf(value, 0.0, 1.0)
 	if cancel_transition:
-		_transition_phase = 0
-	elif _transition_phase != 0:
-		_transition_open = bounded
-		return
+		_cancel_keyboard_transition()
 	shutter_openness = bounded
 	if shutter_openness > 0.02:
 		_last_open = shutter_openness
 	_apply_visual()
 	changed.emit()
+
+
+func _cancel_keyboard_transition() -> void:
+	if _transition_phase == 0:
+		return
+	_transition_phase = 0
+	_dial_preview_active = false
+	_requested_mode = mode
+	set_dial_preview(_mode_dial_position(mode))
 
 func forward_direction() -> Vector3:
 	return -global_basis.z.normalized()
@@ -397,7 +450,21 @@ func advance_flame(delta: float) -> void:
 	_apply_visual()
 
 func advance_adaptation(delta: float, viewer_exposure: float = 1.0) -> void:
-	night_vision = _adaptation.advance(delta, mode, shutter_openness, viewer_exposure)
+	if delta > 0.0:
+		var destination := _adaptation.target(mode, shutter_openness, viewer_exposure)
+		var seconds := dark_adaptation_seconds if destination > night_vision else light_adaptation_seconds
+		night_vision = clampf(lerpf(night_vision, destination, 1.0 - exp(-delta / maxf(seconds, 0.01))), 0.0, 1.0)
+		_adaptation.night_vision = night_vision
+	_apply_visual()
+
+
+func set_adaptation_timing(dark_seconds: float, light_seconds: float) -> void:
+	dark_adaptation_seconds = clampf(dark_seconds, 0.1, 30.0)
+	light_adaptation_seconds = clampf(light_seconds, 0.1, 30.0)
+
+func reset_adaptation(value: float) -> void:
+	night_vision = clampf(value, 0.0, 1.0)
+	_adaptation.night_vision = night_vision
 	_apply_visual()
 
 func mode_label() -> String:
@@ -439,6 +506,10 @@ func _apply_visual() -> void:
 	else:
 		spot.light_color = color
 	spot.light_energy = base_energy * shutter_openness * _adaptation.lantern_gain() * _flame_gain
+	if housing_fill != null:
+		housing_fill.light_color = spot.light_color
+		# Retain a faint closed-shutter wick glow, then rise gently with aperture.
+		housing_fill.light_energy = (0.045 + shutter_openness * 0.34) * _flame_gain
 	for glow_material: ShaderMaterial in [_front_glow_material, _side_glow_material]:
 		glow_material.set_shader_parameter("filter_source", _mode_color(_dial_preview_source) if split_active else spot.light_color)
 		glow_material.set_shader_parameter("filter_target", _mode_color(_dial_preview_target))

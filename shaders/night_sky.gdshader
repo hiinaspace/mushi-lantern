@@ -1,6 +1,10 @@
 shader_type sky;
 
 uniform float night_vision : hint_range(0.0, 1.0) = 1.0;
+uniform float star_reveal_start = 0.14;
+uniform float star_reveal_end = 0.89;
+uniform float milky_way_reveal_start = 0.64;
+uniform float milky_way_reveal_end = 0.96;
 // Negative uses live TIME. A fixed value makes captures directly comparable.
 uniform float star_time_override = -1.0;
 
@@ -36,6 +40,17 @@ float star_disc(vec3 grid_position, vec3 center, float radius,
 		distance_to_star);
 }
 
+float horizon_gold_dot(vec2 uv, float threshold) {
+	vec2 cell = floor(uv);
+	vec3 random = star_hash(vec3(cell, 31.7));
+	vec2 center = vec2(0.5) + (random.yz - 0.5) * 0.3;
+	float disc = 1.0 - smoothstep(0.12, 0.22, length(fract(uv) - center));
+	float footprint = max(length(vec2(dFdx(uv.x), dFdy(uv.x))),
+		length(vec2(dFdx(uv.y), dFdy(uv.y))));
+	return step(threshold, random.x) * disc
+		* (1.0 - smoothstep(0.28, 0.85, footprint));
+}
+
 void sky() {
 	// Ambient and reflections use a separate, fixed dim color. The procedural
 	// detail is only drawn in the visible background pass.
@@ -46,17 +61,19 @@ void sky() {
 		float vision = clamp(night_vision, 0.0, 1.0);
 		float star_time = star_time_override >= 0.0 ? star_time_override : TIME;
 
-		// A tilted great-circle band has no projection seam. Two scales of
-		// continuous 3D noise give its haze irregular, soft cloud structure.
-		vec3 galactic_pole = normalize(vec3(0.48, 0.79, -0.38));
+		// A great-circle band has no projection seam. Its plane follows the
+		// grove's broad X-axis migration line and crosses overhead, giving the
+		// tutorial view a loose sky echo without copying the route's ground kink.
+		vec3 galactic_pole = normalize(vec3(0.0, 0.035, 1.0));
 		float latitude = abs(dot(direction, galactic_pole));
 		float wide_band = 1.0 - smoothstep(0.075, 0.31, latitude);
 		float inner_band = 1.0 - smoothstep(0.018, 0.13, latitude);
-		float cloud_shape = mix(cloud_noise(direction * 13.0),
-			cloud_noise(direction * 31.0), 0.30);
-		float mottling = smoothstep(0.18, 0.82, cloud_shape);
+		float cloud_shape = cloud_noise(direction * 7.0) * 0.20
+			+ cloud_noise(direction * 15.0) * 0.47
+			+ cloud_noise(direction * 37.0) * 0.33;
+		float mottling = smoothstep(0.21, 0.79, cloud_shape);
 		float galactic_haze = (wide_band * 0.42 + inner_band * 0.58)
-			* mix(0.58, 0.95, mottling) * vision * vision;
+			* mix(0.52, 1.0, mottling) * vision * vision;
 		// Small fixed screen-pixel dither breaks up Mobile HDR haze steps. It is
 		// applied only inside the band, leaving the black sky and stars intact.
 		vec2 pixel_size = max(fwidth(SCREEN_UV), vec2(0.000001));
@@ -104,7 +121,7 @@ void sky() {
 			float small_radius = mix(0.13, 0.21, small_random.z);
 			float small_disc = star_disc(small_grid, small_center,
 				small_radius, small_footprint);
-			float reveal_at = 0.14 + 0.75 * small_random.y;
+			float reveal_at = mix(star_reveal_start, star_reveal_end, small_random.y);
 			float revealed = smoothstep(reveal_at - 0.12,
 				reveal_at + 0.12, vision);
 			float small_brightness = mix(0.10, 0.62,
@@ -113,6 +130,25 @@ void sky() {
 				vec3(1.0, 0.96, 0.86), small_detail.x);
 			color += small_tint * small_disc * small_brightness * revealed;
 		}
+
+		// The river's two remote arms disappear behind the grove ridge. A few
+		// sky flecks continue them toward the low Milky Way. This is only a
+		// background cue, so all normal opaque depth still hides it.
+		float adapted = smoothstep(milky_way_reveal_start, milky_way_reveal_end, vision);
+		float x_axis = abs(direction.x);
+		float azimuth = direction.z / max(x_axis, 0.05);
+		float narrow_arm = exp(-pow(azimuth * 13.0, 2.0));
+		float soft_arm = exp(-pow(azimuth * 6.5, 2.0));
+		float low_sky = smoothstep(-0.015, 0.025, direction.y)
+			* (1.0 - smoothstep(0.055, 0.20, direction.y));
+		float arm_mask = adapted * low_sky * smoothstep(0.7, 0.95, x_axis);
+		vec2 fleck_uv = vec2(azimuth * 210.0 + sign(direction.x) * 37.0,
+			direction.y * 230.0 - star_time * 0.055);
+		float flecks = horizon_gold_dot(fleck_uv, 0.78);
+		flecks += 0.55 * horizon_gold_dot(fleck_uv * vec2(1.9, 2.1)
+			+ vec2(19.3, 7.1) - vec2(0.0, star_time * 0.035), 0.90);
+		color += vec3(0.95, 0.78, 0.20) * arm_mask
+			* (0.022 * soft_arm + 0.45 * narrow_arm * flecks);
 		COLOR = color;
 	}
 }

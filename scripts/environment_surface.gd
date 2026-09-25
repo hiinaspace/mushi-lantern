@@ -188,13 +188,13 @@ func _generate_props() -> void:
 	_add_kind(rng, "tree", roundi(110.0 * area_scale), 10.0)
 	_add_kind(rng, "rock", roundi(65.0 * area_scale), 8.0)
 	_add_kind(rng, "bush", roundi(210.0 * area_scale), 8.0)
-	_add_kind(rng, "grass", roundi(12000.0 * area_scale), 6.0)
+	_add_kind(rng, "grass", roundi(24000.0 * area_scale), 6.0)
 
 func _add_fixed_obstacle(kind: String, xz: Vector2, scale: float) -> void:
 	if not _prop_location_ok(xz, kind, 0.95 if kind == "rock" else 0.46):
 		push_warning("Skipping fixed %s at %s: patch, slope or clearing conflict" % [kind, xz])
 		return
-	props.append({"kind": kind, "position": Vector3(xz.x, get_height_at(xz), xz.y), "yaw": 0.0, "scale": scale, "radius": 0.46 if kind == "tree" else 0.95, "height": 4.2 if kind == "tree" else 1.4, "variant": 0})
+	props.append({"kind": kind, "position": Vector3(xz.x, get_height_at(xz), xz.y), "yaw": 0.0, "scale": scale, "radius": 0.46 if kind == "tree" else 0.95, "height": 5.8 if kind == "tree" else 1.4, "variant": 0})
 
 func _prop_location_ok(xz: Vector2, kind: String, radius: float) -> bool:
 	if basin_margin(xz) < 2.0:
@@ -234,7 +234,7 @@ func _add_kind(rng: RandomNumberGenerator, kind: String, target: int, inner_radi
 		match kind:
 			"tree":
 				radius = 0.46 * scale
-				prop_height = 4.2 * scale
+				prop_height = 5.8 * scale
 			"rock":
 				radius = 0.95 * scale
 				prop_height = 1.4 * scale

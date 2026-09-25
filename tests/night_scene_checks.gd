@@ -28,6 +28,9 @@ func _run() -> void:
 	_expect(user_args.has("--count") and user_args.has("512"), "explicit --count 512 fixture")
 	var lab: Node = load("res://scenes/main.tscn").instantiate()
 	root.add_child(lab)
+	# Enter play from the friend-facing start menu before measuring GPU ticks.
+	if lab.friend_menu != null:
+		lab.friend_menu.set_open(false)
 	lab.set_process_unhandled_input(false)
 	lab.player.set_process_unhandled_input(false)
 	lab.player.set_physics_process(false)

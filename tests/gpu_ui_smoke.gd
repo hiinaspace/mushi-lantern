@@ -17,7 +17,10 @@ func _run() -> void:
 	lab.set_process_unhandled_input(false)
 	lab.player.set_physics_process(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_expect(lab.current_preset.preset_name == "Loose trains", "accepted Loose trains tuning is the launch default")
+	_expect(lab.current_preset.preset_name == "Gentle herding", "friendlier herding is the launch default")
+	# This GPU fixture launches --flat-lab, where the diagnostic HUD is intentional.
+	# The friend-facing grove hides it until F1.
+	_expect((lab.hud_label.visible and lab.help_label.visible) if not lab.environment_enabled else (not lab.hud_label.visible and not lab.help_label.visible), "HUD visibility follows lab versus grove mode")
 	_expect(lab.fixture_count == 1024 and is_equal_approx(lab.strength_slider.value, 0.8) and is_equal_approx(lab.social_slider.value, 1.4) and is_equal_approx(lab.wander_slider.value, 0.8), "launch defaults match accepted population and live multipliers")
 	_expect(is_equal_approx(lab.current_preset.formation_follow_weight, 0.55) and is_equal_approx(lab.current_preset.cluster_pressure_weight, 1.1) and lab.current_preset.cluster_target_neighbors == 2, "launch preset keeps accepted loose-trio matching")
 	_expect(is_equal_approx(lab.current_preset.arousal_contagion_strength, 0.45) and is_equal_approx(lab.current_preset.arousal_scatter_strength, 0.65) and is_equal_approx(lab.current_preset.glyph_render_scale, 0.6), "launch preset keeps accepted contagion, scatter and glyph scale")

@@ -454,6 +454,8 @@ func _encode_params(delta: float, field: LightField, social_multiplier: float, w
 	p[75] = float(_environment.size_m) if _environment != null else 1.0
 	p[76] = float(_terrain_obstacle_count)
 	p[77] = _terrain_peak_height + max_height + 8.0
+	# p[78] is reserved for tutorial-controlled goal acceptance.
+	p[78] = 1.0 if goal_accepting else 0.0
 	# Sources live in separate, fixed-size GPU storage buffer and can be moved
 	# without rebuilding pipeline/uniform sets.
 	return p.to_byte_array()

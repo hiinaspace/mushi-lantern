@@ -26,6 +26,13 @@ var _source_id: int = 0
 var _source_revision: float = -INF
 var _traits_source_id: int = 0
 var _headings := PackedVector3Array()
+var _clear_light_fade := 0.0
+var clear_fade_start := 0.10
+var clear_fade_end := 0.65
+
+const CLEAR_FADE_MAX := 0.38
+const CLEAR_FADE_IN_SECONDS := 0.40
+const CLEAR_FADE_OUT_SECONDS := 2.20
 
 
 func _init() -> void:
@@ -81,6 +88,7 @@ func update_swarm(sim: Variant, alpha: float, preset: HerdPreset) -> void:
 	_material.set_shader_parameter("energy_neutral", preset.energy_neutral_target)
 	_material.set_shader_parameter("population_variation", preset.population_variation)
 	_material.set_shader_parameter("glyph_render_scale", clampf(preset.glyph_render_scale, 0.25, 2.0))
+	_material.set_shader_parameter("clear_light_fade", _clear_light_fade)
 	_apply_shader_options()
 
 	var gpu_texture: Variant = sim.get("state_texture")
@@ -94,6 +102,26 @@ func update_swarm(sim: Variant, alpha: float, preset: HerdPreset) -> void:
 		_upload_cpu_state(sim)
 		_source_id = source_id
 		_source_revision = revision
+
+
+## Clear navigation light gently reduces distant glyph contrast. Colored
+## herding light and a closed shutter immediately request visibility recovery;
+## the visual-only fade-out trails stellar adaptation by roughly 0.7 seconds.
+func update_visibility_context(night_vision: float, clear_mode: bool, shutter_openness: float, delta: float) -> void:
+	var clear_exposure := clampf(shutter_openness, 0.0, 1.0) if clear_mode else 0.0
+	var adapted_clear := 1.0 - smoothstep(clear_fade_start, clear_fade_end, clampf(night_vision, 0.0, 1.0))
+	var target := CLEAR_FADE_MAX * clear_exposure * adapted_clear
+	var seconds := CLEAR_FADE_OUT_SECONDS if target > _clear_light_fade else CLEAR_FADE_IN_SECONDS
+	if delta > 0.0:
+		_clear_light_fade = move_toward(_clear_light_fade, target, CLEAR_FADE_MAX * delta / seconds)
+	_material.set_shader_parameter("clear_light_fade", _clear_light_fade)
+
+
+func set_visual_tuning(values: Dictionary) -> void:
+	clear_fade_start = clampf(float(values.get("clear_start", 0.10)), 0.0, 0.98)
+	clear_fade_end = clampf(float(values.get("clear_end", 0.65)), clear_fade_start + 0.01, 1.0)
+	_material.set_shader_parameter("clear_fade_distance_start", float(values.get("clear_distance_start", 17.0)))
+	_material.set_shader_parameter("clear_fade_distance_end", float(values.get("clear_distance_end", 52.0)))
 
 
 func _upload_traits(sim: Variant) -> void:

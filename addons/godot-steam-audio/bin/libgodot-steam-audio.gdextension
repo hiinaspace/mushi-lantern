@@ -32,13 +32,15 @@ windows.x86_64.debug = {
     "res://addons/godot-steam-audio/bin/phonon.dll": "",
     "res://addons/godot-steam-audio/bin/phonon.lib": "",
     "res://addons/godot-steam-audio/bin/TrueAudioNext.dll": "",
-    "res://addons/godot-steam-audio/bin/GPUUtilities.dll": ""
+    "res://addons/godot-steam-audio/bin/GPUUtilities.dll": "",
+    "res://addons/godot-steam-audio/bin/libmcfgthread-2.dll": ""
 }
 windows.x86_64.release = {
     "res://addons/godot-steam-audio/bin/phonon.dll": "",
     "res://addons/godot-steam-audio/bin/phonon.lib": "",
     "res://addons/godot-steam-audio/bin/TrueAudioNext.dll": "",
-    "res://addons/godot-steam-audio/bin/GPUUtilities.dll": ""
+    "res://addons/godot-steam-audio/bin/GPUUtilities.dll": "",
+    "res://addons/godot-steam-audio/bin/libmcfgthread-2.dll": ""
 }
 linux.x86_64.debug = {
     "res://addons/godot-steam-audio/bin/libphonon.so": ""

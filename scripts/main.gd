@@ -2,6 +2,8 @@ extends Node3D
 
 const FIXED_STEP := 1.0 / 60.0
 const DEFAULT_SEED := 40721
+const GROVE_GOAL_RADIUS := 2.65
+const TUTORIAL_XZ := Vector2(-8.0, -2.0)
 const PATCH_CENTERS := [Vector2(-14.4, -13.2), Vector2(14.6, -12.0), Vector2(15.4, 13.6)]
 const ARENA_LAYOUT := "wide-60m-v1"
 const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
@@ -13,10 +15,22 @@ var world_surface: Variant
 var terrain_environment: Node3D
 var quality_menu: CanvasLayer
 var audio_mix_menu: Variant
+var friend_menu: FriendMenu
 var sun_light: DirectionalLight3D
 var night_environment: Environment
+var goal_shrine: GoalShrine
+var goal_beacon: Node3D
+var _last_shrine_score: int = -1
+var _tutorial_movement_locked: bool = false
+var _xr_tutorial_centered: bool = false
+var _xr_recenter_cooldown: float = 0.0
+var _tutorial_chain_label: Label3D
+var _tutorial_chain_marker: MeshInstance3D
 var _quality_settings: Dictionary = {}
 var _menu_was_paused: bool = false
+var _friend_was_paused: bool = false
+var _xr_menu_was_paused: bool = false
+var _desktop_tuning_open: bool = false
 
 var simulation: Variant = FlockSimulation.new()
 var flight_enabled: bool = true
@@ -32,7 +46,7 @@ var flight_goal_volume: MeshInstance3D
 var light_field := LightField.new()
 var presets: Array[HerdPreset] = HerdPreset.builtins()
 var current_preset: HerdPreset
-var current_preset_index: int = 8
+var current_preset_index: int = 9
 var current_seed: int = DEFAULT_SEED
 var fixture_count: int = 1024
 var accumulator: float = 0.0
@@ -53,6 +67,10 @@ var grove_audio: Node
 var top_camera: Camera3D
 var agent_nodes: Array[Node3D] = []
 var glyph_swarm: GlyphSwarm
+var return_handoff: ReturnHandoffVisual
+var tutorial_director: TutorialDirector
+var tutorial_guide: TutorialGuideVisual
+var tutorial_ui: TutorialUI
 var size_slider: HSlider
 var height_slider: HSlider
 var billboard_toggle: CheckBox
@@ -104,11 +122,25 @@ var _want_xr: bool = false
 var _desktop_aim: Vector2 = Vector2.ZERO
 var _desktop_recall_held: bool = false
 var _xr_recall_owner: XRController3D
-var _previous_xr_origin := Vector3.ZERO
-var _xr_origin_sampled := false
+var _skip_tutorial_requested := false
+var _force_tutorial := false
+var _last_tutorial_score := -1
+var _stream_visibility := 0.0
+var _visual_sliders: Dictionary = {}
+var _visual_tuning_defaults: Dictionary = {}
+var _visual_tuning := {
+	"dark_seconds": 6.0, "light_seconds": 1.5,
+	"stream_start": 0.18, "stream_end": 0.68, "stream_seconds": 1.2,
+	"star_start": 0.14, "star_end": 0.89, "milky_start": 0.64, "milky_end": 0.96,
+	"foliage_start": 0.90, "foliage_end": 0.99,
+	"clear_start": 0.10, "clear_end": 0.65, "clear_distance_start": 17.0, "clear_distance_end": 52.0,
+	"path_long": 1.0, "path_medium": 1.0, "path_long_speed": 1.0, "path_medium_speed": 1.0,
+	"surface_bump": 1.0, "surface_bump_speed": 1.0,
+}
 
 func _ready() -> void:
 	process_physics_priority = 100
+	_visual_tuning_defaults = _visual_tuning.duplicate()
 	_setup_input()
 	quality_menu = load("res://scripts/environment_settings.gd").new()
 	_quality_settings = quality_menu.get_settings()
@@ -125,11 +157,31 @@ func _ready() -> void:
 		debug_visible = false
 		flight_enabled = true
 		simulation_backend = "gpu"
+		simulation.goal_radius = GROVE_GOAL_RADIUS
 		world_surface = load("res://scripts/environment_surface.gd").create(terrain_size, DEFAULT_SEED)
 	_build_world()
 	_build_player()
 	if _want_xr:
 		_build_xr_player()
+	tutorial_director = TutorialDirector.new()
+	tutorial_director.goal_acceptance_changed.connect(_on_tutorial_goal_acceptance_changed)
+	tutorial_director.reveal_changed.connect(_on_tutorial_reveal_changed)
+	tutorial_director.adaptation_started.connect(_on_tutorial_adaptation_started)
+	tutorial_director.reward_unlocked.connect(_on_tutorial_reward_unlocked)
+	tutorial_director.guide_released.connect(_on_tutorial_guide_released)
+	tutorial_guide = TutorialGuideVisual.new()
+	tutorial_guide.name = "TutorialGuide"
+	add_child(tutorial_guide)
+	tutorial_ui = TutorialUI.new()
+	add_child(tutorial_ui)
+	tutorial_ui.skip_requested.connect(_skip_tutorial)
+	tutorial_ui.sandbox_visibility_changed.connect(_on_tutorial_sandbox_visibility_changed)
+	if xr_player != null and xr_player.xr_active:
+		tutorial_ui.attach_xr_camera(xr_player.camera)
+		_build_xr_tutorial_chain_cue()
+		var tutorial_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
+		if tutorial_surface.scene_node is Control:
+			tutorial_ui.attach_xr_menu(tutorial_surface.scene_node as Control)
 	_build_audio()
 	audio_mix_menu = load("res://scripts/audio_mix_panel.gd").new()
 	add_child(audio_mix_menu)
@@ -142,7 +194,10 @@ func _ready() -> void:
 		if xr_surface.scene_node is Control:
 			audio_mix_menu.attach_xr_menu(xr_surface.scene_node as Control)
 	_build_ui()
+	_apply_visual_tuning()
 	panel.visible = debug_visible
+	if xr_player != null and xr_player.xr_active:
+		tutorial_ui.attach_xr_sandbox(panel)
 	_apply_preset(current_preset_index, false)
 	_reset_run(false)
 	_load_saved_preset_names()
@@ -164,6 +219,22 @@ func _ready() -> void:
 	quality_menu.panel_visibility_changed.connect(_on_quality_visibility)
 	quality_menu.sync_population(fixture_count)
 	_apply_quality(_quality_settings)
+	friend_menu = FriendMenu.new()
+	add_child(friend_menu)
+	friend_menu.new_game_requested.connect(_on_friend_new_game)
+	friend_menu.settings_requested.connect(_on_friend_settings)
+	friend_menu.audio_settings_requested.connect(_on_friend_audio_settings)
+	friend_menu.quit_requested.connect(func() -> void: get_tree().quit())
+	friend_menu.quality_profile_requested.connect(quality_menu.apply_profile)
+	friend_menu.skip_requested.connect(_on_friend_skip)
+	friend_menu.tuning_requested.connect(_on_friend_tuning)
+	friend_menu.menu_visibility_changed.connect(_on_friend_menu_visibility)
+	if xr_player != null and xr_player.xr_active:
+		var friend_xr_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
+		if friend_xr_surface.scene_node is Control:
+			friend_menu.attach_xr_menu(friend_xr_surface.scene_node as Control)
+	elif environment_enabled and _screenshot_path.is_empty() and OS.get_environment("MUSHI_TEST_DATA_ROOT").is_empty():
+		friend_menu.set_open(true)
 	if _initial_mode >= 0:
 		lantern.set_mode(_initial_mode as LightField.Mode)
 	if start_top_down:
@@ -194,19 +265,44 @@ func _process(delta: float) -> void:
 			_update_hud()
 			hud_label.text += "\nPreparing GPU simulation…"
 			return
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if _tutorial_locks_shutter() and lantern.shutter_openness < 0.999:
+		lantern.set_shutter(1.0, false)
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter():
 		var shutter_delta := Input.get_axis("shutter_close", "shutter_open")
 		if shutter_delta != 0.0:
 			lantern.adjust_shutter(shutter_delta * delta * 0.6)
 	if not simulation_paused:
 		elapsed += delta
 		mode_times[int(lantern.mode)] += delta
-		if environment_enabled:
+		_recenter_xr_tutorial_if_needed(delta)
+		if tutorial_director != null and tutorial_director.stage == TutorialDirector.Stage.ADAPTATION:
+			# The five-second guided reveal owns both shutter and adaptation so
+			# other controls cannot interrupt the first sky/ground composition.
+			lantern.set_shutter(0.0)
+		elif environment_enabled:
 			lantern.advance_adaptation(delta, _viewer_lantern_exposure())
+		tutorial_director.advance(delta, int(lantern.mode), lantern.shutter_openness, lantern.night_vision)
+		if tutorial_director.stage == TutorialDirector.Stage.ADAPTATION:
+			lantern.reset_adaptation(tutorial_director.adaptation_progress)
+	_sync_tutorial_movement_lock()
+	if tutorial_guide != null:
+		tutorial_guide.set_guide_state(tutorial_director.guide_state)
+		if tutorial_director.tutorial_enabled and tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY:
+			tutorial_guide.visible = false
+	_update_stream_visibility(delta)
 	if night_environment != null:
 		NightEnvironment.set_night_vision(night_environment, lantern.night_vision)
+		if glyph_swarm != null:
+			glyph_swarm.update_visibility_context(lantern.night_vision, lantern.mode == LightField.Mode.CLEAR, lantern.shutter_openness, delta)
 		if terrain_environment != null:
 			terrain_environment.set_night_vision(lantern.night_vision)
+		for mushroom_patch: MushroomPatch in mushroom_nodes:
+			mushroom_patch.set_night_vision(lantern.night_vision)
+		if goal_shrine != null:
+			goal_shrine.set_night_vision(lantern.night_vision)
+			if simulation.score != _last_shrine_score:
+				_last_shrine_score = simulation.score
+				goal_shrine.set_progress(simulation.score, fixture_count)
 	light_field.update_transform(lantern.global_position, lantern.forward_direction())
 	light_field.shutter_openness = lantern.shutter_openness
 	light_field.mode = lantern.mode
@@ -221,8 +317,16 @@ func _process(delta: float) -> void:
 			simulation.step(active_step, light_field, social_slider.value, wander_slider.value)
 			sim_step_ms = lerpf(sim_step_ms, float(Time.get_ticks_usec() - step_start) / 1000.0, 0.05)
 			accumulator -= active_step
+	if tutorial_director != null and simulation.score != _last_tutorial_score:
+		_last_tutorial_score = simulation.score
+		tutorial_director.observe_score(simulation.score)
+	if tutorial_ui != null and tutorial_director != null:
+		tutorial_ui.update_director(tutorial_director, xr_player != null and xr_player.xr_active)
+	_update_xr_tutorial_chain_cue()
+	if friend_menu != null and tutorial_director != null:
+		friend_menu.update_session(tutorial_director.status_text, tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY, _tutorial_sandbox_available())
 	var visual_start := Time.get_ticks_usec()
-	_update_agent_visuals(accumulator / active_step)
+	_update_agent_visuals(accumulator / active_step, delta)
 	visual_update_ms = lerpf(visual_update_ms, float(Time.get_ticks_usec() - visual_start) / 1000.0, 0.05)
 	_update_hud()
 	_update_footprint()
@@ -236,9 +340,34 @@ func _process(delta: float) -> void:
 			_capture_and_quit()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if xr_player == null or not xr_player.xr_active:
+		if event.is_action_pressed("release_mouse") and friend_menu != null:
+			if _desktop_tuning_open:
+				_desktop_tuning_open = false
+				panel.visible = false
+				friend_menu.set_open(true)
+				get_viewport().set_input_as_handled()
+				return
+			if quality_menu != null and quality_menu.is_open():
+				quality_menu.set_open(false)
+				get_viewport().set_input_as_handled()
+				return
+			if audio_mix_menu != null and audio_mix_menu.is_open():
+				audio_mix_menu.set_open(false)
+				get_viewport().set_input_as_handled()
+				return
+			friend_menu.toggle()
+			get_viewport().set_input_as_handled()
+			return
+		if friend_menu != null and friend_menu.is_open():
+			return
+	if event.is_action_pressed("tutorial_skip") and tutorial_director != null and tutorial_director.tutorial_enabled:
+		_skip_tutorial()
+		get_viewport().set_input_as_handled()
+		return
 	if (quality_menu != null and quality_menu.is_open()) or (audio_mix_menu != null and audio_mix_menu.is_open()):
 		return
-	if (xr_player == null or not xr_player.xr_active) and event is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if (xr_player == null or not xr_player.xr_active) and event is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter():
 		var mouse := event as InputEventMouseButton
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_UP:
 			lantern.adjust_shutter(0.08)
@@ -250,6 +379,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 	if xr_player == null or not xr_player.xr_active:
 		if event.is_action_pressed("staff_drop_pickup"):
+			if tutorial_director != null and tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY:
+				get_viewport().set_input_as_handled()
+				return
 			if staff_tool.placement == StaffTool.Placement.HELD:
 				staff_tool.release_final()
 			elif player.camera.global_position.distance_to(staff_tool.global_position) < 2.5:
@@ -273,14 +405,22 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("mode_orange"):
 		lantern.request_mode(LightField.Mode.ORANGE)
 	elif event.is_action_pressed("shutter_toggle"):
-		lantern.toggle_shutter()
+		if _tutorial_locks_shutter():
+			get_viewport().set_input_as_handled()
+			return
+		if xr_player == null or not xr_player.xr_active:
+			lantern.toggle_shutter_animated()
+		else:
+			lantern.toggle_shutter()
 	elif event.is_action_pressed("reset_run"):
 		_reset_run(true)
 	elif event.is_action_pressed("toggle_pause"):
 		simulation_paused = not simulation_paused
 	elif event.is_action_pressed("toggle_debug"):
 		debug_visible = not debug_visible
-		panel.visible = debug_visible
+		hud_label.visible = debug_visible
+		help_label.visible = debug_visible
+		panel.visible = debug_visible and _tutorial_sandbox_available()
 		footprint.visible = debug_visible
 		field_overlay.visible = debug_visible
 		_refresh_preset_visuals()
@@ -362,6 +502,7 @@ func _build_world() -> void:
 	goal_material.emission_energy_multiplier = 0.35
 	goal.material_override = goal_material
 	add_child(goal)
+	goal.visible = not environment_enabled
 	flight_goal_volume = MeshInstance3D.new()
 	var goal_volume_mesh := CylinderMesh.new()
 	goal_volume_mesh.top_radius = simulation.goal_radius
@@ -384,8 +525,14 @@ func _build_world() -> void:
 	beacon.position = Vector3(0.0, _ground_height(Vector2.ZERO) + 0.06, 0.0)
 	beacon.material_override = _material(Color("78ffd8"), 0.45)
 	add_child(beacon)
+	beacon.visible = not environment_enabled
 	if environment_enabled:
-		load("res://scripts/night_environment.gd").add_beacon(self, _ground_height(Vector2.ZERO))
+		goal_beacon = NightEnvironment.add_beacon(self, _ground_height(Vector2.ZERO))
+		goal_beacon.visible = false # Comparison landmark for the headset navigation gate.
+		goal_shrine = GoalShrine.new()
+		goal_shrine.name = "GoalShrine"
+		goal_shrine.configure(simulation.goal_radius, _ground_height(Vector2.ZERO), world_surface)
+		add_child(goal_shrine)
 
 	footprint = MeshInstance3D.new()
 	var footprint_mesh := CylinderMesh.new()
@@ -458,7 +605,6 @@ func _build_xr_player() -> void:
 	add_child(xr_player)
 	xr_player.set_world_surface(world_surface)
 	xr_player.reset_pose(player.global_position)
-	_xr_origin_sampled = false
 	if not xr_player.xr_active:
 		push_warning("OpenXR did not initialize; continuing in desktop mode")
 		xr_player.queue_free()
@@ -477,6 +623,7 @@ func _build_xr_player() -> void:
 	print("MUSHI_XR_CAMERA current=%s origin_current=%s" % [get_viewport().get_camera_3d().get_path(), xr_player.is_current()])
 	xr_player.recall_requested.connect(_on_xr_recall_requested)
 	xr_player.recall_released.connect(_on_xr_recall_released)
+	xr_player.menu_toggled.connect(_on_xr_menu_toggled)
 	staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	xr_staff_interaction = load("res://scripts/xr_staff_interaction.gd").new()
 	xr_staff_interaction.configure(staff_tool, xr_player)
@@ -497,11 +644,7 @@ func _xr_initial_staff_pose() -> Transform3D:
 
 
 func _desktop_staff_pose() -> Transform3D:
-	var camera := player.camera
-	var aim := _desktop_aim
-	var local_offset := Vector3(0.46 + aim.x * 0.32, -0.75 + aim.y * 0.22, -1.65)
-	var staff_basis := camera.global_basis * Basis.from_euler(Vector3(-0.12 + aim.y * 0.42, aim.x * 0.45, 0.0))
-	return Transform3D(staff_basis.orthonormalized(), camera.global_transform * local_offset)
+	return player.staff_hold_transform(_desktop_aim)
 
 
 func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
@@ -515,28 +658,24 @@ func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
 func _update_staff_pose(delta: float) -> void:
 	if staff_tool == null:
 		return
-	var locomotion_delta := Vector3.ZERO
 	if xr_player != null and xr_player.xr_active:
-		var xr_origin: Vector3 = xr_player.global_position
-		if _xr_origin_sampled:
-			var displacement: Vector3 = xr_origin - _previous_xr_origin
-			if displacement.is_finite() and displacement.length() < StaffTool.SWING_JUMP_DISTANCE:
-				locomotion_delta = displacement
-		_previous_xr_origin = xr_origin
-		_xr_origin_sampled = true
+		staff_tool.clear_desktop_yaw_reference()
 		if xr_staff_interaction != null:
 			xr_staff_interaction.update(delta)
 		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
 			staff_tool.update_recall(_xr_recall_owner.global_transform, delta)
 	else:
-		_xr_origin_sampled = false
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_desktop_aim = _desktop_aim.lerp(Vector2.ZERO, 1.0 - exp(-delta * 3.5))
 		if _desktop_recall_held:
+			staff_tool.clear_desktop_yaw_reference()
 			staff_tool.update_recall(player.camera.global_transform, delta)
 		elif staff_tool.placement == StaffTool.Placement.HELD:
+			staff_tool.set_desktop_yaw_reference(player.camera.global_transform)
 			staff_tool.set_held_world_pose(_desktop_staff_pose())
-	staff_tool.advance(delta, locomotion_delta)
+		else:
+			staff_tool.clear_desktop_yaw_reference()
+	staff_tool.advance(delta)
 
 
 func _viewer_lantern_exposure() -> float:
@@ -556,6 +695,224 @@ func _on_xr_recall_released(controller: XRController3D) -> void:
 		staff_tool.end_recall()
 		_xr_recall_owner = null
 
+
+func _skip_tutorial() -> void:
+	if tutorial_director == null or not tutorial_director.tutorial_enabled:
+		return
+	tutorial_director.skip()
+	if tutorial_guide != null:
+		tutorial_guide.hide_for_skip()
+	if environment_enabled and lantern.night_vision < 0.6:
+		# Skip completes the adapted reveal immediately, then normal adaptation
+		# resumes from that state on the next frame.
+		lantern.reset_adaptation(0.6)
+		NightEnvironment.set_night_vision(night_environment, lantern.night_vision)
+		if terrain_environment != null:
+			terrain_environment.set_night_vision(lantern.night_vision)
+		if goal_shrine != null:
+			goal_shrine.set_night_vision(lantern.night_vision)
+	_sync_tutorial_movement_lock()
+
+
+func _sync_tutorial_movement_lock() -> void:
+	if tutorial_director == null:
+		return
+	var locked := tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY
+	if locked == _tutorial_movement_locked:
+		return
+	_tutorial_movement_locked = locked
+	if player != null:
+		player.movement_enabled = not locked
+	if xr_player != null and xr_player.xr_active:
+		xr_player.set_interaction_lock(locked)
+
+
+func _recenter_xr_tutorial_if_needed(delta: float) -> void:
+	if xr_player == null or not xr_player.xr_active or tutorial_director == null or not tutorial_director.tutorial_enabled or tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY:
+		return
+	var body := xr_player.get_node_or_null("PlayerBody") as XRToolsPlayerBody
+	if body == null or not body.enabled:
+		return
+	_xr_recenter_cooldown = maxf(0.0, _xr_recenter_cooldown - delta)
+	var head: Vector3 = xr_player.camera.global_position
+	var offset: float = Vector2(head.x, head.z).distance_to(TUTORIAL_XZ)
+	if _xr_recenter_cooldown > 0.0 or (_xr_tutorial_centered and offset <= 1.0):
+		return
+	var first_center: bool = not _xr_tutorial_centered
+	xr_player.snap_head_horizontal_to(TUTORIAL_XZ, Vector3.RIGHT)
+	if first_center and staff_tool != null and not staff_tool.is_picked_up():
+		var forward: Vector3 = -xr_player.camera.global_basis.z
+		forward.y = 0.0
+		forward = forward.normalized() if forward.length_squared() > 0.0001 else Vector3.RIGHT
+		var staff_xz: Vector2 = TUTORIAL_XZ + Vector2(forward.x, forward.z) * 0.32
+		var staff_ground: float = _ground_height(staff_xz)
+		staff_tool.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(staff_xz.x, staff_ground + 0.9, staff_xz.y)), 1.0, false)
+	_xr_tutorial_centered = true
+	_xr_recenter_cooldown = 0.5
+
+
+func _tutorial_locks_shutter() -> bool:
+	return tutorial_director != null and tutorial_director.tutorial_enabled and tutorial_director.stage in [
+		TutorialDirector.Stage.JAR_ORANGE,
+		TutorialDirector.Stage.JAR_BLUE,
+		TutorialDirector.Stage.GUIDE,
+		TutorialDirector.Stage.GROUPS,
+	]
+
+
+func _build_xr_tutorial_chain_cue() -> void:
+	_tutorial_chain_marker = MeshInstance3D.new()
+	_tutorial_chain_marker.name = "TutorialChainMarker"
+	var marker_mesh := SphereMesh.new()
+	marker_mesh.radius = 0.043
+	marker_mesh.height = 0.086
+	_tutorial_chain_marker.mesh = marker_mesh
+	var marker_material := StandardMaterial3D.new()
+	marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	marker_material.albedo_color = Color("ffe0a0")
+	marker_material.emission_enabled = true
+	marker_material.emission = Color("ffc872")
+	marker_material.emission_energy_multiplier = 2.0
+	_tutorial_chain_marker.material_override = marker_material
+	_tutorial_chain_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_tutorial_chain_marker.visible = false
+	add_child(_tutorial_chain_marker)
+	_tutorial_chain_label = Label3D.new()
+	_tutorial_chain_label.name = "TutorialChainTooltip"
+	_tutorial_chain_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_tutorial_chain_label.pixel_size = 0.00115
+	_tutorial_chain_label.font_size = 27
+	_tutorial_chain_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_tutorial_chain_label.modulate = Color("ffdfa4")
+	_tutorial_chain_label.outline_size = 10
+	_tutorial_chain_label.outline_modulate = Color(0.015, 0.012, 0.01, 0.94)
+	_tutorial_chain_label.no_depth_test = true
+	_tutorial_chain_label.visible = false
+	add_child(_tutorial_chain_label)
+
+
+func _update_xr_tutorial_chain_cue() -> void:
+	if _tutorial_chain_label == null or _tutorial_chain_marker == null:
+		return
+	var show: bool = xr_player != null and xr_player.xr_active and tutorial_director != null and tutorial_director.tutorial_enabled
+	var caption := ""
+	if show:
+		match tutorial_director.stage:
+			TutorialDirector.Stage.JAR_ORANGE:
+				caption = "Grip chain · twist to orange"
+			TutorialDirector.Stage.JAR_BLUE:
+				caption = "Grip chain · twist to blue"
+			TutorialDirector.Stage.SHUTTER:
+				caption = "Grip chain · pull down to close"
+	show = show and not caption.is_empty()
+	_tutorial_chain_label.visible = show
+	_tutorial_chain_marker.visible = show
+	if not show:
+		return
+	var control: Vector3 = staff_tool.control_world_position()
+	_tutorial_chain_marker.global_position = control
+	_tutorial_chain_label.global_position = control + Vector3(0.0, 0.18, 0.0)
+	_tutorial_chain_label.text = caption
+
+
+func _on_tutorial_goal_acceptance_changed(accepting: bool) -> void:
+	if simulation is FlightSimulation:
+		simulation.goal_accepting = accepting
+
+
+func _on_tutorial_reveal_changed(amount: float) -> void:
+	# Terrain, foliage and the river already share the lantern's head-center
+	# adaptation value in _process. The director signal keeps this state boundary
+	# explicit and lets the UI reflect the reveal stage without stepping physics.
+	if tutorial_ui != null:
+		tutorial_ui.update_reveal(amount)
+
+
+func _on_tutorial_adaptation_started() -> void:
+	lantern.set_shutter(0.0)
+	lantern.reset_adaptation(0.0)
+
+
+func _update_stream_visibility(delta: float) -> void:
+	if terrain_environment == null or lantern == null:
+		return
+	var tutorial_reveal_allowed := tutorial_director == null or not tutorial_director.tutorial_enabled
+	if tutorial_director != null and tutorial_director.tutorial_enabled:
+		tutorial_reveal_allowed = tutorial_director.stage in [TutorialDirector.Stage.ADAPTATION, TutorialDirector.Stage.FREE_PLAY]
+	var target := TerrainEnvironment.stream_visibility_target(
+		lantern.night_vision,
+		lantern.shutter_openness,
+		tutorial_reveal_allowed,
+		float(_visual_tuning.stream_start),
+		float(_visual_tuning.stream_end)
+	)
+	_stream_visibility = TerrainEnvironment.advance_stream_visibility(_stream_visibility, target, delta, float(_visual_tuning.stream_seconds))
+	terrain_environment.set_stream_visibility(_stream_visibility)
+
+
+func _set_visual_tuning(value: float, key: StringName) -> void:
+	_visual_tuning[key] = value
+	for pair: Array in [
+		[&"stream_start", &"stream_end"], [&"star_start", &"star_end"],
+		[&"milky_start", &"milky_end"], [&"foliage_start", &"foliage_end"],
+		[&"clear_start", &"clear_end"], [&"clear_distance_start", &"clear_distance_end"],
+	]:
+		var companion: StringName = &""
+		var adjusted := -1.0
+		if key == pair[0] and value >= float(_visual_tuning[pair[1]]):
+			companion = pair[1]
+			adjusted = minf(100.0, value + 0.01)
+		elif key == pair[1] and value <= float(_visual_tuning[pair[0]]):
+			companion = pair[0]
+			adjusted = maxf(0.0, value - 0.01)
+		if companion != &"":
+			_visual_tuning[companion] = adjusted
+			var paired_slider := _visual_sliders.get(companion) as HSlider
+			if paired_slider != null:
+				paired_slider.set_value_no_signal(adjusted)
+				var value_label := paired_slider.get_meta("value_label") as Label
+				if value_label != null:
+					value_label.text = "%.2f" % adjusted
+	if lantern != null:
+		lantern.set_adaptation_timing(float(_visual_tuning.dark_seconds), float(_visual_tuning.light_seconds))
+	if night_environment != null:
+		NightEnvironment.set_visual_tuning(night_environment, _visual_tuning)
+	if terrain_environment != null:
+		terrain_environment.set_visual_tuning(_visual_tuning)
+	for mushroom_patch: MushroomPatch in mushroom_nodes:
+		mushroom_patch.set_visual_tuning(_visual_tuning)
+	if glyph_swarm != null:
+		glyph_swarm.set_visual_tuning(_visual_tuning)
+
+
+func _apply_visual_tuning() -> void:
+	for key: Variant in _visual_tuning.keys():
+		_set_visual_tuning(float(_visual_tuning[key]), StringName(key))
+
+
+func _on_tutorial_guide_released() -> void:
+	if tutorial_guide == null:
+		return
+	var ground := _ground_height(Vector2.ZERO)
+	tutorial_guide.release_to(Vector3(0.0, ground + 0.8, 0.0), Vector3(0.0, ground - 1.5, 0.0))
+
+
+func _on_tutorial_reward_unlocked() -> void:
+	if panel != null and (xr_player == null or not xr_player.xr_active):
+		panel.visible = debug_visible
+	if tutorial_ui != null:
+		tutorial_ui.show_reward_unlocked()
+		tutorial_ui.set_sandbox_unlocked(true)
+
+
+func _on_tutorial_sandbox_visibility_changed(open: bool) -> void:
+	if panel != null:
+		panel.visible = open and _tutorial_sandbox_available()
+
+
+func _tutorial_sandbox_available() -> bool:
+	return tutorial_director == null or not tutorial_director.tutorial_enabled or tutorial_director.reward_is_unlocked
+
 func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
@@ -567,13 +924,15 @@ func _build_ui() -> void:
 	hud_label.add_theme_constant_override("shadow_offset_x", 2)
 	hud_label.add_theme_constant_override("shadow_offset_y", 2)
 	canvas.add_child(hud_label)
+	hud_label.visible = debug_visible
 
 	help_label = Label.new()
-	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · R: reset · F1: debug · F2: quality · F3: audio · Esc: free mouse"
+	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · K: skip intro · R: reset · F1: debug · F2: quality · F3: audio · Esc: free mouse"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
 	help_label.add_theme_color_override("font_color", Color("dceae8"))
 	canvas.add_child(help_label)
+	help_label.visible = debug_visible
 
 	panel = PanelContainer.new()
 	panel.position = Vector2(1080.0, 18.0)
@@ -633,9 +992,38 @@ func _build_ui() -> void:
 	strength_slider = _add_slider(stack, "Lantern influence", 0.25, 1.5, 1.0, 0.05)
 	social_slider = _add_slider(stack, "Social force", 0.0, 1.8, 1.0, 0.05)
 	wander_slider = _add_slider(stack, "Drift / wander", 0.0, 2.0, 1.0, 0.05)
-	goal_slider = _add_slider(stack, "Goal resistance", 0.0, 2.5, 0.8, 0.01)
+	goal_slider = _add_slider(stack, "Goal pull (-) / resistance (+)", -2.0, 2.5, 0.8, 0.01)
 	memory_slider = _add_slider(stack, "Memory recovery", 0.2, 2.0, 0.85, 0.05)
 	goal_width_slider = _add_slider(stack, "Goal width (m)", 1.0, 7.0, 1.8, 0.1)
+	var visual_title := Label.new()
+	visual_title.text = "Visual audition · live"
+	visual_title.add_theme_font_size_override("font_size", 15)
+	visual_title.add_theme_color_override("font_color", Color("89e4cf"))
+	stack.add_child(visual_title)
+	_add_visual_group_label(stack, "Eye adaptation · stream")
+	_add_visual_slider(stack, "Dark adaptation (s)", 1.0, 18.0, 6.0, 0.1, &"dark_seconds")
+	_add_visual_slider(stack, "Light adaptation (s)", 0.25, 8.0, 1.5, 0.05, &"light_seconds")
+	_add_visual_slider(stack, "Stream starts at NV", 0.0, 0.8, 0.18, 0.01, &"stream_start")
+	_add_visual_slider(stack, "Stream full at NV", 0.2, 1.0, 0.68, 0.01, &"stream_end")
+	_add_visual_slider(stack, "Stream fade-in (s)", 0.1, 6.0, 1.2, 0.1, &"stream_seconds")
+	_add_visual_group_label(stack, "Sky · foliage · lantern")
+	_add_visual_slider(stack, "Star detail starts", 0.0, 0.8, 0.14, 0.01, &"star_start")
+	_add_visual_slider(stack, "Star detail completes", 0.2, 1.0, 0.89, 0.01, &"star_end")
+	_add_visual_slider(stack, "Milky Way starts", 0.0, 0.9, 0.64, 0.01, &"milky_start")
+	_add_visual_slider(stack, "Milky Way full", 0.2, 1.0, 0.96, 0.01, &"milky_end")
+	_add_visual_slider(stack, "Foliage glow starts", 0.0, 0.95, 0.90, 0.01, &"foliage_start")
+	_add_visual_slider(stack, "Foliage glow full", 0.1, 1.0, 0.99, 0.01, &"foliage_end")
+	_add_visual_slider(stack, "Clear fade starts", 0.0, 0.8, 0.10, 0.01, &"clear_start")
+	_add_visual_slider(stack, "Clear fade ends", 0.1, 1.0, 0.65, 0.01, &"clear_end")
+	_add_visual_slider(stack, "Clear fade near (m)", 0.0, 60.0, 17.0, 1.0, &"clear_distance_start")
+	_add_visual_slider(stack, "Clear fade far (m)", 5.0, 100.0, 52.0, 1.0, &"clear_distance_end")
+	_add_visual_group_label(stack, "River mesh · path and surface")
+	_add_visual_slider(stack, "Path long wobble", 0.0, 2.5, 1.0, 0.05, &"path_long")
+	_add_visual_slider(stack, "Path medium wobble", 0.0, 2.5, 1.0, 0.05, &"path_medium")
+	_add_visual_slider(stack, "Long motion speed", 0.0, 3.0, 1.0, 0.05, &"path_long_speed")
+	_add_visual_slider(stack, "Medium motion speed", 0.0, 3.0, 1.0, 0.05, &"path_medium_speed")
+	_add_visual_slider(stack, "Surface bump", 0.0, 2.5, 1.0, 0.05, &"surface_bump")
+	_add_visual_slider(stack, "Bump motion speed", 0.0, 3.0, 1.0, 0.05, &"surface_bump_speed")
 	var energy_title := Label.new()
 	energy_title.text = "Energy experiment · 90% response times"
 	energy_title.add_theme_font_size_override("font_size", 13)
@@ -779,6 +1167,27 @@ func _add_slider(parent: VBoxContainer, label_text: String, minimum: float, maxi
 	parent.add_child(row)
 	return slider
 
+
+func _add_visual_slider(parent: VBoxContainer, label_text: String, minimum: float, maximum: float, value: float, step: float, key: StringName) -> void:
+	var slider := _add_slider(parent, label_text, minimum, maximum, value, step)
+	_visual_sliders[key] = slider
+	slider.value_changed.connect(_on_visual_tuning_changed.bind(key))
+
+
+func _on_visual_tuning_changed(value: float, key: StringName) -> void:
+	_set_visual_tuning(value, key)
+	config_changed = true
+	if not settings_history.is_empty():
+		settings_history.append({"elapsed_seconds": elapsed, "settings": _current_settings()})
+
+
+func _add_visual_group_label(parent: VBoxContainer, label_text: String) -> void:
+	var label := Label.new()
+	label.text = label_text
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color("adbfbe"))
+	parent.add_child(label)
+
 func _create_trunk(index: int, horizontal_position: Vector2, radius: float) -> void:
 	var body := StaticBody3D.new()
 	body.name = "OccludingTrunk%d" % (index + 1)
@@ -823,11 +1232,19 @@ func _rebuild_agents() -> void:
 	if glyph_swarm != null:
 		glyph_swarm.queue_free()
 		glyph_swarm = null
+	if return_handoff != null:
+		return_handoff.queue_free()
+		return_handoff = null
 	if flight_enabled:
 		glyph_swarm = GlyphSwarm.new()
 		glyph_swarm.bloom_hdr_gain = 1.4 if environment_enabled else 1.0
 		add_child(glyph_swarm)
 		glyph_swarm.configure(simulation.positions.size())
+		glyph_swarm.set_visual_tuning(_visual_tuning)
+		return_handoff = ReturnHandoffVisual.new()
+		return_handoff.name = "ReturnHandoff"
+		add_child(return_handoff)
+		return_handoff.configure(simulation.positions.size())
 		if environment_enabled:
 			glyph_swarm.set_world_bounds(AABB(Vector3(-terrain_size * 0.5 - 2.0, -5.0, -terrain_size * 0.5 - 2.0), Vector3(terrain_size + 4.0, 90.0, terrain_size + 4.0)))
 		return
@@ -890,9 +1307,10 @@ func _create_agent_visual(index: int) -> Node3D:
 	root.add_child(eye)
 	return root
 
-func _update_agent_visuals(alpha: float) -> void:
+func _update_agent_visuals(alpha: float, delta: float) -> void:
 	if flight_enabled:
 		glyph_swarm.update_swarm(simulation, alpha, current_preset)
+		return_handoff.update_handoffs(simulation, delta, simulation.goal_position, _ground_height(simulation.goal_position))
 		return
 	for index: int in agent_nodes.size():
 		var node := agent_nodes[index]
@@ -993,7 +1411,7 @@ func _apply_preset(index: int, restart: bool) -> void:
 		var longer_drift_globals := index >= 6
 		strength_slider.set_value_no_signal(0.8 if longer_drift_globals else 1.0)
 		social_slider.set_value_no_signal(1.4 if longer_drift_globals else 1.0)
-		wander_slider.set_value_no_signal(0.8 if index == 8 else (0.5 if longer_drift_globals else 1.0))
+		wander_slider.set_value_no_signal(0.8 if index >= 8 else (0.5 if longer_drift_globals else 1.0))
 		goal_slider.set_value_no_signal(current_preset.goal_repulsion_strength)
 		memory_slider.set_value_no_signal(current_preset.arousal_response)
 		_sync_energy_controls()
@@ -1038,6 +1456,17 @@ func _reset_run(record_previous: bool) -> void:
 	if not current_preset.energy_dynamics:
 		simulation.mushroom_centers = PackedVector2Array()
 	simulation.reset(fixture_count, current_seed, current_preset)
+	_stream_visibility = 0.0
+	if terrain_environment != null:
+		terrain_environment.set_stream_visibility(0.0)
+	if tutorial_director != null:
+		var enable_tutorial := _force_tutorial or (environment_enabled and not _skip_tutorial_requested)
+		tutorial_director.begin_run(enable_tutorial, fixture_count)
+		if simulation is FlightSimulation:
+			simulation.goal_accepting = tutorial_director.goal_accepting
+		_last_tutorial_score = -1
+	_sync_tutorial_movement_lock()
+	_last_shrine_score = -1
 	if grove_audio != null:
 		grove_audio.bind_simulation(simulation)
 	_refresh_preset_visuals()
@@ -1047,20 +1476,43 @@ func _reset_run(record_previous: bool) -> void:
 	visual_update_ms = 0.0
 	elapsed = 0.0
 	mode_times = PackedFloat32Array([0.0, 0.0, 0.0])
-	player.position = Vector3(active_patches[0].x, 0.0, active_patches[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
+	var authored_intro := tutorial_director != null and tutorial_director.tutorial_enabled and environment_enabled
+	player.position = Vector3(TUTORIAL_XZ.x, 0.0, TUTORIAL_XZ.y) if authored_intro else Vector3(active_patches[0].x, 0.0, active_patches[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
 	player.position.y = _ground_height(Vector2(player.position.x, player.position.z)) + (0.05 if environment_enabled else 0.0)
 	player.reset_look()
+	_xr_tutorial_centered = false
+	_xr_recenter_cooldown = 0.0
+	if authored_intro:
+		player.rotation.y = -PI * 0.5
+		player.camera.rotation.x = -0.025
+	if panel != null:
+		if xr_player == null or not xr_player.xr_active:
+			panel.visible = debug_visible and _tutorial_sandbox_available()
+	if tutorial_ui != null and tutorial_director != null:
+		tutorial_ui.set_sandbox_unlocked(_tutorial_sandbox_available())
+	if tutorial_ui != null and tutorial_director != null:
+		tutorial_ui.update_director(tutorial_director, xr_player != null and xr_player.xr_active)
 	_desktop_aim = Vector2.ZERO
 	_desktop_recall_held = false
 	if xr_player != null and xr_player.xr_active:
 		if xr_staff_interaction != null:
 			xr_staff_interaction.reset_for_run()
 		_xr_recall_owner = null
+		xr_player.rotation.y = -PI * 0.5 if authored_intro else 0.0
 		xr_player.reset_pose(player.global_position)
-		_xr_origin_sampled = false
 		staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	else:
 		staff_tool.reset_to_pose(_desktop_staff_pose())
+	if tutorial_guide != null:
+		if tutorial_director != null and tutorial_director.tutorial_enabled:
+			var guide_camera: Camera3D = xr_player.camera if xr_player != null and xr_player.xr_active else player.camera
+			var camera_origin := guide_camera.global_position
+			var camera_forward := -guide_camera.global_basis.z
+			var guide_xz := Vector2(camera_origin.x + camera_forward.x * 1.8, camera_origin.z + camera_forward.z * 1.8)
+			var guide_position := Vector3(guide_xz.x, _ground_height(guide_xz) + 0.1, guide_xz.y)
+			tutorial_guide.reset_guide(guide_position)
+		else:
+			tutorial_guide.visible = false
 	inspected_agent = 0
 	settings_history = [{"elapsed_seconds": 0.0, "settings": _current_settings()}]
 	run_id = "%s-%d" % [Time.get_datetime_string_from_system(true), Time.get_ticks_usec()]
@@ -1069,6 +1521,13 @@ func _reset_run(record_previous: bool) -> void:
 	lantern.set_mode(LightField.Mode.CLEAR if current_preset.energy_dynamics else LightField.Mode.BLUE)
 	lantern.shutter_openness = 1.0
 	lantern.adjust_shutter(0.0)
+	if environment_enabled:
+		# A new run starts in clear light. The later tutorial can author its own
+		# reveal, but must never inherit a fully adapted frame from the prior run.
+		lantern.reset_adaptation(0.0)
+		NightEnvironment.set_night_vision(night_environment, 0.0)
+		terrain_environment.set_night_vision(0.0)
+		goal_shrine.set_night_vision(0.0)
 
 func _on_variation_changed(value: float) -> void:
 	_write_run_record("population_variation_change")
@@ -1131,7 +1590,7 @@ func _on_tuning_changed(value: float, parameter: StringName = &"") -> void:
 
 func _current_settings() -> Dictionary:
 	return {"simulation_backend": _active_backend, "simulation_hz": roundi(1.0 / active_step), "flight_enabled": flight_enabled, "arena_layout": _arena_layout(), "world_limit": simulation.world_limit, "coefficients": current_preset.to_dict(), "lantern_strength": strength_slider.value,
-		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value, "environment_quality": _quality_settings}
+		"social_multiplier": social_slider.value, "wander_multiplier": wander_slider.value, "environment_quality": _quality_settings, "visual_tuning": _visual_tuning.duplicate()}
 
 func _toggle_top_down() -> void:
 	if xr_player != null and xr_player.xr_active:
@@ -1156,6 +1615,7 @@ func _save_named_preset() -> void:
 		"lantern_strength": strength_slider.value,
 		"social_multiplier": social_slider.value,
 		"wander_multiplier": wander_slider.value,
+		"visual_tuning": _visual_tuning.duplicate(),
 	}
 	var file := FileAccess.open(SAVED_PRESETS_PATH, FileAccess.WRITE)
 	if file != null:
@@ -1188,9 +1648,28 @@ func _load_named_preset(index: int) -> void:
 	strength_slider.set_value_no_signal(float(saved.get("lantern_strength", 1.0)))
 	social_slider.set_value_no_signal(float(saved.get("social_multiplier", 1.0)))
 	wander_slider.set_value_no_signal(float(saved.get("wander_multiplier", 1.0)))
+	_restore_visual_tuning(saved.get("visual_tuning", {}))
 	config_changed = false
 	_reset_run(false)
 	saved_select.select(0)
+
+
+func _restore_visual_tuning(saved_values: Variant) -> void:
+	_visual_tuning = _visual_tuning_defaults.duplicate()
+	if saved_values is Dictionary:
+		for key: Variant in _visual_tuning.keys():
+			var candidate: Variant = saved_values.get(key)
+			if candidate is float or candidate is int:
+				var slider := _visual_sliders.get(key) as HSlider
+				_visual_tuning[key] = clampf(float(candidate), slider.min_value, slider.max_value) if slider != null else float(candidate)
+	for key: Variant in _visual_tuning.keys():
+		var slider := _visual_sliders.get(key) as HSlider
+		if slider != null:
+			slider.set_value_no_signal(float(_visual_tuning[key]))
+			var value_label := slider.get_meta("value_label") as Label
+			if value_label != null:
+				value_label.text = "%.2f" % float(_visual_tuning[key])
+	_apply_visual_tuning()
 
 func _load_saved_preset_names() -> void:
 	saved_select.clear()
@@ -1239,6 +1718,7 @@ func _write_run_record(reason: String) -> void:
 		"diagnostic_step_ema_ms": sim_step_ms,
 		"diagnostic_visual_update_ema_ms": visual_update_ms,
 		"coefficients": current_preset.to_dict(),
+		"visual_tuning": _visual_tuning.duplicate(),
 		"live_multipliers": {
 			"lantern_strength": strength_slider.value,
 			"social": social_slider.value,
@@ -1261,6 +1741,14 @@ func _parse_arguments() -> void:
 			index += 1
 		elif args[index] == "--desktop":
 			_want_xr = false
+			index += 1
+		elif args[index] == "--skip-tutorial":
+			_skip_tutorial_requested = true
+			_force_tutorial = false
+			index += 1
+		elif args[index] == "--tutorial":
+			_force_tutorial = true
+			_skip_tutorial_requested = false
 			index += 1
 		elif args[index] == "--flat-lab":
 			environment_enabled = false
@@ -1333,6 +1821,7 @@ func _setup_input() -> void:
 	_add_key_action("staff_drop_pickup", KEY_G)
 	_add_key_action("staff_recall", KEY_E)
 	_add_key_action("reset_run", KEY_R)
+	_add_key_action("tutorial_skip", KEY_K)
 	_add_key_action("toggle_pause", KEY_P)
 	_add_key_action("toggle_debug", KEY_F1)
 	_add_key_action("inspect_next", KEY_I)
@@ -1434,6 +1923,8 @@ func _refresh_preset_visuals() -> void:
 		var patch := mushroom_nodes[index]
 		patch.visible = current_preset.energy_dynamics and (fixture_count != 3 or index == 0)
 		patch.set_radius(current_preset.mushroom_radius)
+		patch.set_night_vision(lantern.night_vision if lantern != null else 0.0)
+		patch.set_visual_tuning(_visual_tuning)
 		patch.show_boundary(debug_visible)
 
 
@@ -1474,9 +1965,10 @@ func _on_quality_visibility(open: bool) -> void:
 	else:
 		simulation_paused = _menu_was_paused
 	if xr_player == null or not xr_player.xr_active:
-		player.controls_enabled = not open
-		player.look_enabled = not open and not top_down
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED
+		var menu_open := friend_menu != null and friend_menu.is_open()
+		player.controls_enabled = not open and not menu_open
+		player.look_enabled = not open and not menu_open and not top_down
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or menu_open or top_down else Input.MOUSE_MODE_CAPTURED
 
 
 func _on_audio_mix_visibility(open: bool) -> void:
@@ -1488,6 +1980,62 @@ func _on_audio_mix_visibility(open: bool) -> void:
 	else:
 		simulation_paused = _menu_was_paused
 	if xr_player == null or not xr_player.xr_active:
-		player.controls_enabled = not open
-		player.look_enabled = not open and not top_down
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED
+		var menu_open := friend_menu != null and friend_menu.is_open()
+		player.controls_enabled = not open and not menu_open
+		player.look_enabled = not open and not menu_open and not top_down
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or menu_open or top_down else Input.MOUSE_MODE_CAPTURED
+
+
+func _on_friend_new_game() -> void:
+	_reset_run(true)
+	if xr_player != null and xr_player.xr_active:
+		xr_player.set_menu_open(false)
+
+
+func _on_friend_settings() -> void:
+	if friend_menu != null and friend_menu.is_open():
+		friend_menu.set_open(false)
+	quality_menu.set_open(true)
+
+
+func _on_friend_audio_settings() -> void:
+	if friend_menu != null and friend_menu.is_open():
+		friend_menu.set_open(false)
+	audio_mix_menu.set_open(true)
+
+
+func _on_friend_skip() -> void:
+	_skip_tutorial()
+	friend_menu.set_open(false)
+
+
+func _on_friend_tuning() -> void:
+	if not _tutorial_sandbox_available():
+		return
+	friend_menu.set_open(false)
+	_desktop_tuning_open = true
+	panel.visible = true
+	player.controls_enabled = false
+	player.look_enabled = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _on_friend_menu_visibility(open: bool) -> void:
+	if xr_player != null and xr_player.xr_active:
+		return
+	if open:
+		_friend_was_paused = simulation_paused
+		simulation_paused = true
+	else:
+		simulation_paused = _friend_was_paused
+	player.controls_enabled = not open
+	player.look_enabled = not open and not top_down
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED
+
+
+func _on_xr_menu_toggled(open: bool) -> void:
+	if open:
+		_xr_menu_was_paused = simulation_paused
+		simulation_paused = true
+	else:
+		simulation_paused = _xr_menu_was_paused

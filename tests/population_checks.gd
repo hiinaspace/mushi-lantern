@@ -21,7 +21,12 @@ func _init() -> void:
 
 func _test_preset_contract() -> void:
 	var presets := HerdPreset.builtins()
-	_expect(presets.size() == 9 and presets[5].preset_name == "Living shoals" and presets[6].preset_name == "Longer drift" and presets[7].preset_name == "Drifting trains" and presets[8].preset_name == "Loose trains", "new behavior variants follow the historical presets")
+	_expect(presets.size() == 10 and presets[5].preset_name == "Living shoals" and presets[6].preset_name == "Longer drift" and presets[7].preset_name == "Drifting trains" and presets[8].preset_name == "Loose trains" and presets[9].preset_name == "Gentle herding", "friend preset follows the accepted historical presets")
+	_expect(presets[9].goal_repulsion_strength < 0.0 and presets[9].blue_energy_response < presets[8].blue_energy_response and presets[9].energy_recovery_rate < presets[8].energy_recovery_rate, "friend preset adds goal attraction and eases blue slowdown while keeping recovery slower")
+	var friend_sim := FlightSimulation.new()
+	friend_sim.reset(3, 40721, presets[9])
+	var approach := Vector3(friend_sim.goal_radius + 1.5, 0.0, 0.0)
+	_expect(friend_sim._goal_resistance(approach).dot(approach) < 0.0, "friend goal field pulls approaching mushi inward")
 	for index: int in 5:
 		_expect(presets[index].population_variation == 0.0 and presets[index].arousal_contagion_strength == 0.0 and not presets[index].spontaneous_waking_enabled, "preset %d retains disabled ecology defaults" % index)
 	var restored := HerdPreset.from_dict({"preset_name": "old", "max_speed": 1.7})

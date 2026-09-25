@@ -30,6 +30,8 @@ func _run() -> void:
 	lantern.shutter_openness = 1.0
 	lantern.adjust_shutter(0.0)
 	var flash := lantern.spot.light_energy
+	var open_housing_fill := lantern.housing_fill.light_energy
+	_expect(lantern.housing_fill.get_parent() == lantern and not lantern.housing_fill.shadow_enabled, "soft shadowless fill follows the lantern housing")
 	_expect(lantern.spot.spot_angle == 65.0 and Lantern.BEHAVIOR_HALF_ANGLE_DEGREES == 55.0 and lantern.spot.spot_angle_attenuation == 0.25, "square projector preserves wide beam")
 	_expect(lantern.spot.spot_range == 20.0 and flash > 10.0, "clear navigation beam begins brighter")
 	lantern.advance_adaptation(9.0)
@@ -40,12 +42,25 @@ func _run() -> void:
 	_expect(lantern.night_vision > 0.0 and lantern.night_vision < 0.75, "colored mode recovers partial night vision")
 	lantern.set_mode(LightField.Mode.ORANGE)
 	_expect(lantern.spot.spot_range == 10.5, "orange beam keeps colored range")
+	lantern.set_shutter(0.65)
+	lantern.request_mode(LightField.Mode.BLUE)
+	for step: int in 2:
+		lantern.advance_transition(0.1)
+	_expect(is_equal_approx(lantern.shutter_openness, 0.65) and lantern._preview_has_rgb_split(), "keyboard filter change sweeps without moving shutters")
+	for step: int in 3:
+		lantern.advance_transition(0.1)
+	_expect(is_equal_approx(lantern.shutter_openness, 0.65) and lantern.mode == LightField.Mode.BLUE and lantern._transition_phase == 0, "filter sweep settles at unchanged aperture")
 	lantern.shutter_openness = 0.0
 	lantern.adjust_shutter(0.0)
 	_expect(is_zero_approx(lantern.spot.light_energy) and not lantern.spot.visible, "closed shutter has no spot emission")
+	_expect(lantern.housing_fill.light_energy > 0.0 and lantern.housing_fill.light_energy < open_housing_fill, "housing fill dims with the shutter but keeps a faint closed glow")
 	_expect((lantern.filter_mesh.material_override as ShaderMaterial).get_shader_parameter("glow_strength") > 0.0, "closed shutter retains a small face slit")
 	lantern.advance_adaptation(6.0)
 	_expect(lantern.night_vision > 0.75, "closed shutter restores dark adaptation")
+	lantern.reset_adaptation(0.0)
+	_expect(is_zero_approx(lantern.night_vision) and is_zero_approx(lantern._adaptation.night_vision), "reset clears both visible and internal adaptation before a scripted reveal")
+	lantern.advance_adaptation(0.5)
+	_expect(lantern.night_vision > 0.0 and lantern.night_vision < 0.2, "new dark reveal resumes gradually from reset")
 	lantern.free()
 	if failures == 0:
 		print("ADAPTATION_OK")

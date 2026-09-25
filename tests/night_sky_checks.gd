@@ -58,11 +58,16 @@ func _run() -> void:
 	# Near-zenith views exercise the projection seam/pole independently of the
 	# band-facing view; the two orientations also expose a fixed radial pinch.
 	camera.look_at(Vector3(0.005, 1.0, 0.0), Vector3.FORWARD)
+	NightEnvironment.set_night_vision(env, 0.0)
+	var zenith_dark := await _capture("sky-zenith-nv0.png")
+	NightEnvironment.set_night_vision(env, 1.0)
 	var zenith := await _capture("sky-zenith-nv1.png")
 	camera.look_at(Vector3(0.0, 1.0, 0.005), Vector3.RIGHT)
 	var zenith_rotated := await _capture("sky-zenith-rotated-nv1.png")
 	_expect(_bright_pixels(zenith) > 100, "zenith contains stars")
 	_expect(_bright_pixels(zenith_rotated) > 100, "rotated zenith contains stars")
+	_expect(_changed_pixels(zenith_dark, zenith) > 500,
+		"zenith band and stars emerge during adaptation")
 	camera.look_at(Vector3(0.8, 0.2, 0.6), Vector3.UP)
 	sky_material.set_shader_parameter("star_time_override", 23.0)
 	var later := await _capture("sky-band-nv1-time23.png")

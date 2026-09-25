@@ -225,4 +225,10 @@ static func builtins() -> Array[HerdPreset]:
 	loose_trains.arousal_scatter_strength = 0.65
 	loose_trains.glyph_render_scale = 0.6
 
-	return [plain, memory, independent, energy, lingering, living, longer_drift, drifting_trains, loose_trains]
+	var gentle_herding := loose_trains.copy_preset()
+	gentle_herding.preset_name = "Gentle herding"
+	gentle_herding.goal_repulsion_strength = -1.1
+	gentle_herding.blue_energy_response = 0.24
+	gentle_herding.energy_recovery_rate = 0.11
+
+	return [plain, memory, independent, energy, lingering, living, longer_drift, drifting_trains, loose_trains, gentle_herding]

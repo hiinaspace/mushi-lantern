@@ -25,8 +25,8 @@ checkout directly in the Godot editor.
 The first command stages native libraries under `addons/godot-steam-audio/bin`;
 the second creates `.local/godot/bin/godot4`. Their source revisions, patches,
 and notices are in [build-support/steam-audio/README.md](build-support/steam-audio/README.md).
-Only Linux x86_64 debug is built at present. Windows and release exports need
-their own extension builds and checks.
+Windows release extensions are built by the Windows package script. Linux
+friend exports also require a matching Linux release extension.
 
 ```bash
 ./launch.sh
@@ -92,7 +92,14 @@ Run records are JSON Lines at `user://m0_run_records.jsonl`; named presets are a
 
 The headless suite includes simulation/texture checks and an isolated test of real UI save/load, configuration history, CLI selection and reset callbacks. `check-gpu.sh` separately checks CPU/GPU agreement, waking and filter transitions, return/release accounting, resets, GPU texture binding and actual scene backend switching. GPU terrain flight uses shared height data, finite trunk/rock proxies and coarse swept overlap correction. `staff_tool_smoke.tscn` checks tool states and gestures. `check-audio.sh` needs `pactl` and a running PulseAudio-compatible server; it routes sound through a temporary null sink and leaves the default sink alone. These checks do not establish herding feel, stereo comfort or export readiness.
 
-The `Windows OpenXR` export preset includes the Terrain3D Windows x86-64 GDExtension. Steam Audio currently has only a Linux x86_64 debug build in this repository, so a Windows audio-enabled export is pending a matching extension build and validation.
+Friend builds use separate desktop and VR launchers around the same export.
+On Linux, `./build-support/package-linux-friends.sh` creates a ZIP with
+`friend-desktop.sh` and `friend-vr.sh`. The Linux release Steam Audio extension
+must be built and staged first. On Linux, use
+`./build-support/steam-audio/package-windows.sh` to build the patched Windows
+template and Steam Audio release extension, then export a ZIP with
+`friend-desktop.bat` and `friend-vr.bat`. The Windows ZIP is a Linux-exported
+build; Wine smoke tests do not establish native Windows or OpenXR readiness.
 
 Project and jam scope are recorded in [docs/charter-2026-09-21.md](docs/charter-2026-09-21.md) and [docs/jam-plan.md](docs/jam-plan.md).
 

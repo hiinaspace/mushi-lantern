@@ -23,11 +23,11 @@ const FILTER_ENTER_YAW := 0.30
 const FILTER_EXIT_YAW := 0.25
 const SUSPENSION_LENGTH := 0.39
 const SUSPENSION_PIVOT_LOCAL := Vector3(0.0, 0.64, -0.36)
-const SWING_GRAVITY := 9.81
-const SWING_DRAG := 2.6
+const SWING_GRAVITY := 7.6
+const SWING_DRAG := 5.2
+const SWING_ACCELERATION_FOLLOW := 0.55
 const SWING_STEP := 1.0 / 120.0
 const SWING_JUMP_DISTANCE := 0.55
-const XR_LOCOMOTION_FOLLOW := 0.45
 
 var placement: Placement = Placement.HELD
 var lantern: Lantern
@@ -38,6 +38,14 @@ var _swing: Node3D
 var _bob_world := Vector3.ZERO
 var _bob_velocity := Vector3.ZERO
 var _previous_pivot := Vector3.ZERO
+var _previous_pivot_velocity := Vector3.ZERO
+var _swing_sim_pivot := Vector3.ZERO
+var _desktop_yaw_reference := Transform3D.IDENTITY
+var _previous_desktop_yaw_reference := Transform3D.IDENTITY
+var _has_desktop_yaw_reference := false
+var _xr_rig_reference := Transform3D.IDENTITY
+var _previous_xr_rig_reference := Transform3D.IDENTITY
+var _has_xr_rig_reference := false
 var _float_elapsed := 0.0
 var _float_origin := Transform3D.IDENTITY
 var _park_target := Transform3D.IDENTITY
@@ -52,6 +60,8 @@ var _adjust_origin_dial := 0.0
 var _adjust_last_dial := 0.0
 var _recall_hand := Transform3D.IDENTITY
 var external_pose_owned := false
+var _shaft_hint_material: StandardMaterial3D
+var _control_hint_material: StandardMaterial3D
 
 func _ready() -> void:
 	freeze = true
@@ -111,7 +121,7 @@ func _build_visual() -> void:
 	shaft_mesh.height = SHAFT_TOP_Y - SHAFT_BOTTOM_Y
 	shaft.mesh = shaft_mesh
 	shaft.position.y = (SHAFT_TOP_Y + SHAFT_BOTTOM_Y) * 0.5
-	shaft.material_override = _material(Color("51402b"), 0.75, 0.15)
+	shaft.material_override = _material(Color("51402b"), 0.75, 0.0)
 	add_child(shaft)
 	for y: float in GRIP_Y:
 		var wrap := MeshInstance3D.new()
@@ -121,7 +131,7 @@ func _build_visual() -> void:
 		wrap_mesh.height = 0.13
 		wrap.mesh = wrap_mesh
 		wrap.position.y = y
-		wrap.material_override = _material(Color("9d7953"), 0.8, 0.08)
+		wrap.material_override = _material(Color("9d7953"), 0.8, 0.0)
 		add_child(wrap)
 	var ferrule := MeshInstance3D.new()
 	var ferrule_mesh := CylinderMesh.new()
@@ -152,7 +162,7 @@ func _build_visual() -> void:
 	crook_mesh.height = 0.11
 	crook_tip.mesh = crook_mesh
 	crook_tip.position = Vector3(0.0, 0.69, -0.36)
-	crook_tip.material_override = _material(Color("857f69"), 0.48, 0.10)
+	crook_tip.material_override = _material(Color("857f69"), 0.48, 0.0)
 	add_child(crook_tip)
 	_swing.position = SUSPENSION_PIVOT_LOCAL
 	add_child(_swing)
@@ -164,13 +174,60 @@ func _build_visual() -> void:
 	cord_mesh.height = 0.13
 	suspension.mesh = cord_mesh
 	suspension.position.y = -0.065
-	suspension.material_override = _material(Color("857f69"), 0.55, 0.08)
+	suspension.material_override = _material(Color("857f69"), 0.55, 0.0)
 	suspension.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_swing.add_child(suspension)
 	lantern = Lantern.new()
 	lantern.name = "Lantern"
 	lantern.position = Vector3(0.0, -SUSPENSION_LENGTH, 0.0)
 	_swing.add_child(lantern)
+	# Hover feedback is a small lit dash at the grip and a pinpoint at the
+	# lantern control, rather than XR Tools' large billboard ring.
+	var shaft_hint := MeshInstance3D.new()
+	shaft_hint.name = "ShaftGripPulse"
+	var shaft_hint_mesh := CylinderMesh.new()
+	shaft_hint_mesh.top_radius = 0.011
+	shaft_hint_mesh.bottom_radius = 0.011
+	shaft_hint_mesh.height = 0.07
+	shaft_hint.mesh = shaft_hint_mesh
+	shaft_hint.position.y = GRIP_Y[MID_GRIP_INDEX]
+	_shaft_hint_material = _make_hint_material()
+	shaft_hint.material_override = _shaft_hint_material
+	shaft_hint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(shaft_hint)
+	var control_hint := MeshInstance3D.new()
+	control_hint.name = "ControlGripPulse"
+	var control_hint_mesh := SphereMesh.new()
+	control_hint_mesh.radius = 0.018
+	control_hint_mesh.height = 0.036
+	control_hint.mesh = control_hint_mesh
+	control_hint.position = lantern.position + lantern.control_grip_local_position()
+	_control_hint_material = _make_hint_material()
+	control_hint.material_override = _control_hint_material
+	control_hint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_swing.add_child(control_hint)
+
+func _make_hint_material() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(1.0, 0.78, 0.38, 0.0)
+	mat.emission_enabled = true
+	mat.emission = Color("ffd083")
+	mat.emission_energy_multiplier = 0.0
+	return mat
+
+func set_interaction_hint(shaft_strength: float, control_strength: float) -> void:
+	if _shaft_hint_material != null:
+		_set_hint_strength(_shaft_hint_material, shaft_strength)
+	if _control_hint_material != null:
+		_set_hint_strength(_control_hint_material, control_strength)
+
+func _set_hint_strength(mat: StandardMaterial3D, strength: float) -> void:
+	var value := clampf(strength, 0.0, 1.0)
+	var color := Color(1.0, 0.78, 0.38, value * 0.72)
+	mat.albedo_color = color
+	mat.emission_energy_multiplier = value * 1.15
 
 func _build_grab_points() -> void:
 	for hand_side: int in 2:
@@ -221,6 +278,36 @@ func set_held_world_pose(staff_world: Transform3D) -> void:
 	global_transform = Transform3D(staff_world.basis.orthonormalized(), staff_world.origin)
 	_rebase_swing_if_jump()
 	_capture_aim()
+
+## Desktop mouselook rotates the held staff around the camera, which moves its
+## suspension point along an arc despite the player standing still. Supply the
+## camera transform each frame so that arc does not become a pendulum impulse.
+## XR hand poses do not use this compensation.
+func set_desktop_yaw_reference(camera_world: Transform3D) -> void:
+	if not _valid_transform(camera_world):
+		return
+	_desktop_yaw_reference = camera_world
+	if not _has_desktop_yaw_reference:
+		_previous_desktop_yaw_reference = camera_world
+		_has_desktop_yaw_reference = true
+
+func clear_desktop_yaw_reference() -> void:
+	if not _has_desktop_yaw_reference:
+		return
+	_has_desktop_yaw_reference = false
+	_swing_sim_pivot = _swing.global_position
+	_previous_pivot = _swing_sim_pivot
+	_previous_pivot_velocity = Vector3.ZERO
+
+## Optional explicit rig reference for deterministic fixtures and alternate grab drivers.
+## During an XR Tools grab this is read from the owning controller's XROrigin3D.
+func set_xr_rig_reference(rig_world: Transform3D) -> void:
+	if not _valid_transform(rig_world):
+		return
+	_xr_rig_reference = rig_world
+	if not _has_xr_rig_reference:
+		_previous_xr_rig_reference = rig_world
+		_has_xr_rig_reference = true
 
 func transfer(hand_world: Transform3D, index: int = MID_GRIP_INDEX) -> void:
 	# A hand swap is atomic. It never passes through gameplay release.
@@ -372,6 +459,7 @@ func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = 
 	global_transform = Transform3D(staff_world.basis.orthonormalized(), staff_world.origin)
 	placement = Placement.HELD if held else Placement.PARKED
 	external_pose_owned = false
+	_has_xr_rig_reference = false
 	_adjusting = false
 	lantern.end_dial_preview()
 	_float_elapsed = 0.0
@@ -380,7 +468,7 @@ func reset_to_pose(staff_world: Transform3D, shutter: float = 1.0, held: bool = 
 	_capture_aim()
 	_park_target = global_transform
 
-func advance(delta: float, xr_locomotion_delta: Vector3 = Vector3.ZERO) -> void:
+func advance(delta: float) -> void:
 	var dt := clampf(delta, 0.0, 0.1)
 	if placement == Placement.FLOATING:
 		_float_elapsed += dt
@@ -395,7 +483,7 @@ func advance(delta: float, xr_locomotion_delta: Vector3 = Vector3.ZERO) -> void:
 		if global_position.distance_to(_park_target.origin) < 0.018:
 			global_transform = _park_target
 			placement = Placement.PARKED
-	_update_swing(dt, xr_locomotion_delta)
+	_update_swing(dt)
 	lantern.advance_flame(dt)
 	lantern.advance_transition(dt)
 
@@ -441,49 +529,114 @@ func _capture_aim() -> void:
 		_last_horizontal_aim = forward.normalized()
 
 func _rebase_swing_if_jump() -> void:
-	if _swing.global_position.distance_to(_previous_pivot) > SWING_JUMP_DISTANCE:
+	if _swing_motion_since_previous_pivot().length() > SWING_JUMP_DISTANCE:
 		_reset_swing()
 
 func _reset_swing() -> void:
 	_previous_pivot = _swing.global_position
+	_swing_sim_pivot = _previous_pivot
+	_previous_pivot_velocity = Vector3.ZERO
 	_bob_world = _previous_pivot + Vector3.DOWN * SUSPENSION_LENGTH
 	_bob_velocity = Vector3.ZERO
 	_orient_swing(_previous_pivot)
 
-func _update_swing(dt: float, xr_locomotion_delta: Vector3 = Vector3.ZERO) -> void:
+func _update_swing(dt: float) -> void:
 	if dt <= 0.0:
 		return
+	_update_xr_rig_reference()
 	var pivot := _swing.global_position
-	if pivot.distance_to(_previous_pivot) > SWING_JUMP_DISTANCE:
+	if _swing_motion_since_previous_pivot().length() > SWING_JUMP_DISTANCE:
 		_reset_swing()
 		return
-	# The rig's joystick translation carries part of the bob along with the hand.
-	# Leave tracked hand motion and world-space gravity untouched.
-	if placement == Placement.HELD and not _adjusting and xr_locomotion_delta.is_finite() and xr_locomotion_delta.length() < SWING_JUMP_DISTANCE:
-		_bob_world += xr_locomotion_delta * XR_LOCOMOTION_FOLLOW
+	var simulation_pivot := pivot
+	if _has_xr_rig_reference:
+		# XROrigin locomotion moves the tracked controller and staff together. Remove
+		# only that shared rigid transform so controller motion within the rig still
+		# swings the lantern, including deliberate hand waving.
+		var rig_motion := _xr_rig_arc(_previous_pivot, _previous_xr_rig_reference, _xr_rig_reference)
+		simulation_pivot = _swing_sim_pivot + (pivot - _previous_pivot) - rig_motion
+	if _has_desktop_yaw_reference:
+		var yaw_arc := _desktop_yaw_arc(_previous_pivot, _previous_desktop_yaw_reference, _desktop_yaw_reference)
+		# Subtract only camera-yaw orbital motion. Camera translation and
+		# movement of the held aim offset still reach the swing simulation.
+		simulation_pivot = _swing_sim_pivot + (pivot - _previous_pivot) - yaw_arc
+	var render_offset := pivot - simulation_pivot
+	var simulation_bob := _bob_world - (_previous_pivot - _swing_sim_pivot)
 	if _adjusting:
-		_bob_world += pivot - _previous_pivot
+		simulation_bob += simulation_pivot - _swing_sim_pivot
 		_bob_velocity = Vector3.ZERO
+		_previous_pivot_velocity = Vector3.ZERO
 	else:
 		var steps := maxi(1, ceili(dt / SWING_STEP))
 		var step_dt := dt / float(steps)
-		var pivot_velocity := (pivot - _previous_pivot) / dt
+		var pivot_velocity := (simulation_pivot - _swing_sim_pivot) / dt
+		if placement == Placement.HELD:
+			# Carry some of the grip's acceleration into the bob. This softens
+			# abrupt WASD starts/stops without any steady-speed displacement.
+			_bob_velocity += (pivot_velocity - _previous_pivot_velocity) * SWING_ACCELERATION_FOLLOW
+			_previous_pivot_velocity = pivot_velocity
+		else:
+			_previous_pivot_velocity = Vector3.ZERO
 		for step: int in steps:
-			var step_pivot := _previous_pivot + (pivot - _previous_pivot) * (float(step + 1) / float(steps))
-			var old_bob := _bob_world
-			_bob_velocity += Vector3.DOWN * SWING_GRAVITY * step_dt
-			_bob_velocity *= exp(-SWING_DRAG * step_dt)
-			var unconstrained := _bob_world + _bob_velocity * step_dt
+			var step_pivot := _swing_sim_pivot + (simulation_pivot - _swing_sim_pivot) * (float(step + 1) / float(steps))
+			var old_bob := simulation_bob
+			# Damping acts on motion relative to the grip. Damping world velocity
+			# held the lantern sideways indefinitely at constant walking speed.
+			var relative_velocity := _bob_velocity - pivot_velocity
+			relative_velocity += Vector3.DOWN * SWING_GRAVITY * step_dt
+			relative_velocity *= exp(-SWING_DRAG * step_dt)
+			var unconstrained := simulation_bob + (pivot_velocity + relative_velocity) * step_dt
 			var direction := unconstrained - step_pivot
 			if direction.length_squared() < 0.000001:
 				direction = Vector3.DOWN
 			direction = direction.normalized()
-			_bob_world = step_pivot + direction * SUSPENSION_LENGTH
-			_bob_velocity = (_bob_world - old_bob) / step_dt
+			simulation_bob = step_pivot + direction * SUSPENSION_LENGTH
+			_bob_velocity = (simulation_bob - old_bob) / step_dt
 			# The string removes radial velocity relative to its moving pivot.
 			_bob_velocity -= direction * (_bob_velocity - pivot_velocity).dot(direction)
+	_bob_world = simulation_bob + render_offset
 	_previous_pivot = pivot
+	_swing_sim_pivot = simulation_pivot
+	if _has_desktop_yaw_reference:
+		_previous_desktop_yaw_reference = _desktop_yaw_reference
+	if _has_xr_rig_reference:
+		_previous_xr_rig_reference = _xr_rig_reference
 	_orient_swing(pivot)
+
+func _update_xr_rig_reference() -> void:
+	if not external_pose_owned or not is_instance_valid(_grab_driver) or not is_instance_valid(_grab_driver.primary):
+		return
+	var controller: XRController3D = _grab_driver.primary.controller
+	if controller == null:
+		return
+	var rig := controller.get_parent() as Node3D
+	if rig == null:
+		return
+	set_xr_rig_reference(rig.global_transform)
+
+func _swing_motion_since_previous_pivot() -> Vector3:
+	var motion := _swing.global_position - _previous_pivot
+	if _has_desktop_yaw_reference:
+		motion -= _desktop_yaw_arc(_previous_pivot, _previous_desktop_yaw_reference, _desktop_yaw_reference)
+	if _has_xr_rig_reference:
+		motion -= _xr_rig_arc(_previous_pivot, _previous_xr_rig_reference, _xr_rig_reference)
+	return motion
+
+func _xr_rig_arc(previous_pivot: Vector3, previous_rig: Transform3D, current_rig: Transform3D) -> Vector3:
+	return (current_rig * previous_rig.affine_inverse() * previous_pivot) - previous_pivot
+
+func _desktop_yaw_arc(previous_pivot: Vector3, previous_camera: Transform3D, current_camera: Transform3D) -> Vector3:
+	var previous_forward := -previous_camera.basis.z
+	var current_forward := -current_camera.basis.z
+	previous_forward.y = 0.0
+	current_forward.y = 0.0
+	if previous_forward.length_squared() <= 0.001 or current_forward.length_squared() <= 0.001:
+		return Vector3.ZERO
+	previous_forward = previous_forward.normalized()
+	current_forward = current_forward.normalized()
+	var yaw_delta := atan2(previous_forward.cross(current_forward).y, previous_forward.dot(current_forward))
+	var previous_relative := previous_pivot - previous_camera.origin
+	return Basis(Vector3.UP, yaw_delta) * previous_relative - previous_relative
 
 func _orient_swing(pivot: Vector3) -> void:
 	var down := (_bob_world - pivot).normalized()

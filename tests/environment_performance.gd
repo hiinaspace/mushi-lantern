@@ -1,13 +1,20 @@
 extends SceneTree
 
-# Full-scene desktop diagnostic, run three times per configuration externally.
-# XDG_DATA_HOME=/tmp/mushi-bench-1 MUSHI_BENCH_SECONDS=30 godot --path . --rendering-driver vulkan --rendering-method mobile --disable-vsync --script tests/environment_performance.gd
+# Full-scene desktop diagnostic; run each mode three times per basin size.
+# Example (repeat with unique /tmp/mushi-bench-* paths):
+# XDG_DATA_HOME=/tmp/mushi-bench-128-nv1 MUSHI_BENCH_ADAPTATION=1 MUSHI_BENCH_SECONDS=30 ./.local/godot/bin/godot4 --xr-mode off --path . --rendering-driver vulkan --rendering-method mobile --disable-vsync --script tests/environment_performance.gd -- --terrain-size 128
+# Repeat with adaptation=0, then use terrain-size 256 and a different XDG_DATA_HOME for each run.
 # MUSHI_BENCH_COUNT=512 and MUSHI_BENCH_QUALITY=low select the accessible preset.
+# Compare the same adapted terrain/foliage view against vision off with
+# MUSHI_BENCH_ADAPTATION=0 or 1; pass -- --terrain-size 128/256 to the script.
+# MUSHI_BENCH_SHUTTER=0 closes the lamp while holding adaptation independently.
+# Run each mode three times with distinct XDG_DATA_HOME paths. These desktop
+# GPU timings help compare shader cost; they do not establish headset frame time.
 # MUSHI_BENCH_CAPTURE_DIR=/absolute/path optionally saves route screenshots.
 # These times are desktop diagnostics, not headset frame-delivery proof.
 
 const WARMUP_SECONDS := 5.0
-const ROUTES := ["central_wake", "wooded_view"]
+const ROUTES := ["central_wake", "wooded_view", "grove_edge"]
 
 var _compute_samples: Array[float] = []
 var _phase_build_samples: Array[float] = []
@@ -42,6 +49,8 @@ func _run() -> void:
 	var environment_enabled: bool = lab.get("environment_enabled") == true
 	var count := 512 if OS.get_environment("MUSHI_BENCH_COUNT") == "512" else 1024
 	var quality_name := "low" if OS.get_environment("MUSHI_BENCH_QUALITY") == "low" else "high"
+	var adaptation := clampf(float(OS.get_environment("MUSHI_BENCH_ADAPTATION")) if not OS.get_environment("MUSHI_BENCH_ADAPTATION").is_empty() else 1.0, 0.0, 1.0)
+	var shutter := clampf(float(OS.get_environment("MUSHI_BENCH_SHUTTER")) if not OS.get_environment("MUSHI_BENCH_SHUTTER").is_empty() else 1.0, 0.0, 1.0)
 	if environment_enabled and lab.has_method("_apply_quality"):
 		var quality: Dictionary = lab.quality_menu.get_settings()
 		quality["vegetation"] = quality_name
@@ -60,6 +69,20 @@ func _run() -> void:
 	lab.social_slider.set_value_no_signal(1.4)
 	lab.wander_slider.set_value_no_signal(0.8)
 	lab._set_fixture(count)
+	# Freeze the visual adaptation state so runs only differ in river/foliage
+	# shader work. The lantern remains clear-light for the same lamp state.
+	lab.lantern.reset_adaptation(adaptation)
+	lab.lantern.set_shutter(shutter)
+	if lab.night_environment != null:
+		NightEnvironment.set_night_vision(lab.night_environment, adaptation)
+	if lab.terrain_environment != null:
+		lab.terrain_environment.set_night_vision(adaptation)
+	if lab.goal_shrine != null:
+		lab.goal_shrine.set_night_vision(adaptation)
+	if OS.get_environment("MUSHI_BENCH_HIDE_FAR") == "1" and lab.terrain_environment != null:
+		var far_receiver: Node3D = lab.terrain_environment.get("_river_far_receiver")
+		if far_receiver != null:
+			far_receiver.visible = false
 	await _wait_gpu(lab)
 	if lab._active_backend != "gpu" or not lab.simulation.gpu_ready:
 		_failures.append("GPU simulation unavailable: %s" % lab.simulation.gpu_error)
@@ -79,7 +102,7 @@ func _run() -> void:
 	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
 	var seconds := maxf(3.0, float(OS.get_environment("MUSHI_BENCH_SECONDS"))) if not OS.get_environment("MUSHI_BENCH_SECONDS").is_empty() else 30.0
 	var terrain_size: int = int(lab.get("terrain_size")) if environment_enabled else 0
-	print("M1_BENCH_META engine=%s renderer=%s count=%d quality=%s terrain=%d seed=%d seconds_per_route=%.1f warmup=%.1f resolution=%s viewport_scale=%.2f gpu=%s cpu=%s" % [Engine.get_version_info().string, RenderingServer.get_current_rendering_method(), count, quality_name, terrain_size, lab.current_seed, seconds, WARMUP_SECONDS, root.get_texture().get_size(), root.scaling_3d_scale, RenderingServer.get_video_adapter_name(), OS.get_processor_name()])
+	print("M1_BENCH_META engine=%s renderer=%s count=%d quality=%s terrain=%d adaptation=%.2f seed=%d seconds_per_route=%.1f warmup=%.1f resolution=%s viewport_scale=%.2f gpu=%s cpu=%s" % [Engine.get_version_info().string, RenderingServer.get_current_rendering_method(), count, quality_name, terrain_size, adaptation, lab.current_seed, seconds, WARMUP_SECONDS, root.get_texture().get_size(), root.scaling_3d_scale, RenderingServer.get_video_adapter_name(), OS.get_processor_name()])
 	for route: String in ROUTES:
 		_place_route(lab, route)
 		await _sample_route(lab, route, count, quality_name, seconds)
@@ -88,13 +111,20 @@ func _run() -> void:
 
 func _place_route(lab: Node, route: String) -> void:
 	var environment_enabled: bool = lab.get("environment_enabled") == true
+	var terrain_size := int(lab.get("terrain_size")) if environment_enabled else 60
 	# Identical static viewpoints in the frozen arena and the new basin.
-	var xz := Vector2(-14.4, -8.0) if route == "central_wake" else Vector2(20.0, 20.0)
+	var xz := Vector2(-14.4, -8.0)
+	if route == "wooded_view":
+		xz = Vector2(20.0, 20.0)
+	elif route == "grove_edge":
+		xz = Vector2(float(terrain_size) * 0.5 - 7.0, 0.0)
 	var ground_height: float = lab.world_surface.get_height_at(xz) if environment_enabled else 0.0
 	lab.player.position = Vector3(xz.x, ground_height + 0.05, xz.y)
 	lab.player.reset_look()
 	if route == "wooded_view":
 		lab.player.rotate_y(2.3)
+	elif route == "grove_edge":
+		lab.player.rotate_y(PI * 0.5)
 	lab.lantern.set_mode(LightField.Mode.ORANGE if route == "central_wake" else LightField.Mode.CLEAR)
 
 
@@ -102,6 +132,7 @@ func _sample_route(lab: Node, route: String, count: int, quality: String, second
 	var start_usec := Time.get_ticks_usec()
 	while float(Time.get_ticks_usec() - start_usec) < WARMUP_SECONDS * 1000000.0:
 		await process_frame
+		_pin_adaptation(lab)
 	_compute_samples.clear()
 	_phase_build_samples.clear()
 	_phase_sim_samples.clear()
@@ -116,6 +147,7 @@ func _sample_route(lab: Node, route: String, count: int, quality: String, second
 	var previous_usec := start_usec
 	while float(Time.get_ticks_usec() - start_usec) < seconds * 1000000.0:
 		await process_frame
+		_pin_adaptation(lab)
 		RenderingServer.call_on_render_thread(lab.simulation._collect_gpu_timing.bind(lab.simulation._epoch))
 		var now_usec := Time.get_ticks_usec()
 		wall_frames.append(float(now_usec - previous_usec) / 1000.0)
@@ -141,6 +173,27 @@ func _sample_route(lab: Node, route: String, count: int, quality: String, second
 	if _compute_samples.is_empty():
 		_failures.append("missing GPU timestamps in " + route)
 	print("M1_BENCH route=%s count=%d quality=%s wall_ms=%s process_ms=%s viewport_render_cpu_ms=%s viewport_render_gpu_ms=%s gpu_upload_compute_ms=%s gpu_build_ms=%s gpu_simulate_ms=%s draws=%s primitives=%s video_mem_mib=%s finite=%s score=%d ticks=%d" % [route, count, quality, _stats(wall_frames), _stats(process_times), _stats(render_cpu), _stats(render_gpu), _stats(_compute_samples), _stats(_phase_build_samples), _stats(_phase_sim_samples), _stats(draw_calls), _stats(primitives), _stats(memory), finite, lab.simulation.score, lab.simulation.state_revision])
+
+
+func _pin_adaptation(lab: Node) -> void:
+	var value := clampf(float(OS.get_environment("MUSHI_BENCH_ADAPTATION")) if not OS.get_environment("MUSHI_BENCH_ADAPTATION").is_empty() else 1.0, 0.0, 1.0)
+	lab.lantern.reset_adaptation(value)
+	var shutter := clampf(float(OS.get_environment("MUSHI_BENCH_SHUTTER")) if not OS.get_environment("MUSHI_BENCH_SHUTTER").is_empty() else 1.0, 0.0, 1.0)
+	lab.lantern.set_shutter(shutter)
+	if lab.night_environment != null:
+		NightEnvironment.set_night_vision(lab.night_environment, value)
+	if lab.terrain_environment != null:
+		lab.terrain_environment.set_night_vision(value)
+		if OS.get_environment("MUSHI_BENCH_HIDE_FAR") == "1":
+			var far_receiver: Node3D = lab.terrain_environment.get("_river_far_receiver")
+			if far_receiver != null:
+				far_receiver.visible = false
+		if OS.get_environment("MUSHI_BENCH_HIDE_FOLIAGE_RIVER") == "1":
+			var foliage_materials: Array = lab.terrain_environment.get("_foliage_materials")
+			for material: ShaderMaterial in foliage_materials:
+				material.set_shader_parameter("river_night_vision", 0.0)
+	if lab.goal_shrine != null:
+		lab.goal_shrine.set_night_vision(value)
 
 
 func _wait_gpu(lab: Node) -> void:

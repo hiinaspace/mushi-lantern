@@ -10,10 +10,14 @@ uniform bool face_camera = false;
 uniform bool animate_vertices = true;
 uniform float glow_strength : hint_range(0.0, 3.0) = 0.72;
 uniform float bloom_hdr_gain : hint_range(1.0, 2.0) = 1.0;
+uniform float clear_light_fade : hint_range(0.0, 0.5) = 0.0;
+uniform float clear_fade_distance_start = 17.0;
+uniform float clear_fade_distance_end = 52.0;
 
 varying flat float glyph_type;
 varying flat float glyph_seed;
 varying vec4 glyph_color;
+varying float glyph_visibility;
 
 vec3 rgb_to_hsv(vec3 c) {
 	vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -32,15 +36,17 @@ vec3 hsv_to_rgb(vec3 c) {
 vec3 energy_color(float arousal, float subtype) {
 	float e = clamp(arousal, 0.0, 1.0);
 	float middle = clamp(energy_neutral, 0.2, 0.65);
-	vec3 blue = vec3(0.157, 0.490, 0.910);
-	vec3 green = vec3(0.220, 0.847, 0.482);
+	// Sleep stays distinctly blue; the neutral band leans mint/cyan so it reads
+	// separately from both the sleeping hue and the environment's purple glow.
+	vec3 blue = vec3(0.176, 0.392, 0.824);
+	vec3 green = vec3(0.298, 0.824, 0.667);
 	vec3 yellow = vec3(0.949, 0.800, 0.196);
-	vec3 orange = vec3(0.961, 0.361, 0.125);
+	vec3 orange = vec3(0.878, 0.220, 0.094);
 	vec3 color = e <= middle
 		? mix(blue, green, smoothstep(0.0, middle, e))
-		: (e <= 0.75
-			? mix(green, yellow, smoothstep(middle, 0.75, e))
-			: mix(yellow, orange, smoothstep(0.75, 1.0, e)));
+		: (e <= 0.68
+			? mix(green, yellow, smoothstep(middle, 0.68, e))
+			: mix(yellow, orange, smoothstep(0.68, 1.0, e)));
 	vec3 hsv = rgb_to_hsv(color);
 	hsv.x = fract(hsv.x + (subtype - 1.0) * 0.04 * population_variation + 1.0);
 	return hsv_to_rgb(hsv);
@@ -55,6 +61,9 @@ void vertex() {
 	glyph_type = floor(INSTANCE_CUSTOM.x * 2.0 + 0.5);
 	glyph_seed = INSTANCE_CUSTOM.y;
 	glyph_color = vec4(mix(energy_color(arousal, glyph_type), energy_color(arousal, glyph_type) * COLOR.rgb, 0.18), current.w < 0.0 ? 0.0 : 1.0);
+	float camera_distance = distance(center, INV_VIEW_MATRIX[3].xyz);
+	float distant_fade = smoothstep(clear_fade_distance_start, clear_fade_distance_end, camera_distance);
+	glyph_visibility = 1.0 - clear_light_fade * distant_fade;
 
 	vec2 local = VERTEX.xy;
 	float flutter = animate_vertices ? sin(TIME * (1.7 + glyph_seed) + glyph_seed * 19.0) * 0.055 : 0.0;
@@ -90,6 +99,16 @@ void vertex() {
 		vec3 normal = normalize(mix(fallback, normalize(sideways + vec3(0.000001)), smoothstep(0.02, 0.12, length(sideways))));
 		right = normalize(cross(forward, normal));
 		up = forward;
+		// Small fixed per-agent rotations keep a moving glyph readable when its
+		// path points directly at one eye. Keep the long axis tied to travel while
+		// varying yaw, pitch and roll enough to expose the thin ring in stereo.
+		float yaw_offset = (fract(glyph_seed * 17.173 + 0.37) - 0.5) * 0.62;
+		float pitch_offset = (fract(glyph_seed * 31.719 + 0.11) - 0.5) * 0.46;
+		float roll_offset = (fract(glyph_seed * 53.117 + 0.73) - 0.5) * 0.90;
+		vec3 varied_up = normalize(up + right * yaw_offset + normal * pitch_offset);
+		vec3 rolled_normal = normalize(normal * cos(roll_offset) - right * sin(roll_offset));
+		up = varied_up;
+		right = normalize(cross(up, rolled_normal));
 	}
 	vec3 world = center + right * local.x + up * local.y;
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world, 1.0);
@@ -138,5 +157,5 @@ void fragment() {
 	// glow threshold while the broad interior retains its original color.
 	float hot_ring = clamp((bloom_hdr_gain - 1.0) * 0.625, 0.0, 0.25) * ring;
 	EMISSION = mix(color, vec3(1.0), hot_ring) * glow_strength * (0.35 + ring * 0.95) * bloom_hdr_gain;
-	ALPHA = alpha * glyph_color.a;
+	ALPHA = alpha * glyph_color.a * glyph_visibility;
 }

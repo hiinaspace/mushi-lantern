@@ -56,6 +56,11 @@ func _check_size(size: int) -> void:
 	player.add_child(camera)
 	root.add_child(player)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var held_staff := player.staff_hold_transform(Vector2.ZERO)
+	var camera_origin := player.camera.global_position
+	_expect(held_staff.origin.x > camera_origin.x + 0.3, size, "desktop staff is held to the right of the view")
+	_expect(held_staff.origin.y > camera_origin.y - 0.5, size, "desktop staff stays above low waist level")
+	_expect(held_staff.origin.distance_to(camera_origin) < 1.2, size, "desktop staff stays in near FPS reach")
 	var drop_m := surface.get_height_at(TOP) - surface.get_height_at(BOTTOM)
 	_expect(drop_m > 4.5, size, "cliff top is at least 4.5 m above bottom")
 	await _place_player(player, surface, TOP)
@@ -73,7 +78,9 @@ func _check_size(size: int) -> void:
 	await _place_player(player, surface, BOTTOM)
 	var bypass_complete := true
 	for waypoint: Vector2 in BYPASS:
-		var segment: Dictionary = await _walk_to(player, waypoint, 480)
+		# The 27 m east leg needs room for the friend build's walking pace
+		# (60% of sprint); the fixture checks reachability, not a speed target.
+		var segment: Dictionary = await _walk_to(player, waypoint, 600)
 		bypass_complete = bypass_complete and segment.reached
 		if not segment.reached:
 			print("TRAVERSAL_BLOCKED size=%d waypoint=%s position=%s" % [size, waypoint, player.global_position])

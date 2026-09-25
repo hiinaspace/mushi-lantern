@@ -22,7 +22,10 @@ layout(push_constant, std430) uniform Phase { uint phase; } pc;
 
 const int ACTIVE = 0;
 const int COMMITTED = 1;
-const int ASCENDING = 2;
+const int DESCENDING = 2;
+// Keep this aligned with the migration stream's rendered depth. Returned
+// agents pass below the terrain before release so they visibly join it.
+const float STREAM_DEPTH_BELOW_GROUND = 22.0;
 const int RELEASED = 3;
 const float PI = 3.14159265358979323846;
 const int MAX_AGENTS = 2048;
@@ -560,12 +563,12 @@ void main() {
         vec3 target = vec3(pf(59), xyz.y, pf(60));
         next_pos = mix(xyz, target, 1.0 - exp(-dt * 4.0));
         next_vel = vec3(0.0);
-        if (aux.z >= 0.22) { aux.x = float(ASCENDING); aux.z = 0.0; }
-    } else if (lifecycle == ASCENDING) {
-        vec3 target = vec3(pf(59), ground_height(vec2(pf(59), pf(60))) + pf(58) + 1.0, pf(60));
+        if (aux.z >= 0.22) { aux.x = float(DESCENDING); aux.z = 0.0; }
+    } else if (lifecycle == DESCENDING) {
+        vec3 target = vec3(pf(59), ground_height(vec2(pf(59), pf(60))) - STREAM_DEPTH_BELOW_GROUND, pf(60));
         next_pos = mix(xyz, target, 1.0 - exp(-dt * 2.2));
-        next_vel = vec3(0.0, 1.0, 0.0);
-        if (aux.z >= 2.35) { aux.x = float(RELEASED); aux.z = 0.0; }
+        next_vel = vec3(0.0, -1.0, 0.0);
+        if (aux.z >= 6.0) { aux.x = float(RELEASED); aux.z = 0.0; }
     } else if (lifecycle == ACTIVE) {
         int selected[27];
         candidates_for(id, selected);
@@ -644,14 +647,16 @@ void main() {
             next_vel = limited(next_vel, speed_cap);
         } else next_vel = limited(velocity + force * dt, pf(16) * trait0(id).z * mix(0.88, 1.18, e));
         constrain_motion(xyz, next_vel, next_pos);
-        if (distance(next_pos.xz, vec2(pf(59), pf(60))) <= pf(61)) {
-            aux.y += dt;
-            if (aux.y >= pf(62)) {
-                aux.x = float(COMMITTED);
-                aux.z = 0.0;
-                events[id] = 1u;
-            }
-        } else aux.y = max(0.0, aux.y - dt * 2.0);
+        if (pf(78) > 0.5) {
+            if (distance(next_pos.xz, vec2(pf(59), pf(60))) <= pf(61)) {
+                aux.y += dt;
+                if (aux.y >= pf(62)) {
+                    aux.x = float(COMMITTED);
+                    aux.z = 0.0;
+                    events[id] = 1u;
+                }
+            } else aux.y = max(0.0, aux.y - dt * 2.0);
+        } else aux.y = 0.0;
     }
     new_state[id * 6] = vec4(next_pos, e);
     new_state[id * 6 + 1] = vec4(next_vel, old_v.w);

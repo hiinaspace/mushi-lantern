@@ -18,6 +18,10 @@ func _initialize() -> void:
 func _run() -> void:
 	var lab: Node = load("res://scenes/main.tscn").instantiate()
 	root.add_child(lab)
+	# The friend-facing scene starts at its paused menu; enter play before
+	# asserting that the GPU simulation advances.
+	if lab.friend_menu != null:
+		lab.friend_menu.set_open(false)
 	lab.set_process_unhandled_input(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_expect(lab.environment_enabled, "environment enabled with rendered Mobile backend")
