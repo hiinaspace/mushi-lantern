@@ -33,4 +33,4 @@ text = "Mushi Lantern"
 
 [node name="Description" type="Label" parent="Panel/Margin/Contents"]
 layout_mode = 2
-text = "Y / B: close · Left stick: move · Right stick: turn\nHold X / A: recall · Grip shaft: take staff\nGrip lantern: shutter/color · Two hands + aim shaft at seat: broom\nBroom: left Y fore/aft · right X yaw / Y height\nRelease either grip below 2 m to descend"
+text = "Y / B: close · Left stick: move · Right stick: turn\nHold X / A: recall · Grip shaft: take staff\nGrip lantern: raise/lower for shutter; tilt for color"

@@ -696,8 +696,6 @@ func _update_staff_pose(delta: float) -> void:
 	if xr_player != null and xr_player.xr_active:
 		staff_tool.clear_desktop_yaw_reference()
 		if xr_staff_interaction != null:
-			# The broom is a free-play spike, including runs that skip the tutorial.
-			xr_staff_interaction.broom_unlocked = tutorial_director != null and (not tutorial_director.tutorial_enabled or tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY)
 			xr_staff_interaction.update(delta)
 		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
 			staff_tool.update_recall(_xr_recall_owner.global_transform, delta)

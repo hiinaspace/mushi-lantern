@@ -33,6 +33,7 @@ class ControlHighlight extends Node3D:
 
 var staff: StaffTool
 var rig: MushiXRPlayer
+# Future grove-progress reward sets this true after its dialogue unlock.
 var broom_unlocked := false
 var broom_active := false
 var _broom_arm_elapsed := 0.0
