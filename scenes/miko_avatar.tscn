@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/avatar/miko.vrm" id="1_miko"]
+[ext_resource type="Script" path="res://scripts/miko_avatar.gd" id="2_miko_color"]
+
+[node name="MikoAvatar" type="Node3D"]
+script = ExtResource("2_miko_color")
+
+[node name="Model" parent="." instance=ExtResource("1_miko")]

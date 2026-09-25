@@ -468,6 +468,7 @@ func _build_world() -> void:
 		terrain_environment = load("res://scripts/terrain_environment.gd").new()
 		add_child(terrain_environment)
 		terrain_environment.build(world_surface)
+		_add_miko_presentation()
 		light_field.world_surface = world_surface
 		light_field.environment_obstacles = world_surface.get_obstacles()
 	else:
@@ -571,6 +572,27 @@ func _build_world() -> void:
 	top_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	top_camera.size = float(terrain_size) if environment_enabled else 62.0
 	add_child(top_camera)
+
+
+func _add_miko_presentation() -> void:
+	var avatar_scene := load("res://scenes/miko_avatar.tscn") as PackedScene
+	if avatar_scene == null:
+		push_warning("Miko avatar scene is unavailable; continuing without the scene character")
+		return
+
+	var presentation := Node3D.new()
+	presentation.name = "MikoPresentation"
+	var xz := Vector2(-2.0, 6.4)
+	presentation.position = Vector3(xz.x, _ground_height(xz), xz.y)
+	# The imported VRM faces +Z. The starting player at z=9.2 sees its face.
+	var avatar := avatar_scene.instantiate() as Node3D
+	if avatar == null:
+		push_warning("Miko avatar scene has no Node3D root")
+		presentation.free()
+		return
+	avatar.name = "Miko"
+	presentation.add_child(avatar)
+	add_child(presentation)
 
 func _build_player() -> void:
 	player = DesktopPlayer.new()
@@ -1237,7 +1259,9 @@ func _rebuild_agents() -> void:
 		return_handoff = null
 	if flight_enabled:
 		glyph_swarm = GlyphSwarm.new()
-		glyph_swarm.bloom_hdr_gain = 1.4 if environment_enabled else 1.0
+		glyph_swarm.glow_strength = 1.0 if environment_enabled else 0.72
+		glyph_swarm.bloom_hdr_gain = 3.0 if environment_enabled else 1.0
+		glyph_swarm.halo_strength = 0.8 if environment_enabled and bool(_quality_settings.get("bloom", true)) else 0.0
 		add_child(glyph_swarm)
 		glyph_swarm.configure(simulation.positions.size())
 		glyph_swarm.set_visual_tuning(_visual_tuning)
@@ -1944,8 +1968,8 @@ func _apply_quality(settings: Dictionary) -> void:
 	_quality_settings = settings.duplicate()
 	get_viewport().scaling_3d_scale = float(settings.get("render_scale", 1.0))
 	var high_shadows := str(settings.get("shadows", "high")) == "high"
-	if night_environment != null:
-		night_environment.glow_enabled = bool(settings.get("bloom", true))
+	if glyph_swarm != null:
+		glyph_swarm.set_halo_strength(0.8 if environment_enabled and bool(settings.get("bloom", true)) else 0.0)
 	if sun_light != null:
 		sun_light.directional_shadow_max_distance = 65.0 if high_shadows else 28.0
 	if lantern != null and lantern.spot != null:

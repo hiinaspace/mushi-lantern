@@ -135,7 +135,7 @@ func _build_panel() -> void:
 	_shadow_choice = _add_choice(stack, "Shadows", ["High", "Low"], ["high", "low"])
 	_shadow_choice.item_selected.connect(_on_shadows_selected)
 	_bloom_toggle = CheckButton.new()
-	_bloom_toggle.text = "Bloom"
+	_bloom_toggle.text = "Mushi halo"
 	_bloom_toggle.toggled.connect(func(enabled: bool) -> void: _change_setting("bloom", enabled))
 	stack.add_child(_bloom_toggle)
 	_scale_choice = _add_choice(stack, "3D render scale", ["100%", "80%"], [1.0, 0.8])

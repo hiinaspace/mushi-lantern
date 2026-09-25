@@ -61,10 +61,10 @@ func _run() -> void:
 	var quality: Dictionary = lab.quality_menu.get_settings()
 	quality["bloom"] = false
 	lab._apply_quality(quality)
-	_expect(not lab.night_environment.glow_enabled, "F2 bloom can be disabled")
+	_expect(is_zero_approx(lab.glyph_swarm.halo_strength), "F2 mushi halo can be disabled")
 	quality["bloom"] = true
 	lab._apply_quality(quality)
-	_expect(lab.night_environment.glow_enabled, "F2 bloom can be enabled")
+	_expect(lab.glyph_swarm.halo_strength > 0.0 and not lab.night_environment.glow_enabled, "F2 enables only mushi halo")
 	quality["shadows"] = "high"
 	lab._apply_quality(quality)
 	_expect(is_zero_approx(lab.sun_light.light_energy) and not lab.sun_light.shadow_enabled, "sun remains off under high quality")

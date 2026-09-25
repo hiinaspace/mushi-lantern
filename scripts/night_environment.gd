@@ -23,21 +23,8 @@ static func configure(environment: Environment) -> void:
 	environment.ambient_light_energy = 0.012
 	environment.ambient_light_sky_contribution = 0.0
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
-	# The Mobile renderer has a narrow HDR range. Keep glow near scene white,
-	# with a short knee and no full-screen bloom floor.
-	environment.glow_enabled = true
-	environment.glow_hdr_threshold = 0.90
-	environment.glow_hdr_scale = 0.20
-	environment.glow_bloom = 0.0
-	environment.glow_intensity = 1.5
-	environment.glow_normalized = true
-	environment.set_glow_level(0, 0.20)
-	environment.set_glow_level(1, 0.55)
-	environment.set_glow_level(2, 0.20)
-	environment.set_glow_level(3, 0.05)
-	environment.set_glow_level(4, 0.0)
-	environment.set_glow_level(5, 0.0)
-	environment.set_glow_level(6, 0.0)
+	# The glyph shader draws its own halo so lit grass and avatars stay crisp.
+	environment.glow_enabled = false
 
 
 static func set_night_vision(environment: Environment, value: float) -> void:

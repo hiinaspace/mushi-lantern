@@ -13,6 +13,7 @@ const RELEASED := 3
 @export var animate_vertices := true
 @export var glow_strength := 0.72
 @export var bloom_hdr_gain := 1.0
+@export var halo_strength := 0.0
 
 var world_bounds := AABB(Vector3(-35.0, -2.0, -35.0), Vector3(70.0, 16.0, 70.0))
 var instance_count: int = 0
@@ -210,7 +211,13 @@ func _apply_shader_options() -> void:
 	_material.set_shader_parameter("face_camera", face_camera)
 	_material.set_shader_parameter("animate_vertices", animate_vertices)
 	_material.set_shader_parameter("glow_strength", glow_strength)
-	_material.set_shader_parameter("bloom_hdr_gain", clampf(bloom_hdr_gain, 1.0, 2.0))
+	_material.set_shader_parameter("bloom_hdr_gain", clampf(bloom_hdr_gain, 1.0, 4.0))
+	_material.set_shader_parameter("halo_strength", clampf(halo_strength, 0.0, 1.5))
+
+
+func set_halo_strength(value: float) -> void:
+	halo_strength = clampf(value, 0.0, 1.5)
+	_material.set_shader_parameter("halo_strength", halo_strength)
 
 
 func set_world_bounds(bounds: AABB) -> void:

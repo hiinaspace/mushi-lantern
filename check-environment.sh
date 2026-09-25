@@ -37,4 +37,4 @@ run_check rendered res://tests/night_scene_checks.gd NIGHT_SCENE_PASS --terrain-
 run_check rendered res://tests/night_scene_checks.gd NIGHT_SCENE_PASS --terrain-size 256 --count 512
 run_check rendered res://tests/night_sky_checks.gd NIGHT_SKY_PASS
 run_check rendered res://tests/foliage_luminescence_checks.gd FOLIAGE_LUMINESCENCE_PASS
-run_check rendered res://tests/night_bloom_checks.gd NIGHT_BLOOM_PASS --terrain-size 128 --count 512
+run_check rendered res://tests/glyph_halo_checks.gd GLYPH_HALO_PASS

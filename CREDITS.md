@@ -1,5 +1,22 @@
 # Credits
 
+## Avatar
+
+The character **右近 (Ukon)**, included as `assets/avatar/miko.vrm`, was created by
+**キツネツキ (kitsune_tsuki)**. Source: [VRoid Hub model page](https://hub.vroid.com/en/characters/4612164211441790719/models/9051368064615794365).
+The model's VRoid Hub license permits redistribution, modification and commercial
+use and **requires attribution**. The embedded VRM 0.0 metadata names
+`kitsune_tsuki` as author and links to the [license terms](https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=necessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow).
+The source file is stored unchanged under a shorter filename (SHA-256:
+`7c0142648d26baaee245de68fef7d9f647b4097a25e36fcdfb2b1cb4bea4511d`).
+
+The Godot VRM importer and MToon shader are vendored from
+[V-Sekai/godot-vrm](https://github.com/V-Sekai/godot-vrm) at commit
+`e15199f980064028bfa4fbee5e70dddb82dd55c3`. Their MIT license texts are
+in `addons/vrm/LICENSE` and `addons/Godot-MToon-Shader/LICENSE`.
+The vendored MToon shader has a local, default-off Miko hue and iris-emission
+extension for the avatar color preview.
+
 ## Audio recordings
 
 The following recordings were shared under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
