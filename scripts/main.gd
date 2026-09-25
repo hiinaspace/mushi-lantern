@@ -890,6 +890,7 @@ func _build_xr_player() -> void:
 	staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	xr_staff_interaction = load("res://scripts/xr_staff_interaction.gd").new()
 	xr_staff_interaction.configure(staff_tool, xr_player)
+	xr_staff_interaction.broom_test_override = _broom_test_enabled
 	xr_staff_interaction.broom_unlocked = _broom_test_enabled
 
 

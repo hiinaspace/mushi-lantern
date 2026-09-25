@@ -54,9 +54,10 @@ stable while dragging its sliders.
 
 For an experimental XR broom flight/IK check, set `MUSHI_ROOM_SECRET` and run
 `./launch.sh --xr --host --broom-test`. Hold the staff with both hands,
-bring its shaft roughly horizontal across the hips, and hold that pose for one
-second. This bypasses the planned grove reward for this run only. During
-flight, the Ukon avatar keeps tracked head and arms while its ground leg
+then hold both controller triggers for one second, regardless of staff pose.
+Releasing either grip stops flight or starts a controlled landing when high
+above the ground. The flag bypasses the planned grove reward for this run.
+During flight, the Ukon avatar keeps tracked head and arms while its ground leg
 animation and foot planting pause. That flight state rides the existing avatar
 pose byte so peers see dangling legs too. The XR Tools hand meshes are hidden while
 the local multiplayer Ukon avatar is present; their hand nodes still provide

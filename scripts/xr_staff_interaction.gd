@@ -16,9 +16,7 @@ const RECALL_HAPTIC_INTERVAL := 0.62
 const RECALL_HAPTIC := 0.045
 const GRIP_THRESHOLD := 0.65
 const BROOM_ARM_SECONDS := 1.0
-const BROOM_SEAT_BELOW_HEAD := 0.8
-const BROOM_SEAT_RADIUS := 0.29
-const BROOM_MAX_VERTICAL_AXIS := 0.42
+const BROOM_TRIGGER_THRESHOLD := 0.65
 
 class ControlHighlight extends Node3D:
 	signal highlight_updated(pickable: Node3D, enabled: bool)
@@ -35,6 +33,7 @@ var staff: StaffTool
 var rig: MushiXRPlayer
 # Future grove-progress reward sets this true after its dialogue unlock.
 var broom_unlocked := false
+var broom_test_override := false
 var broom_active := false
 var _broom_arm_elapsed := 0.0
 var _controllers: Array[XRController3D] = []
@@ -157,18 +156,17 @@ func _update_broom(delta: float) -> void:
 			broom_active = false
 			return
 		rig.set_broom_forward(_broom_forward())
-		if not rig.broom_release_locked():
-			# A released grip at landing exits flight. The normal XR Tools pickup
-			# release then handles the shaft and its usual float/park transition.
-			for index: int in _controllers.size():
-				if _pickups[index].picked_up_object == staff and _controllers[index].get_float("grip") <= GRIP_THRESHOLD:
-					_stop_broom()
-					break
+		# A released grip requests landing even while pickup release is locked
+		# above the ground. Keep both grab points until the descent finishes.
+		for index: int in _controllers.size():
+			if _pickups[index].picked_up_object == staff and _controllers[index].get_float("grip") <= GRIP_THRESHOLD:
+				rig.stop_broom_flight()
+				if not rig.is_broom_flying():
+					broom_active = false
+				break
 		return
-	if not broom_unlocked or rig.is_menu_open() or _adjust_owner != null or not _both_hands_on_shaft():
-		_broom_arm_elapsed = 0.0
-		return
-	if not _staff_points_at_seat():
+	if not broom_unlocked or rig.is_menu_open() or _adjust_owner != null or not _both_hands_on_shaft() \
+			or not _both_triggers_pressed():
 		_broom_arm_elapsed = 0.0
 		return
 	_broom_arm_elapsed += maxf(delta, 0.0)
@@ -182,21 +180,19 @@ func _update_broom(delta: float) -> void:
 
 
 func _both_hands_on_shaft() -> bool:
-	return _pickups[0].picked_up_object == staff and _pickups[1].picked_up_object == staff
+	return _pickups[0].picked_up_object == staff and _pickups[1].picked_up_object == staff \
+		and _controllers[0].get_has_tracking_data() and _controllers[1].get_has_tracking_data() \
+		and _controllers[0].get_float("grip") > GRIP_THRESHOLD \
+		and _controllers[1].get_float("grip") > GRIP_THRESHOLD
 
 
-func _staff_points_at_seat() -> bool:
-	# The lantern hangs from the local +Y end of the staff. The seat is
-	# behind it, toward local -Y.
-	# Checking a short shaft segment near the inferred seat accepts a staff
-	# between the legs or beside the hips without prescribing arm positions.
-	var axis: Vector3 = staff.global_transform.basis.y.normalized()
-	if absf(axis.y) > BROOM_MAX_VERTICAL_AXIS:
-		return false
-	var seat := rig.camera.global_position - Vector3.UP * BROOM_SEAT_BELOW_HEAD
-	var local_seat := staff.to_local(seat)
-	return local_seat.y >= StaffTool.SHAFT_BOTTOM_Y - 0.16 and local_seat.y <= 0.14 \
-		and Vector2(local_seat.x, local_seat.z).length() <= BROOM_SEAT_RADIUS
+func _both_triggers_pressed() -> bool:
+	return triggers_held(_controllers[0].get_float("trigger"),
+		_controllers[1].get_float("trigger"))
+
+
+static func triggers_held(left: float, right: float) -> bool:
+	return left > BROOM_TRIGGER_THRESHOLD and right > BROOM_TRIGGER_THRESHOLD
 
 
 func _broom_forward() -> Vector3:
@@ -325,7 +321,8 @@ func _resolve_drop() -> void:
 
 func reset_for_run() -> void:
 	_stop_broom()
-	broom_unlocked = false
+	_broom_arm_elapsed = 0.0
+	broom_unlocked = broom_test_override
 	_clear_pulse(_recall_haptic_owner, &"recall")
 	_recall_haptic_owner = null
 	_recall_haptic_elapsed = 0.0
