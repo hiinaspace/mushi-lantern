@@ -71,7 +71,8 @@ func _ready() -> void:
 	original_collision_layer = 4
 	picked_up_layer = 4
 	release_mode = ReleaseMode.FROZEN
-	second_hand_grab = SecondHandGrab.SWAP
+	# XR Tools blends the two grab point poses when both hands hold the shaft.
+	second_hand_grab = SecondHandGrab.SECOND
 	_build_grab_points()
 	super._ready()
 	set_process(false)
@@ -643,11 +644,17 @@ func _orient_swing(pivot: Vector3) -> void:
 	if down.length_squared() < 0.5:
 		down = Vector3.DOWN
 	var up := -down
-	# Shaft yaw affects only the beam orientation, never the bob simulation.
-	var forward := -global_basis.z
+	# Keep the lantern's yaw tied to the shaft in near-horizontal grips. The
+	# staff's local -Z axis becomes nearly vertical as the shaft pitches, so
+	# projecting it directly can reverse the lamp when it crosses horizontal.
+	# Local +Y is the shaft axis; retain the last useful horizontal heading when
+	# the shaft points mostly up/down. Bob orientation remains independent.
+	var shaft_heading := global_basis.y
+	shaft_heading.y = 0.0
+	if shaft_heading.length_squared() > 0.04:
+		_last_horizontal_aim = shaft_heading.normalized()
+	var forward := _last_horizontal_aim
 	forward -= up * forward.dot(up)
-	if forward.length_squared() < 0.0001:
-		forward = _last_horizontal_aim - up * _last_horizontal_aim.dot(up)
 	if forward.length_squared() < 0.0001:
 		forward = Vector3.FORWARD - up * Vector3.FORWARD.dot(up)
 	forward = forward.normalized()

@@ -1,6 +1,20 @@
 class_name MushiXRPlayer
 extends XROrigin3D
 
+class BroomFlightProvider extends XRToolsMovementProvider:
+	var rig: Node
+	var order: int = 100
+
+	func _ready() -> void:
+		add_to_group("movement_providers")
+
+	func physics_movement(_delta: float, player_body: XRToolsPlayerBody, _disabled: bool) -> bool:
+		if rig == null or not rig._broom_flying:
+			return false
+		var velocity: Vector3 = rig._broom_horizontal_velocity + Vector3.UP * rig._broom_vertical_speed
+		player_body.move_player(velocity)
+		return true
+
 signal recall_requested(controller: XRController3D)
 signal recall_released(controller: XRController3D)
 signal menu_toggled(open: bool)
@@ -34,14 +48,36 @@ var _single_controller_side: int = -1 # -1: both/neither, 0: left only, 1: right
 var _recall_pressed_at: Dictionary = {}
 var _recall_active: Dictionary = {}
 var _last_ground_recovery_msec: int = -10000
+var _broom_flying: bool = false
+var _broom_landing_requested: bool = false
+var _broom_forward_local: Vector3 = Vector3.FORWARD
+var _broom_hand_heading_local: Vector3 = Vector3.ZERO
+var _broom_horizontal_velocity: Vector3 = Vector3.ZERO
+var _broom_vertical_speed: float = 0.0
+var _broom_provider: BroomFlightProvider
 
 const MIN_TRACKED_HEAD_HEIGHT: float = 0.55
 const GROUND_START_CLEARANCE: float = 0.25
 const GROUND_RECOVERY_DEPTH: float = 0.3
 const MENU_POINTER_CUTOFF_M: float = 1.0
 const MENU_STANDOFF_M: float = 0.78
+const BROOM_MAX_SPEED: float = 4.2
+const BROOM_VERTICAL_SPEED: float = 3.0
+const BROOM_HORIZONTAL_ACCELERATION: float = 6.0
+const BROOM_HORIZONTAL_BRAKING: float = 2.8
+const BROOM_VERTICAL_ACCELERATION: float = 4.5
+const BROOM_VERTICAL_BRAKING: float = 2.5
+const BROOM_RELEASE_LOCK_HEIGHT: float = 2.0
+const BROOM_LANDING_SPEED: float = 1.2
+const BROOM_LAND_CLEARANCE: float = 0.18
+const BROOM_MAX_YAW_STEP: float = 0.05
+const BROOM_SMOOTH_TURN_SPEED: float = 2.0
 
 func _enter_tree() -> void:
+	_broom_provider = BroomFlightProvider.new()
+	_broom_provider.name = "BroomFlightProvider"
+	_broom_provider.rig = self
+	add_child(_broom_provider)
 	# Main only instantiates this scene for XR. Keep a command-line escape hatch
 	# for desktop/headless runs when a runtime happens to be installed.
 	if "--desktop" in OS.get_cmdline_user_args():
@@ -55,6 +91,11 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	if xr_active:
 		print("MUSHI_XR_ACTIVE: OpenXR player rig initialized")
+	# PlayerBody snapshots the movement-provider group in its own _ready().
+	# The broom provider is added dynamically, after that snapshot is taken.
+	if not _body._movement_providers.has(_broom_provider):
+		_body._movement_providers.append(_broom_provider)
+		_body._movement_providers.sort_custom(_body.sort_by_order)
 	# XR Tools otherwise calibrates on its first physics tick, which can see a
 	# zero HMD pose. That offset subsequently pulls the body below the basin.
 	_body.enabled = false
@@ -93,6 +134,8 @@ func _physics_process(_delta: float) -> void:
 		return
 	if world_surface == null:
 		return
+	if _broom_flying:
+		_update_broom_motion(_delta)
 	var feet: Vector3 = _body.global_position
 	var xz := Vector2(feet.x, feet.z)
 	if not world_surface.is_in_bounds(xz):
@@ -104,6 +147,187 @@ func _physics_process(_delta: float) -> void:
 		if now - _last_ground_recovery_msec > 1000:
 			print("MUSHI_XR_GROUND_RECOVERY: body feet %.2f below terrain %.2f" % [feet.y, ground])
 			_last_ground_recovery_msec = now
+	if _broom_flying and _body.on_ground:
+		if _broom_landing_requested:
+			_finish_broom_flight()
+
+func _update_broom_motion(delta: float) -> void:
+	# Controller poses are local to this rig. Unlike the Pickable's physics-tick
+	# world pose, they cannot feed a rig rotation back into the next yaw sample.
+	var hand_heading := _broom_controller_heading()
+	if hand_heading != Vector3.ZERO:
+		if _broom_hand_heading_local != Vector3.ZERO:
+			var yaw_delta := atan2(_broom_hand_heading_local.cross(hand_heading).y,
+				_broom_hand_heading_local.dot(hand_heading))
+			if absf(yaw_delta) > 0.005:
+				_body.rotate_player(-clampf(yaw_delta, -BROOM_MAX_YAW_STEP, BROOM_MAX_YAW_STEP))
+		_broom_hand_heading_local = hand_heading
+		# Match axial thrust to the current visible shaft after the rig turn.
+		_broom_forward_local = hand_heading
+	# Use XR Tools' smooth-turn rate and deadzone while its ordinary turn
+	# provider is disabled for flight. Rotating the origin carries the held
+	# staff and both grabbers together; their rig-local heading stays stable.
+	if right_controller.get_is_active() and not _menu_open:
+		var turn_input := _apply_axis_deadzone(right_controller.get_vector2("primary").x,
+			_active_turn_deadzone)
+		if not is_zero_approx(turn_input):
+			_body.rotate_player(BROOM_SMOOTH_TURN_SPEED * delta * turn_input)
+
+	var clearance := broom_height_above_ground()
+	if _broom_landing_requested:
+		_broom_horizontal_velocity = Vector3.ZERO
+		_broom_vertical_speed = -BROOM_LANDING_SPEED
+	else:
+		var left_y := _left_stick_y() if not _menu_open else 0.0
+		var right_y := _right_stick_y() if not _menu_open else 0.0
+		# Use the headset-tested stick directions for staff-forward and ascent.
+		# World-space momentum keeps a shaft turn from rotating existing drift.
+		var axial_input := _apply_stick_deadzone(left_y)
+		var vertical_input := _apply_stick_deadzone(right_y)
+		var forward: Vector3 = global_transform.basis * _broom_forward_local
+		forward.y = 0.0
+		forward = forward.normalized()
+		var target_horizontal := forward * axial_input * BROOM_MAX_SPEED
+		var target_vertical := vertical_input * BROOM_VERTICAL_SPEED
+		var step := clampf(delta, 0.0, 0.1)
+		var horizontal_rate := BROOM_HORIZONTAL_BRAKING if is_zero_approx(axial_input) else BROOM_HORIZONTAL_ACCELERATION
+		var vertical_rate := BROOM_VERTICAL_BRAKING if is_zero_approx(vertical_input) else BROOM_VERTICAL_ACCELERATION
+		_broom_horizontal_velocity = _broom_horizontal_velocity.move_toward(target_horizontal, horizontal_rate * step)
+		_broom_vertical_speed = move_toward(_broom_vertical_speed, target_vertical, vertical_rate * step)
+		if (_body.on_ground or clearance <= BROOM_LAND_CLEARANCE) and _broom_vertical_speed < 0.0:
+			# Never accumulate downward speed against the floor.
+			_broom_vertical_speed = 0.0
+
+	# The dedicated movement provider applies the requested velocity through
+	# PlayerBody.move_player(), preserving collision handling without gravity.
+
+func _left_stick_y() -> float:
+	return left_controller.get_vector2("primary").y if left_controller.get_is_active() else 0.0
+
+func _right_stick_y() -> float:
+	return right_controller.get_vector2("primary").y if right_controller.get_is_active() else 0.0
+
+func _apply_stick_deadzone(value: float) -> float:
+	return _apply_axis_deadzone(value, _active_move_deadzone)
+
+func _apply_axis_deadzone(value: float, deadzone: float) -> float:
+	if not is_finite(value):
+		return 0.0
+	var magnitude := absf(value)
+	if magnitude <= deadzone:
+		return 0.0
+	return signf(value) * clampf((magnitude - deadzone) / (1.0 - deadzone), 0.0, 1.0)
+
+func _finish_broom_flight() -> void:
+	_broom_flying = false
+	_broom_landing_requested = false
+	_broom_horizontal_velocity = Vector3.ZERO
+	_broom_vertical_speed = 0.0
+	_broom_hand_heading_local = Vector3.ZERO
+	_body.velocity = Vector3.ZERO
+	_update_movement()
+
+## Begin axial staff flight. The supplied vector points toward the broom's
+## front; only its horizontal heading is used so the player's body stays upright.
+func start_broom_flight(forward: Vector3) -> bool:
+	if not is_node_ready() or not _body.enabled or world_surface == null or _menu_open:
+		return false
+	var heading := _world_to_local_heading(forward)
+	if heading.length_squared() < 0.001:
+		return false
+	# The staff chooses the initial direction; reconstructing XR Tools' two-hand
+	# pose from live grabber transforms supplies steering without depending on
+	# GrabDriver's physics update ordering.
+	_broom_forward_local = heading
+	_broom_hand_heading_local = _broom_controller_heading()
+	_broom_flying = true
+	_broom_landing_requested = false
+	_broom_horizontal_velocity = Vector3.ZERO
+	_broom_vertical_speed = 0.0
+	_body.velocity = Vector3.ZERO
+	_update_movement()
+	return true
+
+## The held Pickable can update one physics tick behind a rig turn. Steering is
+## sampled from the local controller pair in _update_broom_motion instead.
+func set_broom_forward(_forward: Vector3) -> void:
+	pass
+
+func _broom_controller_heading() -> Vector3:
+	if not left_controller.get_is_active() or not right_controller.get_is_active():
+		return Vector3.ZERO
+	var staff := left_pickup.picked_up_object as XRToolsPickable
+	if staff == null or right_pickup.picked_up_object != staff:
+		return Vector3.ZERO
+	var driver: XRToolsGrabDriver = staff._grab_driver
+	if not is_instance_valid(driver) or not is_instance_valid(driver.primary) or not is_instance_valid(driver.secondary):
+		return Vector3.ZERO
+	var primary: Grab = driver.primary
+	var secondary: Grab = driver.secondary
+	if not is_instance_valid(primary.by) or not is_instance_valid(secondary.by):
+		return Vector3.ZERO
+	# Use exactly the grab transforms and blending that GrabDriver uses, but
+	# calculate in rig-local space before its RemoteTransform moves the staff.
+	var rig_inverse := global_transform.affine_inverse()
+	var primary_by: Transform3D = rig_inverse * primary.by.global_transform
+	var secondary_by: Transform3D = rig_inverse * secondary.by.global_transform
+	var first: Transform3D = primary_by * primary.transform.affine_inverse()
+	var second: Transform3D = secondary_by * secondary.transform.affine_inverse()
+	var angle_weight: float = secondary.drive_angle / (primary.drive_angle + secondary.drive_angle) \
+		if primary.drive_angle + secondary.drive_angle > 0.0 else 0.0
+	var position_weight: float = secondary.drive_position / (primary.drive_position + secondary.drive_position) \
+		if primary.drive_position + secondary.drive_position > 0.0 else 0.0
+	var pose := Transform3D(first.basis.slerp(second.basis, angle_weight),
+		first.origin.lerp(second.origin, position_weight))
+	if secondary.drive_aim > 0.0:
+		var primary_local := primary_by.affine_inverse() * pose
+		var secondary_from: Vector3 = (primary_local * secondary.transform.origin).normalized()
+		var secondary_to: Vector3 = (primary_by.affine_inverse() * secondary_by.origin).normalized()
+		if secondary_from.length_squared() > 0.001 and secondary_to.length_squared() > 0.001:
+			var aim := Basis(Quaternion(secondary_from, secondary_to))
+			var rotate := Basis.IDENTITY.slerp(aim, secondary.drive_aim)
+			pose = primary_by * Transform3D(rotate, Vector3.ZERO) * primary_local
+	var axis := pose.basis.y
+	axis.y = 0.0
+	return axis.normalized() if axis.length_squared() > 0.001 else Vector3.ZERO
+
+func _world_to_local_heading(forward: Vector3) -> Vector3:
+	var horizontal := Vector3(forward.x, 0.0, forward.z)
+	if horizontal.length_squared() < 0.001:
+		return Vector3.ZERO
+	var local := global_transform.basis.inverse() * horizontal.normalized()
+	local.y = 0.0
+	return local.normalized() if local.length_squared() > 0.001 else Vector3.ZERO
+
+## A release above two metres requests a controlled landing; below that
+## height flight ends immediately and PlayerBody gravity takes over.
+func stop_broom_flight() -> void:
+	if not _broom_flying:
+		return
+	if _broom_landing_requested:
+		return
+	if broom_height_above_ground() > BROOM_RELEASE_LOCK_HEIGHT:
+		_broom_landing_requested = true
+	else:
+		_finish_broom_flight()
+
+func is_broom_flying() -> bool:
+	return _broom_flying
+
+func broom_release_locked() -> bool:
+	return _broom_flying and (_broom_landing_requested or broom_height_above_ground() > BROOM_RELEASE_LOCK_HEIGHT)
+
+func broom_height_above_ground() -> float:
+	if world_surface == null or not is_instance_valid(_body):
+		return 0.0
+	var feet := _body.global_position
+	var xz := Vector2(feet.x, feet.z)
+	if not world_surface.is_in_bounds(xz):
+		return 0.0
+	var ground := float(world_surface.get_height_at(xz))
+	if not is_finite(ground):
+		return 0.0
+	return maxf(0.0, feet.y - ground)
 
 func _try_activate_body() -> void:
 	var tracked_height: float = camera.transform.origin.y
@@ -148,6 +372,8 @@ func _on_button_released(action: String, controller: XRController3D) -> void:
 			recall_released.emit(controller)
 
 func set_menu_open(open: bool) -> void:
+	if open and _broom_flying:
+		return
 	if _menu_open == open and _menu_surface.visible == open:
 		return
 	_menu_open = open
@@ -187,7 +413,7 @@ func set_pickups_enabled(enabled: bool) -> void:
 	right_pickup.enabled = enabled
 
 func _update_movement() -> void:
-	var active: bool = xr_active and not _menu_open and not _interaction_lock and not _movement_neutral_required
+	var active: bool = xr_active and not _menu_open and not _interaction_lock and not _movement_neutral_required and not _broom_flying
 	var left_active: bool = left_controller.get_is_active()
 	var right_active: bool = right_controller.get_is_active()
 	var left_moves: bool = left_active and (right_active or _single_controller_side == 0)
@@ -228,6 +454,8 @@ func set_world_surface(surface: Variant) -> void:
 	world_surface = surface
 
 func reset_pose(world_position: Vector3) -> void:
+	if _broom_flying:
+		_finish_broom_flight()
 	if world_surface != null:
 		var xz := Vector2(world_position.x, world_position.z)
 		if world_surface.is_in_bounds(xz):

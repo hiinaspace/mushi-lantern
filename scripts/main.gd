@@ -61,6 +61,7 @@ var config_changed: bool = false
 var player: DesktopPlayer
 var staff_tool: Variant
 var xr_player: Variant
+var xr_viewport: SubViewport
 var xr_staff_interaction: Variant
 var lantern: Lantern
 var grove_audio: Node
@@ -249,6 +250,8 @@ func _physics_process(delta: float) -> void:
 	_update_staff_pose(delta)
 
 func _process(delta: float) -> void:
+	if xr_player != null and xr_player.xr_active:
+		player.camera.global_transform = xr_player.camera.global_transform
 	if _active_backend == "gpu":
 		if not simulation.gpu_error.is_empty():
 			if environment_enabled:
@@ -622,17 +625,25 @@ func _build_player() -> void:
 
 
 func _build_xr_player() -> void:
+	xr_viewport = SubViewport.new()
+	xr_viewport.name = "HeadsetViewport"
+	xr_viewport.world_3d = get_world_3d()
+	xr_viewport.size = Vector2i(1280, 720)
+	xr_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	xr_viewport.msaa_3d = get_viewport().msaa_3d
+	add_child(xr_viewport)
 	var xr_scene: PackedScene = load("res://scenes/xr_player.tscn")
 	xr_player = xr_scene.instantiate()
-	add_child(xr_player)
+	xr_viewport.add_child(xr_player)
 	xr_player.set_world_surface(world_surface)
 	xr_player.reset_pose(player.global_position)
 	if not xr_player.xr_active:
 		push_warning("OpenXR did not initialize; continuing in desktop mode")
-		xr_player.queue_free()
+		xr_viewport.queue_free()
 		xr_player = null
+		xr_viewport = null
 		return
-	player.camera.current = false
+	xr_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	player.controls_enabled = false
 	player.look_enabled = false
 	player.set_physics_process(false)
@@ -641,8 +652,10 @@ func _build_xr_player() -> void:
 	player.collision_mask = 0
 	xr_player.current = true
 	xr_player.camera.make_current()
+	player.camera.global_transform = xr_player.camera.global_transform
+	player.camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	print("MUSHI_XR_CAMERA current=%s origin_current=%s" % [get_viewport().get_camera_3d().get_path(), xr_player.is_current()])
+	print("MUSHI_XR_CAMERAS mirror=%s headset=%s origin_current=%s" % [get_viewport().get_camera_3d().get_path(), xr_viewport.get_camera_3d().get_path(), xr_player.is_current()])
 	xr_player.recall_requested.connect(_on_xr_recall_requested)
 	xr_player.recall_released.connect(_on_xr_recall_released)
 	xr_player.menu_toggled.connect(_on_xr_menu_toggled)
@@ -683,6 +696,8 @@ func _update_staff_pose(delta: float) -> void:
 	if xr_player != null and xr_player.xr_active:
 		staff_tool.clear_desktop_yaw_reference()
 		if xr_staff_interaction != null:
+			# The broom is a free-play spike, including runs that skip the tutorial.
+			xr_staff_interaction.broom_unlocked = tutorial_director != null and (not tutorial_director.tutorial_enabled or tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY)
 			xr_staff_interaction.update(delta)
 		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
 			staff_tool.update_recall(_xr_recall_owner.global_transform, delta)
@@ -1967,6 +1982,8 @@ func _arena_layout() -> String:
 func _apply_quality(settings: Dictionary) -> void:
 	_quality_settings = settings.duplicate()
 	get_viewport().scaling_3d_scale = float(settings.get("render_scale", 1.0))
+	if xr_viewport != null:
+		xr_viewport.scaling_3d_scale = float(settings.get("render_scale", 1.0))
 	var high_shadows := str(settings.get("shadows", "high")) == "high"
 	if glyph_swarm != null:
 		glyph_swarm.set_halo_strength(0.8 if environment_enabled and bool(settings.get("bloom", true)) else 0.0)

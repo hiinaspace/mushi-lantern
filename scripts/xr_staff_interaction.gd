@@ -15,6 +15,10 @@ const ADJUST_HAPTIC_MAX_SPEED := 1.4
 const RECALL_HAPTIC_INTERVAL := 0.62
 const RECALL_HAPTIC := 0.045
 const GRIP_THRESHOLD := 0.65
+const BROOM_ARM_SECONDS := 1.0
+const BROOM_SEAT_BELOW_HEAD := 0.8
+const BROOM_SEAT_RADIUS := 0.29
+const BROOM_MAX_VERTICAL_AXIS := 0.42
 
 class ControlHighlight extends Node3D:
 	signal highlight_updated(pickable: Node3D, enabled: bool)
@@ -29,6 +33,9 @@ class ControlHighlight extends Node3D:
 
 var staff: StaffTool
 var rig: MushiXRPlayer
+var broom_unlocked := false
+var broom_active := false
+var _broom_arm_elapsed := 0.0
 var _controllers: Array[XRController3D] = []
 var _pickups: Array[XRToolsFunctionPickup] = []
 var _was_gripped := [false, false]
@@ -63,10 +70,14 @@ func configure(tool: StaffTool, player_rig: MushiXRPlayer) -> void:
 func update(delta: float) -> void:
 	if staff == null or rig == null or not rig.xr_active:
 		return
+	_update_broom(delta)
 	_resolve_drop()
 	if staff.is_picked_up():
-		var owner := staff.get_picked_up_by_controller()
-		var lost := owner == null or not owner.get_has_tracking_data()
+		var has_tracked_grab := false
+		for index: int in _controllers.size():
+			if _pickups[index].picked_up_object == staff and _controllers[index].get_has_tracking_data():
+				has_tracked_grab = true
+		var lost := not has_tracked_grab
 		if lost and not _tracking_suspended:
 			staff.tracking_lost()
 		elif not lost and _tracking_suspended:
@@ -94,7 +105,7 @@ func update(delta: float) -> void:
 				if pickup.picked_up_object != staff:
 					staff.force_next_grip(-1)
 		var is_shaft_owner := pickup.picked_up_object == staff
-		var near_control := tracked and not rig.is_menu_open() and not is_shaft_owner and controller.global_position.distance_to(staff.control_world_position()) <= CONTROL_RADIUS
+		var near_control := tracked and not broom_active and not rig.is_menu_open() and not is_shaft_owner and controller.global_position.distance_to(staff.control_world_position()) <= CONTROL_RADIUS
 		if controller == _adjust_owner:
 			pickup.enabled = false
 			if grip_down and not rig.is_menu_open():
@@ -104,8 +115,9 @@ func update(delta: float) -> void:
 			else:
 				_end_adjust()
 		elif is_shaft_owner:
-			# The owning pickup must keep polling grip so it can release the staff.
-			pickup.enabled = tracked
+			# Suppress XR Tools' grip-release polling while high above the terrain.
+			# The pickable retains both grab points and snaps both hands to the shaft.
+			pickup.enabled = tracked and not (broom_active and rig.broom_release_locked())
 		elif near_control:
 			pickup.enabled = false
 			show_hint = true
@@ -136,6 +148,70 @@ func update(delta: float) -> void:
 	var control_hint := _hint.hovered and not rig.is_menu_open() and _adjust_owner == null
 	staff.set_interaction_hint(pulse if shaft_hint else 0.0, pulse if control_hint else 0.0)
 	_update_recall_haptics(delta)
+
+
+func _update_broom(delta: float) -> void:
+	if broom_active:
+		if not rig.is_broom_flying():
+			broom_active = false
+			return
+		rig.set_broom_forward(_broom_forward())
+		if not rig.broom_release_locked():
+			# A released grip at landing exits flight. The normal XR Tools pickup
+			# release then handles the shaft and its usual float/park transition.
+			for index: int in _controllers.size():
+				if _pickups[index].picked_up_object == staff and _controllers[index].get_float("grip") <= GRIP_THRESHOLD:
+					_stop_broom()
+					break
+		return
+	if not broom_unlocked or rig.is_menu_open() or _adjust_owner != null or not _both_hands_on_shaft():
+		_broom_arm_elapsed = 0.0
+		return
+	if not _staff_points_at_seat():
+		_broom_arm_elapsed = 0.0
+		return
+	_broom_arm_elapsed += maxf(delta, 0.0)
+	if _broom_arm_elapsed < BROOM_ARM_SECONDS:
+		return
+	_broom_arm_elapsed = 0.0
+	if rig.start_broom_flight(_broom_forward()):
+		broom_active = true
+		for controller: XRController3D in _controllers:
+			_one_shot_haptic(controller, 0.13, 0.09)
+
+
+func _both_hands_on_shaft() -> bool:
+	return _pickups[0].picked_up_object == staff and _pickups[1].picked_up_object == staff
+
+
+func _staff_points_at_seat() -> bool:
+	# The lantern hangs from the local +Y end of the staff. The seat is
+	# behind it, toward local -Y.
+	# Checking a short shaft segment near the inferred seat accepts a staff
+	# between the legs or beside the hips without prescribing arm positions.
+	var axis: Vector3 = staff.global_transform.basis.y.normalized()
+	if absf(axis.y) > BROOM_MAX_VERTICAL_AXIS:
+		return false
+	var seat := rig.camera.global_position - Vector3.UP * BROOM_SEAT_BELOW_HEAD
+	var local_seat := staff.to_local(seat)
+	return local_seat.y >= StaffTool.SHAFT_BOTTOM_Y - 0.16 and local_seat.y <= 0.14 \
+		and Vector2(local_seat.x, local_seat.z).length() <= BROOM_SEAT_RADIUS
+
+
+func _broom_forward() -> Vector3:
+	var axis := staff.global_transform.basis.y
+	var horizontal := Vector3(axis.x, 0.0, axis.z)
+	if horizontal.length_squared() < 0.01:
+		return Vector3.FORWARD
+	return horizontal.normalized()
+
+
+func _stop_broom() -> void:
+	if not broom_active:
+		return
+	rig.stop_broom_flight()
+	broom_active = false
+	_broom_arm_elapsed = 0.0
 
 
 func _on_shaft_highlight_updated(_pickable: XRToolsPickable, enabled: bool) -> void:
@@ -236,6 +312,7 @@ func _resolve_drop() -> void:
 	_pending_drop = false
 	if staff.is_picked_up():
 		return
+	_stop_broom()
 	if _adjust_owner != null:
 		_end_adjust()
 	var intentional := _last_shaft_owner != null and _last_shaft_owner.get_has_tracking_data()
@@ -246,6 +323,8 @@ func _resolve_drop() -> void:
 
 
 func reset_for_run() -> void:
+	_stop_broom()
+	broom_unlocked = false
 	_clear_pulse(_recall_haptic_owner, &"recall")
 	_recall_haptic_owner = null
 	_recall_haptic_elapsed = 0.0
