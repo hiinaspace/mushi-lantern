@@ -9,6 +9,7 @@ var goal_radius: float = 2.05
 var ground_height: float = 0.0
 var world_surface: Variant
 var night_vision: float = 0.0
+var ring_color: Color = Color(1.0, 0.67, 0.27)
 var _boundary_material: ShaderMaterial
 var _score_pulse: float = 0.0
 var _last_score: int = -1
@@ -58,6 +59,12 @@ func set_night_vision(value: float) -> void:
 	_apply_night_vision()
 	if _boundary_material != null:
 		_boundary_material.set_shader_parameter("adaptation", night_vision)
+
+
+func set_ring_color(value: Color) -> void:
+	ring_color = value
+	if _boundary_material != null:
+		_boundary_material.set_shader_parameter("ring_color", Vector3(value.r, value.g, value.b))
 
 
 func _process(delta: float) -> void:
@@ -155,7 +162,7 @@ func _add_goal_boundary() -> void:
 			var point := direction * (goal_radius + offset)
 			var height := ground_height
 			if world_surface != null:
-				height = float(world_surface.get_height_at(point))
+				height = float(world_surface.get_height_at(point + Vector2(position.x, position.z)))
 			vertices.append(Vector3(point.x, height - ground_height + 0.045, point.y))
 			uvs.append(Vector2(u, float(radial) * 0.5))
 	for segment: int in SEGMENTS:
@@ -178,6 +185,7 @@ func _add_goal_boundary() -> void:
 	_boundary_material.shader = load("res://shaders/goal_boundary.gdshader")
 	_boundary_material.set_shader_parameter("adaptation", night_vision)
 	_boundary_material.set_shader_parameter("return_pulse", _score_pulse)
+	_boundary_material.set_shader_parameter("ring_color", Vector3(ring_color.r, ring_color.g, ring_color.b))
 	boundary.material_override = _boundary_material
 	add_child(boundary)
 
@@ -198,7 +206,7 @@ func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material)
 	instance.mesh = mesh
 	instance.position = at
 	instance.material_override = material
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_architecture_root.add_child(instance)
 	return instance
 
@@ -213,7 +221,7 @@ func _add_cylinder(node_name: String, radius: float, height: float, at: Vector3,
 	instance.mesh = mesh
 	instance.position = at
 	instance.material_override = material
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_architecture_root.add_child(instance)
 	return instance
 

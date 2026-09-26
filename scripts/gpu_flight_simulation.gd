@@ -181,7 +181,7 @@ func _distribute_terrain_spawn(new_seed: int) -> void:
 	var half: float = _environment.size_m * 0.5
 	var patch_ordinal := 0
 	for i: int in positions.size():
-		if i % 10 == 9:
+		if i % 10 == 9 and not goal_mode_two:
 			var found := false
 			for attempt: int in 128:
 				var candidate := Vector2(rng.randf_range(-half, half), rng.randf_range(-half, half))
@@ -334,7 +334,7 @@ func _encode_initial_state() -> PackedByteArray:
 		floats[k + 20] = heading.x
 		floats[k + 21] = heading.y
 		floats[k + 22] = heading.z
-		floats[k + 23] = 0.0
+		floats[k + 23] = float(committed_goals[i])
 	return floats.to_byte_array()
 
 
@@ -460,6 +460,9 @@ func _encode_params(delta: float, field: LightField, social_multiplier: float, w
 	p[77] = _terrain_peak_height + max_height + 8.0
 	# p[78] is reserved for tutorial-controlled goal acceptance.
 	p[78] = 1.0 if goal_accepting else 0.0
+	p[80] = 1.0 if goal_mode_two else 0.0
+	p[81] = second_goal_position.x
+	p[82] = second_goal_position.y
 	# Sources live in separate, fixed-size GPU storage buffer and can be moved
 	# without rebuilding pipeline/uniform sets.
 	return p.to_byte_array()
@@ -713,6 +716,8 @@ func _apply_state_readback(bytes: PackedByteArray, epoch: int, revision: int) ->
 		mushroom_exposures[i] = values[k + 17]
 		formation_predecessors[i] = roundi(values[k + 18]) - 1
 		formation_successors[i] = roundi(values[k + 19]) - 1
+		committed_goals[i] = maxi(0, roundi(values[k + 23]))
+		_orange_patch_seconds[i] = maxf(0.0, -values[k + 23])
 	snapshot_revision = revision
 	snapshot_apply_ms = float(Time.get_ticks_usec() - started) / 1000.0
 	snapshot_applied.emit(snapshot_apply_ms)
@@ -724,10 +729,12 @@ func _apply_events_readback(bytes: PackedByteArray, epoch: int) -> void:
 	var events := bytes.to_int32_array()
 	committed_this_step = PackedInt32Array()
 	for i: int in _initialized_count:
-		if events[i] != 0 and not _committed_ids.has(i):
+		if events[i] in [1, 2] and not _committed_ids.has(i):
 			_committed_ids[i] = true
 			committed_this_step.append(i)
 			score += 1
+			committed_goals[i] = events[i]
+			goal_scores[events[i] - 1] += 1
 
 
 func _free_gpu(rd: RenderingDevice, shader: RID, pipeline: RID, states: Array, params: RID, events: RID, traits: RID, sources: RID, counts: RID, cell_ids: RID, choices: RID, texture: RID, height_texture: RID, terrain_obstacles: RID, obstacle_index: RID, sets: Array) -> void:

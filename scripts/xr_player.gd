@@ -18,6 +18,7 @@ class BroomFlightProvider extends XRToolsMovementProvider:
 signal recall_requested(controller: XRController3D)
 signal recall_released(controller: XRController3D)
 signal menu_toggled(open: bool)
+signal fall_recovered(body_position: Vector3)
 
 @export var recall_hold_seconds: float = 0.5
 @export var snap_turn: bool = false
@@ -49,6 +50,8 @@ var _controller_active_mask: int = -1 # Force an initial route refresh before ei
 var _recall_pressed_at: Dictionary = {}
 var _recall_active: Dictionary = {}
 var _last_ground_recovery_msec: int = -10000
+var _last_safe_ground_position := Vector3.ZERO
+var _has_safe_ground_position := false
 var _broom_flying: bool = false
 var _broom_landing_requested: bool = false
 var _broom_forward_local: Vector3 = Vector3.FORWARD
@@ -69,8 +72,9 @@ const BROOM_HORIZONTAL_BRAKING: float = 2.8
 const BROOM_VERTICAL_ACCELERATION: float = 4.5
 const BROOM_VERTICAL_BRAKING: float = 2.5
 const BROOM_RELEASE_LOCK_HEIGHT: float = 2.0
-const BROOM_LANDING_SPEED: float = 1.2
+const BROOM_LANDING_SPEED: float = 3.5
 const BROOM_LAND_CLEARANCE: float = 0.18
+const FALL_RECOVERY_Y: float = -10.0
 const BROOM_MAX_YAW_STEP: float = 0.05
 const BROOM_SMOOTH_TURN_SPEED: float = 2.0
 
@@ -151,11 +155,24 @@ func _physics_process(_delta: float) -> void:
 		_update_broom_motion(_delta)
 	var feet: Vector3 = _body.global_position
 	var xz := Vector2(feet.x, feet.z)
+	if feet.y < FALL_RECOVERY_Y:
+		_recover_out_of_bounds_fall()
+		return
 	if not world_surface.is_in_bounds(xz):
+		if _has_safe_ground_position and feet.y < _last_safe_ground_position.y - 4.0:
+			_recover_out_of_bounds_fall()
 		return
 	var ground: float = float(world_surface.get_height_at(xz))
+	if is_finite(ground) and feet.y < ground - 2.0:
+		_recover_out_of_bounds_fall()
+		return
+	if is_finite(ground) and feet.y >= ground - GROUND_RECOVERY_DEPTH:
+		_last_safe_ground_position = Vector3(feet.x, ground + GROUND_START_CLEARANCE, feet.z)
+		_has_safe_ground_position = true
 	if is_finite(ground) and feet.y < ground - GROUND_RECOVERY_DEPTH:
 		_teleport_body_above_ground(ground)
+		_last_safe_ground_position = Vector3(feet.x, ground + GROUND_START_CLEARANCE, feet.z)
+		_has_safe_ground_position = true
 		var now := Time.get_ticks_msec()
 		if now - _last_ground_recovery_msec > 1000:
 			print("MUSHI_XR_GROUND_RECOVERY: body feet %.2f below terrain %.2f" % [feet.y, ground])
@@ -324,6 +341,13 @@ func stop_broom_flight() -> void:
 	else:
 		_finish_broom_flight()
 
+func resume_broom_flight() -> bool:
+	if not _broom_flying or not _broom_landing_requested or broom_height_above_ground() <= BROOM_RELEASE_LOCK_HEIGHT:
+		return false
+	_broom_landing_requested = false
+	_broom_vertical_speed = 0.0
+	return true
+
 func is_broom_flying() -> bool:
 	return _broom_flying
 
@@ -370,6 +394,25 @@ func _teleport_body_above_ground(ground: float) -> void:
 	target.origin.y = ground + GROUND_START_CLEARANCE
 	_body.teleport(target)
 	_body.velocity = Vector3.ZERO
+
+func _recover_out_of_bounds_fall() -> void:
+	if not _has_safe_ground_position:
+		var center := Vector2.ZERO
+		if world_surface == null or not world_surface.is_in_bounds(center):
+			return
+		var ground := float(world_surface.get_height_at(center))
+		if not is_finite(ground):
+			return
+		_last_safe_ground_position = Vector3(center.x, ground + GROUND_START_CLEARANCE, center.y)
+		_has_safe_ground_position = true
+	if _broom_flying:
+		_finish_broom_flight()
+	var target := _body.global_transform
+	target.origin = _last_safe_ground_position
+	_body.teleport(target)
+	_body.velocity = Vector3.ZERO
+	fall_recovered.emit(_last_safe_ground_position)
+	print("MUSHI_XR_FALL_RECOVERY: returned player and staff to last safe terrain position")
 
 func _on_button_pressed(action: String, controller: XRController3D) -> void:
 	if action == "by_button":
@@ -475,6 +518,8 @@ func reset_pose(world_position: Vector3) -> void:
 		var xz := Vector2(world_position.x, world_position.z)
 		if world_surface.is_in_bounds(xz):
 			world_position.y = maxf(world_position.y, float(world_surface.get_height_at(xz)) + GROUND_START_CLEARANCE)
+			_last_safe_ground_position = world_position
+			_has_safe_ground_position = true
 	if not is_node_ready():
 		global_position = world_position
 		return

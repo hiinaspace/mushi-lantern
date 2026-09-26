@@ -199,6 +199,21 @@ func _run() -> void:
 	staff.update_adjust(Transform3D(Basis(Vector3.UP, -0.30), Vector3.ZERO))
 	staff.end_adjust()
 	assert(staff.lantern.mode == LightField.Mode.CLEAR)
+	# One uninterrupted grip must keep sweeping through both filter boundaries.
+	staff.lantern.set_mode(LightField.Mode.BLUE)
+	staff.begin_adjust(Transform3D.IDENTITY)
+	staff.update_adjust(Transform3D(Basis(Vector3.UP, -0.50), Vector3.ZERO))
+	assert(staff.lantern.mode == LightField.Mode.CLEAR and staff.lantern._dial_preview_active,
+		"First detent must not end the held dial preview")
+	staff.update_adjust(Transform3D(Basis(Vector3.UP, -0.80), Vector3.ZERO))
+	assert(staff.lantern._dial_preview > 0.1 and staff.lantern._dial_preview_active
+		and staff.lantern._dial_preview_amount > 0.0 and staff.lantern._dial_preview_amount < 1.0,
+		"Continued twist must sweep the second filter rather than snap")
+	staff.update_adjust(Transform3D(Basis(Vector3.UP, -1.20), Vector3.ZERO))
+	assert(staff.lantern.mode == LightField.Mode.ORANGE and staff.lantern._dial_preview_active,
+		"The second detent must retain preview until grip release")
+	staff.end_adjust()
+	assert(not staff.lantern._dial_preview_active)
 	print("STAFF_TOOL_SMOKE_OK")
 	get_tree().quit()
 

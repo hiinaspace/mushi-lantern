@@ -62,6 +62,7 @@ func configure(tool: StaffTool, player_rig: MushiXRPlayer) -> void:
 	_pickups = [rig.left_pickup, rig.right_pickup]
 	staff.dropped.connect(_on_staff_dropped)
 	staff.highlight_updated.connect(_on_shaft_highlight_updated)
+	rig.fall_recovered.connect(_on_fall_recovered)
 	_hint = ControlHighlight.new()
 	_hint.name = "LanternControlGripHint"
 	rig.add_child(_hint)
@@ -156,8 +157,11 @@ func _update_broom(delta: float) -> void:
 			broom_active = false
 			return
 		rig.set_broom_forward(_broom_forward())
-		# A released grip requests landing even while pickup release is locked
-		# above the ground. Keep both grab points until the descent finishes.
+		# Keep the grab points during descent so regripping above the near-ground
+		# cutoff restores hover without a fresh trigger dwell.
+		if _both_hands_on_shaft() and rig.resume_broom_flight():
+			for controller: XRController3D in _controllers:
+				_one_shot_haptic(controller, 0.09, 0.045)
 		for index: int in _controllers.size():
 			if _pickups[index].picked_up_object == staff and _controllers[index].get_float("grip") <= GRIP_THRESHOLD:
 				rig.stop_broom_flight()
@@ -301,6 +305,20 @@ func _on_staff_dropped(_pickable: XRToolsPickable) -> void:
 	# SWAP emits dropped before the replacement hand grabs in the same call.
 	# Reconcile on the next Main update rather than parking from this signal.
 	_pending_drop = true
+
+func _on_fall_recovered(body_position: Vector3) -> void:
+	broom_active = false
+	_broom_arm_elapsed = 0.0
+	if staff == null:
+		return
+	if staff.is_picked_up():
+		staff.drop()
+	_pending_drop = false
+	_last_shaft_owner = null
+	_tracking_suspended = false
+	var shutter := staff.lantern.shutter_openness
+	staff.reset_to_pose(Transform3D(Basis.IDENTITY,
+		body_position + Vector3(0.65, 0.75, -0.55)), shutter, false)
 
 
 func _resolve_drop() -> void:

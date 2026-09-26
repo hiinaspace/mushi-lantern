@@ -21,6 +21,7 @@ signal voice_devices_requested
 signal multiplayer_host_requested(secret: String)
 signal multiplayer_join_requested(secret: String)
 signal multiplayer_leave_requested
+signal mode_requested(mode: String)
 
 var _desktop_root: Control
 var _desktop_panel: PanelContainer
@@ -78,6 +79,9 @@ var _room_entry_controls: Array[Control] = []
 var _room_host_buttons: Array[Button] = []
 var _room_join_buttons: Array[Button] = []
 var _room_leave_buttons: Array[Button] = []
+var _mode_selectors: Array[OptionButton] = []
+var _selected_mode := "classic"
+var _elapsed_labels: Array[Label] = []
 
 
 func _ready() -> void:
@@ -125,6 +129,8 @@ func set_shared_role(role: String) -> void:
 	if _xr_start != null:
 		_xr_start.disabled = role == "client"
 		_xr_start.text = "Start / restart"
+	for selector in _mode_selectors:
+		selector.visible = role != "client"
 	_refresh_room_ui()
 
 
@@ -133,14 +139,35 @@ func set_multiplayer_status(status: String) -> void:
 	_refresh_room_ui()
 
 
+func set_elapsed_time(seconds: float) -> void:
+	var elapsed := maxi(0, int(seconds))
+	var hours := elapsed / 3600
+	var minutes := (elapsed / 60) % 60
+	var remainder := elapsed % 60
+	var formatted := "%02d:%02d:%02d" % [hours, minutes, remainder] if hours > 0 else "%02d:%02d" % [minutes, remainder]
+	for label in _elapsed_labels:
+		label.text = "Elapsed: " + formatted
+
+
 func set_room_code(code: String) -> void:
+	_room_code = _normalize_room_code(code)
+	_refresh_room_ui()
+
+
+func _normalize_room_code(code: String) -> String:
 	var normalized := ""
 	for character in code.to_upper():
 		if (character >= "A" and character <= "Z") or (character >= "0" and character <= "9") or character == "-":
 			normalized += character
 		if normalized.length() >= 24:
 			break
-	_room_code = normalized
+	return normalized
+
+
+func _on_desktop_room_text_changed(value: String) -> void:
+	# Keep the authoritative code in sync without replacing LineEdit.text on every
+	# keystroke; set_text resets the native caret position on some desktop builds.
+	_room_code = _normalize_room_code(value)
 	_refresh_room_ui()
 
 
@@ -156,13 +183,14 @@ func _submit_room(hosting: bool) -> void:
 	_room_note = "Hosting private game…" if hosting else "Joining private game…"
 	_refresh_room_ui()
 	if hosting:
+		mode_requested.emit(_selected_mode)
 		multiplayer_host_requested.emit(_room_code)
 	else:
 		multiplayer_join_requested.emit(_room_code)
 
 
 func _refresh_room_ui() -> void:
-	if _desktop_room_edit != null and _desktop_room_edit.text != _room_code:
+	if _desktop_room_edit != null and not _desktop_room_edit.has_focus() and _desktop_room_edit.text != _room_code:
 		_desktop_room_edit.text = _room_code
 	if _desktop_room_edit != null:
 		_desktop_room_edit.editable = _shared_role == "offline"
@@ -208,7 +236,7 @@ func set_voice_controls(muted: bool, device: String, devices: PackedStringArray,
 	_voice_gate_db = clampf(gate_db, -60.0, -20.0)
 	_voice_receive_gain_db = clampf(receive_gain_db, -30.0, 12.0)
 	for button in _voice_buttons:
-		button.text = "Unmute mic" if _voice_muted else "Mute mic"
+		_update_mute_button(button)
 	for option in _voice_device_options:
 		option.clear()
 		var selected := 0
@@ -335,15 +363,20 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	_xr_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_xr_status.text = "Paused"
 	session.add_child(_xr_status)
+	var xr_elapsed := Label.new()
+	xr_elapsed.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	session.add_child(xr_elapsed)
+	_elapsed_labels.append(xr_elapsed)
 	session.add_child(HSeparator.new())
 	var start := _add_xr_button(session, "Start / restart", _on_new_game)
 	start.name = "XRStartButton"
 	_xr_start = start
 	_xr_start.disabled = _shared_role == "client"
-	_add_voice_mute_button(session)
+	_add_mode_selector(session)
 	var quit := _add_xr_button(session, "Quit", _on_quit)
 	quit.name = "XRQuitButton"
 	_build_xr_room(room)
+	_add_voice_mute_button(room)
 	_add_xr_button(_xr_settings, "Quality: Default", func() -> void: quality_profile_requested.emit("default"))
 	_add_xr_button(_xr_settings, "Quality: Performance", func() -> void: quality_profile_requested.emit("performance"))
 	_add_avatar_fit_sliders(_xr_settings)
@@ -513,6 +546,7 @@ func _build_desktop_menu() -> void:
 	stack.add_child(HSeparator.new())
 	_desktop_start = _add_desktop_button(stack, "Start / restart", _on_new_game)
 	_desktop_start.disabled = _shared_role == "client"
+	_add_mode_selector(stack)
 	_add_desktop_button(stack, "Private room", func() -> void: _show_desktop_room(true))
 	_add_desktop_button(stack, "Settings", _on_settings)
 	_add_desktop_button(stack, "Avatar fit", func() -> void:
@@ -539,6 +573,10 @@ func _build_desktop_menu() -> void:
 	_desktop_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_desktop_status.add_theme_font_size_override("font_size", 16)
 	stack.add_child(_desktop_status)
+	var desktop_elapsed := Label.new()
+	desktop_elapsed.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(desktop_elapsed)
+	_elapsed_labels.append(desktop_elapsed)
 	_desktop_skip = Button.new()
 	_desktop_skip.text = "Skip introduction"
 	_desktop_skip.pressed.connect(func() -> void: skip_requested.emit())
@@ -566,6 +604,7 @@ func _build_desktop_menu() -> void:
 	_restart_confirm.title = "Restart shared game?"
 	_restart_confirm.dialog_text = "Reset the mushi and score for everyone in this session?"
 	_restart_confirm.confirmed.connect(func() -> void:
+		mode_requested.emit(_selected_mode)
 		new_game_requested.emit()
 		set_open(false)
 	)
@@ -608,7 +647,7 @@ func _build_desktop_room(center: CenterContainer) -> void:
 	_desktop_room_edit.placeholder_text = "Room code (3–24 characters)"
 	_desktop_room_edit.max_length = 24
 	_desktop_room_edit.custom_minimum_size.y = 48
-	_desktop_room_edit.text_changed.connect(func(value: String) -> void: set_room_code(value))
+	_desktop_room_edit.text_changed.connect(_on_desktop_room_text_changed)
 	_desktop_room_edit.text_submitted.connect(func(_value: String) -> void: _submit_room(false))
 	stack.add_child(_desktop_room_edit)
 	var actions := HBoxContainer.new()
@@ -659,6 +698,29 @@ func _add_xr_button(parent: VBoxContainer, text: String, callback: Callable) -> 
 	return button
 
 
+func _add_mode_selector(parent: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var label := Label.new()
+	label.text = "Host mode"
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	var selector := OptionButton.new()
+	selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	selector.add_item("Classic", 0)
+	selector.add_item("Two shrines · PvP", 1)
+	selector.select(0)
+	selector.item_selected.connect(func(index: int) -> void:
+		_selected_mode = "two_shrines" if selector.get_item_id(index) == 1 else "classic"
+		for other in _mode_selectors:
+			if other != selector:
+				other.select(index))
+	row.add_child(selector)
+	parent.add_child(row)
+	_mode_selectors.append(selector)
+	selector.visible = _shared_role != "client"
+
+
 func _on_new_game() -> void:
 	if _shared_role == "client":
 		return
@@ -672,6 +734,7 @@ func _on_new_game() -> void:
 			return
 		_xr_restart_armed = false
 		_xr_start.text = "Start / restart"
+	mode_requested.emit(_selected_mode)
 	new_game_requested.emit()
 	if _desktop_visible:
 		set_open(false)
@@ -724,17 +787,30 @@ func _on_avatar_fit_slider_changed(value: float, key: String) -> void:
 
 func _add_voice_mute_button(parent: VBoxContainer) -> void:
 	var button := Button.new()
-	button.text = "Unmute mic" if _voice_muted else "Mute mic"
 	button.visible = _voice_available
-	button.custom_minimum_size.y = 46.0
+	button.custom_minimum_size.y = 60.0
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(func() -> void:
 		_voice_muted = not _voice_muted
 		for other in _voice_buttons:
-			other.text = "Unmute mic" if _voice_muted else "Mute mic"
+			_update_mute_button(other)
 		voice_mute_changed.emit(_voice_muted))
 	parent.add_child(button)
 	_voice_buttons.append(button)
+	_update_mute_button(button)
+
+
+func _update_mute_button(button: Button) -> void:
+	button.text = "MIC MUTED · TAP TO UNMUTE" if _voice_muted else "MIC LIVE · TAP TO MUTE"
+	button.add_theme_font_size_override("font_size", 19)
+	var color := Color("287f55") if _voice_muted else Color("a9343c")
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = color.lightened(0.12) if state == "hover" else color.darkened(0.08) if state == "pressed" else color
+		style.set_corner_radius_all(8)
+		style.set_content_margin_all(8)
+		button.add_theme_stylebox_override(state, style)
+	button.add_theme_color_override("font_color", Color.WHITE)
 
 
 func _add_voice_settings(parent: VBoxContainer, xr_cycle: bool = false) -> void:

@@ -3,6 +3,9 @@ extends Node3D
 const FIXED_STEP := 1.0 / 60.0
 const DEFAULT_SEED := 40721
 const GROVE_GOAL_RADIUS := 2.65
+const PVP_LEFT_GOAL := Vector2(-27.0, 0.0)
+const PVP_RIGHT_GOAL := Vector2(27.0, 0.0)
+const PVP_CENTER_SPAWNS := [Vector2(0.0, -3.0), Vector2(0.0, 0.0), Vector2(0.0, 3.0)]
 const TUTORIAL_XZ := Vector2(-8.0, -2.0)
 const PATCH_CENTERS := [Vector2(-14.4, -13.2), Vector2(14.6, -12.0), Vector2(15.4, 13.6)]
 const ARENA_LAYOUT := "wide-60m-v1"
@@ -21,8 +24,13 @@ var friend_menu: FriendMenu
 var sun_light: DirectionalLight3D
 var night_environment: Environment
 var goal_shrine: GoalShrine
+var second_goal_shrine: GoalShrine
+var _game_mode := "classic"
 var goal_beacon: Node3D
+var _pvp_beacons: Array[Node3D] = []
 var _last_shrine_score: int = -1
+var _last_second_shrine_score: int = -1
+var _milestone_times: Dictionary = {}
 var _tutorial_movement_locked: bool = false
 var _xr_tutorial_centered: bool = false
 var _xr_recenter_cooldown: float = 0.0
@@ -112,6 +120,8 @@ var xr_staff_interaction: Variant
 var lantern: Lantern
 var grove_audio: Node
 var top_camera: Camera3D
+var spectator_camera: MushiSpectatorCamera
+var _spectator_adaptation: float = -1.0
 var agent_nodes: Array[Node3D] = []
 var glyph_swarm: GlyphSwarm
 var return_handoff: ReturnHandoffVisual
@@ -289,9 +299,10 @@ func _ready() -> void:
 		_avatar_eye_height_override if _avatar_eye_height_override > 0.0 else 1.6,
 		_avatar_arm_reach)
 	friend_menu.new_game_requested.connect(_on_friend_new_game)
+	friend_menu.mode_requested.connect(_on_friend_mode_requested)
 	friend_menu.settings_requested.connect(_on_friend_settings)
 	friend_menu.audio_settings_requested.connect(_on_friend_audio_settings)
-	friend_menu.quit_requested.connect(func() -> void: get_tree().quit())
+	friend_menu.quit_requested.connect(_on_friend_quit)
 	friend_menu.quality_profile_requested.connect(quality_menu.apply_profile)
 	friend_menu.skip_requested.connect(_on_friend_skip)
 	friend_menu.tuning_requested.connect(_on_friend_tuning)
@@ -328,6 +339,10 @@ func _process(delta: float) -> void:
 	if xr_player != null and xr_player.xr_active:
 		_calibrate_xr_avatar_scale(delta)
 		player.camera.global_transform = xr_player.camera.global_transform
+	if spectator_camera != null and spectator_camera.active:
+		spectator_camera.controls_enabled = not (friend_menu != null and friend_menu.is_open()) \
+			and not (quality_menu != null and quality_menu.is_open()) \
+			and not (audio_mix_menu != null and audio_mix_menu.is_open()) and not _desktop_tuning_open
 	if _active_backend == "gpu":
 		if not simulation.gpu_error.is_empty():
 			if environment_enabled:
@@ -367,6 +382,8 @@ func _process(delta: float) -> void:
 		tutorial_director.advance(delta, int(lantern.mode), lantern.shutter_openness, lantern.night_vision)
 		if tutorial_director.stage == TutorialDirector.Stage.ADAPTATION:
 			lantern.reset_adaptation(tutorial_director.adaptation_progress)
+	if spectator_camera != null and spectator_camera.active and _spectator_adaptation >= 0.0:
+		lantern.reset_adaptation(_spectator_adaptation)
 	_sync_tutorial_movement_lock()
 	if tutorial_guide != null:
 		tutorial_guide.set_guide_state(tutorial_director.guide_state)
@@ -383,9 +400,15 @@ func _process(delta: float) -> void:
 			mushroom_patch.set_night_vision(lantern.night_vision)
 		if goal_shrine != null:
 			goal_shrine.set_night_vision(lantern.night_vision)
-			if simulation.score != _last_shrine_score:
-				_last_shrine_score = simulation.score
-				goal_shrine.set_progress(simulation.score, fixture_count)
+			var primary_score: int = simulation.goal_scores[0] if _game_mode == "two_shrines" and simulation is FlightSimulation else simulation.score
+			if primary_score != _last_shrine_score:
+				_last_shrine_score = primary_score
+				goal_shrine.set_progress(primary_score, fixture_count)
+		if second_goal_shrine != null and _game_mode == "two_shrines":
+			second_goal_shrine.set_night_vision(lantern.night_vision)
+			if simulation is FlightSimulation and simulation.goal_scores[1] != _last_second_shrine_score:
+				_last_second_shrine_score = simulation.goal_scores[1]
+				second_goal_shrine.set_progress(_last_second_shrine_score, fixture_count)
 	light_field.update_transform(lantern.global_position, lantern.forward_direction())
 	light_field.shutter_openness = lantern.shutter_openness
 	light_field.mode = lantern.mode
@@ -410,6 +433,7 @@ func _process(delta: float) -> void:
 			accumulator -= active_step
 	if _multiplayer_role == "client" and simulation is RemoteFlightSimulation:
 		simulation.advance_replica(delta)
+	_record_completion_milestones()
 	if _multiplayer_role == "host":
 		_broadcast_multiplayer_state()
 	if tutorial_director != null and simulation.score != _last_tutorial_score:
@@ -419,7 +443,13 @@ func _process(delta: float) -> void:
 		tutorial_ui.update_director(tutorial_director, xr_player != null and xr_player.xr_active)
 	_update_xr_tutorial_chain_cue()
 	if friend_menu != null and tutorial_director != null:
-		friend_menu.update_session(tutorial_director.status_text + " · " + _network_status, tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY, _tutorial_sandbox_available())
+		var session_status: String = tutorial_director.status_text + " · " + _network_status
+		if _game_mode == "two_shrines" and simulation is FlightSimulation:
+			session_status = "Two shrines · Amber %d / Blue %d · %d/%d returned · %s" % [simulation.goal_scores[0], simulation.goal_scores[1], simulation.score, fixture_count, _network_status]
+		if not _milestone_times.is_empty():
+			session_status += " · " + _milestone_caption()
+		friend_menu.update_session(session_status, tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY, _tutorial_sandbox_available())
+		friend_menu.set_elapsed_time(elapsed)
 	var visual_start := Time.get_ticks_usec()
 	_update_agent_visuals(accumulator / active_step, delta)
 	visual_update_ms = lerpf(visual_update_ms, float(Time.get_ticks_usec() - visual_start) / 1000.0, 0.05)
@@ -436,6 +466,29 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if xr_player == null or not xr_player.xr_active:
+		if event.is_action_pressed("toggle_spectator") and not event.is_echo():
+			_toggle_spectator()
+			get_viewport().set_input_as_handled()
+			return
+		if spectator_camera != null and spectator_camera.active:
+			if event.is_action_pressed("spectator_sweep") and not event.is_echo():
+				var goal_xz: Vector2 = simulation.goal_position
+				var target := Vector3(goal_xz.x, _ground_height(goal_xz) + 2.0, goal_xz.y)
+				spectator_camera.toggle_sweep(target)
+				get_viewport().set_input_as_handled()
+				return
+			if event.is_action_pressed("spectator_darken") and not event.is_echo():
+				_spectator_adaptation = clampf((_spectator_adaptation if _spectator_adaptation >= 0.0 else lantern.night_vision) - 0.2, 0.0, 1.0)
+				get_viewport().set_input_as_handled()
+				return
+			if event.is_action_pressed("spectator_brighten") and not event.is_echo():
+				_spectator_adaptation = clampf((_spectator_adaptation if _spectator_adaptation >= 0.0 else lantern.night_vision) + 0.2, 0.0, 1.0)
+				get_viewport().set_input_as_handled()
+				return
+			if event.is_action_pressed("spectator_auto_adaptation") and not event.is_echo():
+				_spectator_adaptation = -1.0
+				get_viewport().set_input_as_handled()
+				return
 		if event.is_action_pressed("release_mouse") and friend_menu != null:
 			if _desktop_tuning_open:
 				_desktop_tuning_open = false
@@ -475,6 +528,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	if xr_player == null or not xr_player.xr_active:
+		if spectator_camera != null and spectator_camera.active:
+			if event.is_action_pressed("toggle_debug"):
+				debug_visible = not debug_visible
+				hud_label.visible = debug_visible
+				help_label.visible = debug_visible
+				panel.visible = debug_visible and _tutorial_sandbox_available()
+				footprint.visible = debug_visible
+				field_overlay.visible = debug_visible
+				_refresh_preset_visuals()
+			elif event.is_action_pressed("toggle_fullscreen"):
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN)
+			return
 		if event.is_action_pressed("staff_drop_pickup"):
 			if tutorial_director != null and tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY:
 				get_viewport().set_input_as_handled()
@@ -766,6 +831,17 @@ func _build_world() -> void:
 		goal_shrine.name = "GoalShrine"
 		goal_shrine.configure(simulation.goal_radius, _ground_height(Vector2.ZERO), world_surface)
 		add_child(goal_shrine)
+		second_goal_shrine = GoalShrine.new()
+		second_goal_shrine.name = "SecondGoalShrine"
+		second_goal_shrine.position = Vector3(PVP_RIGHT_GOAL.x, 0.0, PVP_RIGHT_GOAL.y)
+		second_goal_shrine.configure(simulation.goal_radius, _ground_height(PVP_RIGHT_GOAL), world_surface)
+		second_goal_shrine.set_ring_color(Color("71aaff"))
+		add_child(second_goal_shrine)
+		second_goal_shrine.visible = false
+		_pvp_beacons.append(NightEnvironment.add_pvp_beacon(self, PVP_LEFT_GOAL, _ground_height(PVP_LEFT_GOAL), Color("ffac55")))
+		_pvp_beacons.append(NightEnvironment.add_pvp_beacon(self, PVP_RIGHT_GOAL, _ground_height(PVP_RIGHT_GOAL), Color("71aaff")))
+		for pvp_beacon: Node3D in _pvp_beacons:
+			pvp_beacon.visible = false
 
 	footprint = MeshInstance3D.new()
 	var footprint_mesh := CylinderMesh.new()
@@ -804,6 +880,9 @@ func _build_world() -> void:
 	top_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	top_camera.size = float(terrain_size) if environment_enabled else 62.0
 	add_child(top_camera)
+	spectator_camera = MushiSpectatorCamera.new()
+	spectator_camera.name = "SpectatorCamera"
+	add_child(spectator_camera)
 
 
 func _add_miko_presentation() -> void:
@@ -952,18 +1031,23 @@ func _update_staff_pose(delta: float) -> void:
 func _viewer_lantern_exposure() -> float:
 	if staff_tool == null or staff_tool.placement == StaffTool.Placement.HELD:
 		return 1.0
-	var eye: Vector3 = xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
+	var eye: Vector3 = _viewer_eye_position()
 	return 1.0 - smoothstep(3.0, 14.0, eye.distance_to(lantern.global_position))
 
 
 func _viewer_multiplayer_adaptation_target() -> float:
-	var eye: Vector3 = xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
+	var eye: Vector3 = _viewer_eye_position()
 	var fresh_peers: Array[LightField] = []
 	for peer_id: String in _peer_fields:
 		if Time.get_ticks_msec() - int(_peer_last_input_msec.get(peer_id, 0)) > 500:
 			continue
 		fresh_peers.append(_peer_fields[peer_id] as LightField)
 	return NightAdaptation.multiplayer_target(light_field, fresh_peers, eye)
+
+func _viewer_eye_position() -> Vector3:
+	if spectator_camera != null and spectator_camera.active:
+		return spectator_camera.global_position
+	return xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
 
 
 func _on_xr_recall_requested(controller: XRController3D) -> void:
@@ -999,12 +1083,11 @@ func _sync_tutorial_movement_lock() -> void:
 	if tutorial_director == null:
 		return
 	var locked := tutorial_director.tutorial_enabled and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY
-	if locked == _tutorial_movement_locked:
-		return
+	var lock_changed := locked != _tutorial_movement_locked
 	_tutorial_movement_locked = locked
 	if player != null:
-		player.movement_enabled = not locked
-	if xr_player != null and xr_player.xr_active:
+		player.movement_enabled = not locked and not (spectator_camera != null and spectator_camera.active)
+	if lock_changed and xr_player != null and xr_player.xr_active:
 		xr_player.set_interaction_lock(locked)
 
 
@@ -1117,6 +1200,10 @@ func _on_tutorial_adaptation_started() -> void:
 func _update_stream_visibility(delta: float) -> void:
 	if terrain_environment == null or lantern == null:
 		return
+	if _game_mode == "two_shrines":
+		_stream_visibility = 0.0
+		terrain_environment.set_stream_visibility(0.0)
+		return
 	var tutorial_reveal_allowed := tutorial_director == null or not tutorial_director.tutorial_enabled
 	if tutorial_director != null and tutorial_director.tutorial_enabled:
 		tutorial_reveal_allowed = tutorial_director.stage in [TutorialDirector.Stage.ADAPTATION, TutorialDirector.Stage.FREE_PLAY]
@@ -1208,7 +1295,7 @@ func _build_ui() -> void:
 	hud_label.visible = debug_visible
 
 	help_label = Label.new()
-	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · K: skip intro · R: reset · F1: debug · F2: quality · F3: audio · Esc: free mouse"
+	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · K: skip intro · R: reset · F1: debug · F2: quality · F3: audio · F6: spectator · Esc: menu\nSpectator: mouse look · WASD/Q/E fly · Shift fast · Ctrl slow · F7 sweep · F8/F9 eye adaptation · F10 auto"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
 	help_label.add_theme_color_override("font_color", Color("dceae8"))
@@ -1593,7 +1680,8 @@ func _create_agent_visual(index: int) -> Node3D:
 func _update_agent_visuals(alpha: float, delta: float) -> void:
 	if flight_enabled:
 		glyph_swarm.update_swarm(simulation, alpha, current_preset)
-		return_handoff.update_handoffs(simulation, delta, simulation.goal_position, _ground_height(simulation.goal_position))
+		if _game_mode != "two_shrines":
+			return_handoff.update_handoffs(simulation, delta, simulation.goal_position, _ground_height(simulation.goal_position))
 		if simulation is RemoteFlightSimulation:
 			simulation.committed_this_step = PackedInt32Array()
 		return
@@ -1739,23 +1827,35 @@ func _reset_run(record_previous: bool) -> void:
 	simulation.world_limit = float(terrain_size) * 0.5 if environment_enabled else 27.0
 	if environment_enabled and simulation.has_method("configure_environment"):
 		simulation.configure_environment(world_surface)
-	var active_patches := _patch_centers()
-	simulation.spawn_centers = active_patches
+	var active_patches := _patch_centers().duplicate()
+	if _game_mode == "two_shrines":
+		for center: Vector2 in PVP_CENTER_SPAWNS:
+			active_patches.append(center)
+	simulation.spawn_centers = PackedVector2Array(PVP_CENTER_SPAWNS) if _game_mode == "two_shrines" else active_patches
 	simulation.mushroom_centers = active_patches.slice(0, 1) if fixture_count == 3 else active_patches.duplicate()
 	if not current_preset.energy_dynamics:
 		simulation.mushroom_centers = PackedVector2Array()
-	simulation.reset(fixture_count, current_seed, current_preset)
+	var run_preset := current_preset.copy_preset()
+	if _game_mode == "two_shrines":
+		run_preset.spontaneous_waking_enabled = false
+	if simulation is FlightSimulation:
+		simulation.goal_mode_two = _game_mode == "two_shrines"
+		simulation.goal_position = PVP_LEFT_GOAL if simulation.goal_mode_two else Vector2.ZERO
+		simulation.second_goal_position = PVP_RIGHT_GOAL
+	simulation.reset(fixture_count, current_seed, run_preset)
 	_stream_visibility = 0.0
 	if terrain_environment != null:
 		terrain_environment.set_stream_visibility(0.0)
 	if tutorial_director != null:
-		var enable_tutorial := _force_tutorial or (environment_enabled and not _skip_tutorial_requested)
+		var enable_tutorial := _game_mode != "two_shrines" and (_force_tutorial or (environment_enabled and not _skip_tutorial_requested))
 		tutorial_director.begin_run(enable_tutorial, fixture_count)
 		if simulation is FlightSimulation:
 			simulation.goal_accepting = tutorial_director.goal_accepting
 		_last_tutorial_score = -1
 	_sync_tutorial_movement_lock()
 	_last_shrine_score = -1
+	_last_second_shrine_score = -1
+	_configure_goal_shrines()
 	if grove_audio != null:
 		grove_audio.bind_simulation(simulation)
 	_refresh_preset_visuals()
@@ -1764,6 +1864,7 @@ func _reset_run(record_previous: bool) -> void:
 	sim_step_ms = 0.0
 	visual_update_ms = 0.0
 	elapsed = 0.0
+	_milestone_times.clear()
 	mode_times = PackedFloat32Array([0.0, 0.0, 0.0])
 	var authored_intro := tutorial_director != null and tutorial_director.tutorial_enabled and environment_enabled
 	player.position = Vector3(TUTORIAL_XZ.x, 0.0, TUTORIAL_XZ.y) if authored_intro else Vector3(active_patches[0].x, 0.0, active_patches[0].y + 5.2) if fixture_count == 3 else Vector3(0.0, 0.0, 18.4)
@@ -1895,11 +1996,39 @@ func _current_settings() -> Dictionary:
 func _toggle_top_down() -> void:
 	if xr_player != null and xr_player.xr_active:
 		return
+	if spectator_camera != null and spectator_camera.active:
+		_toggle_spectator()
 	top_down = not top_down
 	top_camera.current = top_down
 	player.camera.current = not top_down
 	player.look_enabled = not top_down
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if top_down else Input.MOUSE_MODE_CAPTURED
+
+func _toggle_spectator() -> void:
+	if xr_player != null and xr_player.xr_active or spectator_camera == null:
+		return
+	if spectator_camera.active:
+		spectator_camera.leave()
+		if _local_avatar != null:
+			_local_avatar.set_local_first_person(true)
+		_spectator_adaptation = -1.0
+		player.movement_enabled = not _tutorial_movement_locked
+		player.camera.make_current()
+		player.look_enabled = not (friend_menu != null and friend_menu.is_open()) and not top_down
+		grove_audio.set_listener_camera(player.camera)
+		if _voice != null:
+			_voice.set_listener_camera(player.camera)
+	else:
+		if top_down:
+			_toggle_top_down()
+		spectator_camera.enter_from(player.camera)
+		if _local_avatar != null:
+			_local_avatar.set_local_first_person(false)
+		player.movement_enabled = false
+		player.look_enabled = false
+		grove_audio.set_listener_camera(spectator_camera)
+		if _voice != null:
+			_voice.set_listener_camera(spectator_camera)
 
 func _save_named_preset() -> void:
 	var name_value := save_name.text.strip_edges()
@@ -1988,6 +2117,26 @@ func _load_saved_data() -> Dictionary:
 	var parsed: Variant = JSON.parse_string(file.get_as_text())
 	return parsed as Dictionary if parsed is Dictionary else {}
 
+
+func _record_completion_milestones() -> void:
+	if fixture_count <= 0 or simulation == null:
+		return
+	for percent: int in [25, 50, 75, 90, 100]:
+		var key := str(percent)
+		if not _milestone_times.has(key) and simulation.score * 100 >= fixture_count * percent:
+			_milestone_times[key] = snappedf(elapsed, 0.01)
+
+
+func _milestone_caption() -> String:
+	var parts := PackedStringArray()
+	for percent: int in [25, 50, 75, 90, 100]:
+		var key := str(percent)
+		if not _milestone_times.has(key):
+			continue
+		var seconds := int(float(_milestone_times[key]))
+		parts.append("%d%% %02d:%02d" % [percent, seconds / 60, seconds % 60])
+	return " · ".join(parts)
+
 func _write_run_record(reason: String) -> void:
 	if elapsed <= 0.01 or current_preset == null:
 		return
@@ -2003,7 +2152,10 @@ func _write_run_record(reason: String) -> void:
 		"flight_enabled": flight_enabled,
 		"arena_layout": _arena_layout(),
 		"elapsed_seconds": snappedf(elapsed, 0.001),
+		"game_mode": _game_mode,
+		"completion_milestones_seconds": _milestone_times.duplicate(),
 		"returns": simulation.score,
+		"shrine_returns": [simulation.goal_scores[0], simulation.goal_scores[1]] if simulation is FlightSimulation else [simulation.score, 0],
 		"returns_snapshot_delayed": _active_backend == "gpu",
 		"state_snapshot_revision": simulation.snapshot_revision if _active_backend == "gpu" else -1,
 		"mode_seconds": {
@@ -2137,6 +2289,11 @@ func _setup_input() -> void:
 	_add_key_action("inspect_next", KEY_I)
 	_add_key_action("toggle_fullscreen", KEY_F11)
 	_add_key_action("toggle_topdown", KEY_T)
+	_add_key_action("toggle_spectator", KEY_F6)
+	_add_key_action("spectator_sweep", KEY_F7)
+	_add_key_action("spectator_darken", KEY_F8)
+	_add_key_action("spectator_brighten", KEY_F9)
+	_add_key_action("spectator_auto_adaptation", KEY_F10)
 	_add_key_action("release_mouse", KEY_ESCAPE)
 
 func _add_key_action(action: StringName, keycode: Key, require_ctrl: bool = false) -> void:
@@ -2223,15 +2380,22 @@ func _refresh_preset_visuals() -> void:
 	ring.outer_radius = ring.inner_radius + 0.05
 	goal_halo.mesh = ring
 	goal_halo.visible = debug_visible and current_preset.goal_repulsion_strength > 0.0
-	if mushroom_nodes.is_empty():
-		for center: Vector2 in _patch_centers():
-			var patch := MushroomPatch.new()
-			patch.position = Vector3(center.x, _ground_height(center), center.y)
-			add_child(patch)
-			mushroom_nodes.append(patch)
+	var visual_patches := _patch_centers().duplicate()
+	if _game_mode == "two_shrines":
+		for center: Vector2 in PVP_CENTER_SPAWNS:
+			visual_patches.append(center)
+	while mushroom_nodes.size() < visual_patches.size():
+		var patch := MushroomPatch.new()
+		var new_center: Vector2 = visual_patches[mushroom_nodes.size()]
+		patch.position = Vector3(new_center.x, _ground_height(new_center), new_center.y)
+		add_child(patch)
+		mushroom_nodes.append(patch)
 	for index: int in mushroom_nodes.size():
 		var patch := mushroom_nodes[index]
-		patch.visible = current_preset.energy_dynamics and (fixture_count != 3 or index == 0)
+		if index < visual_patches.size():
+			var center: Vector2 = visual_patches[index]
+			patch.position = Vector3(center.x, _ground_height(center), center.y)
+		patch.visible = index < visual_patches.size() and current_preset.energy_dynamics and (fixture_count != 3 or index == 0)
 		patch.set_radius(current_preset.mushroom_radius)
 		patch.set_night_vision(lantern.night_vision if lantern != null else 0.0)
 		patch.set_visual_tuning(_visual_tuning)
@@ -2244,6 +2408,23 @@ func _patch_centers() -> PackedVector2Array:
 
 func _ground_height(point: Vector2) -> float:
 	return float(world_surface.get_height_at(point)) if world_surface != null else 0.0
+
+
+func _configure_goal_shrines() -> void:
+	if goal_shrine == null:
+		return
+	var pvp := _game_mode == "two_shrines"
+	var first: Vector2 = PVP_LEFT_GOAL if pvp else Vector2.ZERO
+	goal_shrine.position = Vector3(first.x, 0.0, first.y)
+	goal_shrine.configure(simulation.goal_radius, _ground_height(first), world_surface)
+	goal_shrine.set_ring_color(Color("ffac55") if pvp else Color(1.0, 0.67, 0.27))
+	if second_goal_shrine != null:
+		second_goal_shrine.visible = pvp
+		if pvp:
+			second_goal_shrine.position = Vector3(PVP_RIGHT_GOAL.x, 0.0, PVP_RIGHT_GOAL.y)
+			second_goal_shrine.configure(simulation.goal_radius, _ground_height(PVP_RIGHT_GOAL), world_surface)
+	for pvp_beacon: Node3D in _pvp_beacons:
+		pvp_beacon.visible = pvp
 
 
 func _arena_layout() -> String:
@@ -2279,7 +2460,7 @@ func _on_quality_visibility(open: bool) -> void:
 	if xr_player == null or not xr_player.xr_active:
 		var menu_open := friend_menu != null and friend_menu.is_open()
 		player.controls_enabled = not open and not menu_open
-		player.look_enabled = not open and not menu_open and not top_down
+		player.look_enabled = not open and not menu_open and not top_down and not (spectator_camera != null and spectator_camera.active)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or menu_open or top_down else Input.MOUSE_MODE_CAPTURED
 
 
@@ -2294,7 +2475,7 @@ func _on_audio_mix_visibility(open: bool) -> void:
 	if xr_player == null or not xr_player.xr_active:
 		var menu_open := friend_menu != null and friend_menu.is_open()
 		player.controls_enabled = not open and not menu_open
-		player.look_enabled = not open and not menu_open and not top_down
+		player.look_enabled = not open and not menu_open and not top_down and not (spectator_camera != null and spectator_camera.active)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or menu_open or top_down else Input.MOUSE_MODE_CAPTURED
 
 
@@ -2304,6 +2485,17 @@ func _on_friend_new_game() -> void:
 	_reset_run(true)
 	if xr_player != null and xr_player.xr_active:
 		xr_player.set_menu_open(false)
+
+
+func _on_friend_quit() -> void:
+	_write_run_record("quit")
+	get_tree().quit()
+
+
+func _on_friend_mode_requested(mode: String) -> void:
+	if _multiplayer_role == "client":
+		return
+	_game_mode = "two_shrines" if mode == "two_shrines" else "classic"
 
 
 func _on_friend_settings() -> void:
@@ -2345,7 +2537,7 @@ func _on_friend_menu_visibility(open: bool) -> void:
 		if _multiplayer_role == "offline":
 			simulation_paused = _friend_was_paused
 	player.controls_enabled = not open
-	player.look_enabled = not open and not top_down
+	player.look_enabled = not open and not top_down and not (spectator_camera != null and spectator_camera.active)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or top_down else Input.MOUSE_MODE_CAPTURED
 
 
@@ -2387,7 +2579,7 @@ func _init_multiplayer_network() -> void:
 	if not _voice_input_device.is_empty():
 		_voice.set_input_device(_voice_input_device)
 	_voice.set_muted(not _voice_start_unmuted)
-	_voice.set_listener_camera(xr_player.camera if xr_player != null and xr_player.xr_active else player.camera)
+	_voice.set_listener_camera(xr_player.camera if xr_player != null and xr_player.xr_active else spectator_camera if spectator_camera != null and spectator_camera.active else player.camera)
 	_refresh_voice_controls()
 	_show_multiplayer_status(false, false, "Offline")
 
@@ -2444,10 +2636,13 @@ func _start_multiplayer(secret: String, hosting: bool) -> void:
 	_reset_run(false)
 	_client_config_reset = false
 	_local_avatar_hue = randf()
+	staff_tool.set_identity_hue(_local_avatar_hue)
 	_local_avatar = MushiMultiplayerAvatar.new()
 	_local_avatar.name = "LocalPlayerAvatar"
 	add_child(_local_avatar)
 	_local_avatar.configure(_local_avatar_hue, true)
+	if spectator_camera != null and spectator_camera.active:
+		_local_avatar.set_local_first_person(false)
 	_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
 	if xr_player != null and xr_player.xr_active:
 		xr_player.set_controller_hand_meshes_visible(false)
@@ -2640,7 +2835,7 @@ func _update_avatar_voice(avatar: MushiMultiplayerAvatar, level: float,
 func _limit_remote_lights() -> void:
 	if _peer_lanterns.is_empty():
 		return
-	var eye: Vector3 = xr_player.camera.global_position if xr_player != null and xr_player.xr_active else player.camera.global_position
+	var eye: Vector3 = _viewer_eye_position()
 	var ranked: Array[Dictionary] = []
 	for peer_id: String in _peer_lanterns:
 		var visual := _peer_lanterns[peer_id] as Lantern
@@ -2703,6 +2898,8 @@ func _on_network_lantern(peer_id: String, bytes: PackedByteArray) -> void:
 	peer_visual.housing_fill.visible = false
 	var avatar_pose := MultiplayerAvatarPose.decode(bytes, terrain_size)
 	if not avatar_pose.is_empty():
+		if _peer_staffs.has(peer_id):
+			(_peer_staffs[peer_id] as RemoteStaffVisual).set_identity_hue(avatar_pose.hue)
 		if not _peer_avatars.has(peer_id):
 			var avatar := MushiMultiplayerAvatar.new()
 			avatar.name = "PeerAvatar"
@@ -2785,7 +2982,9 @@ func _broadcast_multiplayer_state() -> void:
 			_snapshot_chunks_sent += 1
 	if simulation.score != _last_sent_score:
 		_last_sent_score = simulation.score
-		var score_message := JSON.stringify({"kind": "score", "epoch": _multiplayer_epoch, "score": simulation.score}).to_utf8_buffer()
+		var score_message := JSON.stringify({"kind": "score", "epoch": _multiplayer_epoch, "score": simulation.score,
+			"elapsed_seconds": elapsed, "milestones": _milestone_times,
+			"goal_scores": [simulation.goal_scores[0], simulation.goal_scores[1]] if simulation is FlightSimulation else [simulation.score, 0]}).to_utf8_buffer()
 		for peer_id: String in _joined_peers:
 			_network.send_control(peer_id, score_message)
 
@@ -2818,7 +3017,10 @@ func _send_multiplayer_config(peer_id: String) -> void:
 		return
 	var config := {"kind": "reset", "version": 1, "epoch": _multiplayer_epoch,
 		"seed": current_seed, "count": fixture_count, "terrain_size": terrain_size,
-		"preset": current_preset.to_dict(), "score": simulation.score}
+		"preset": current_preset.to_dict(), "score": simulation.score,
+		"elapsed_seconds": elapsed, "milestones": _milestone_times,
+		"mode": _game_mode,
+		"goal_scores": [simulation.goal_scores[0], simulation.goal_scores[1]] if simulation is FlightSimulation else [simulation.score, 0]}
 	_network.send_control(peer_id, JSON.stringify(config).to_utf8_buffer())
 
 
@@ -2845,6 +3047,7 @@ func _on_network_control(_peer_id: String, bytes: PackedByteArray) -> void:
 		if count not in [512, 1024]:
 			return
 		_multiplayer_epoch = int(data.get("epoch", 0))
+		_game_mode = "two_shrines" if str(data.get("mode", "classic")) == "two_shrines" else "classic"
 		_impaired_chunks.clear()
 		fixture_count = count
 		current_seed = int(data.get("seed", DEFAULT_SEED))
@@ -2854,6 +3057,35 @@ func _on_network_control(_peer_id: String, bytes: PackedByteArray) -> void:
 		_reset_run(false)
 		_client_config_reset = false
 		simulation.score = int(data.get("score", 0))
+		elapsed = maxf(0.0, float(data.get("elapsed_seconds", 0.0)))
+		_apply_network_milestones(data)
+		if simulation is FlightSimulation:
+			_apply_network_goal_scores(data)
 		print("MUSHI_NET_RESET role=client epoch=%d count=%d score=%d" % [_multiplayer_epoch, fixture_count, simulation.score])
 	elif data.get("kind") == "score" and int(data.get("epoch", -1)) == _multiplayer_epoch:
 		simulation.score = clampi(int(data.get("score", 0)), 0, fixture_count)
+		elapsed = maxf(elapsed, float(data.get("elapsed_seconds", elapsed)))
+		_apply_network_milestones(data)
+		if simulation is FlightSimulation:
+			_apply_network_goal_scores(data)
+
+
+func _apply_network_goal_scores(data: Dictionary) -> void:
+	var values: Variant = data.get("goal_scores", [])
+	if values is Array and values.size() == 2:
+		var first := clampi(int(values[0]), 0, fixture_count)
+		var second := clampi(int(values[1]), 0, fixture_count - first)
+		simulation.goal_scores = PackedInt32Array([first, second])
+		simulation.score = first + second
+	else:
+		simulation.goal_scores = PackedInt32Array([simulation.score, 0])
+
+
+func _apply_network_milestones(data: Dictionary) -> void:
+	var values: Variant = data.get("milestones", {})
+	if not values is Dictionary:
+		return
+	for percent: int in [25, 50, 75, 90, 100]:
+		var key := str(percent)
+		if values.has(key):
+			_milestone_times[key] = maxf(0.0, float(values[key]))

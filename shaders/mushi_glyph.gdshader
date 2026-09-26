@@ -22,6 +22,8 @@ varying flat float glyph_seed;
 varying vec4 glyph_color;
 varying float glyph_visibility;
 varying float halo_near_fade;
+varying float halo_view_fade;
+varying float glyph_quad_extent;
 
 vec3 rgb_to_hsv(vec3 c) {
 	vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -76,10 +78,6 @@ void vertex() {
 	float flutter = animate_vertices ? sin(TIME * (1.7 + glyph_seed) + glyph_seed * 19.0) * 0.055 : 0.0;
 	local.x += sin(local.y * 3.2 + TIME * 1.4 + glyph_seed * 11.0) * flutter;
 	float half_size = clamp(0.175 * INSTANCE_CUSTOM.z, 0.12, 0.25) * glyph_render_scale;
-	// Reserve transparent pixels around the accepted silhouette for its own
-	// soft glow. This stays in the existing quad and instance draw.
-	float quad_extent = halo_strength > 0.001 ? HALO_QUAD_EXTENT : 1.0;
-	local *= half_size * quad_extent;
 
 	// Row 2 carries the last useful heading through rest and vertical travel.
 	vec3 forward = texelFetch(state_texture, ivec2(agent, 2), 0).xyz;
@@ -120,6 +118,16 @@ void vertex() {
 		up = varied_up;
 		right = normalize(cross(up, rolled_normal));
 	}
+	// Reserve halo geometry only when the glyph plane faces the viewer. At a
+	// glancing angle, fading the halo and its quad expansion avoids a broad
+	// translucent sheet while retaining the core silhouette.
+	vec3 plane_normal = normalize(cross(right, up));
+	vec3 to_camera = INV_VIEW_MATRIX[3].xyz - center;
+	vec3 view_direction = to_camera / max(length(to_camera), 0.001);
+	float view_facing = abs(dot(plane_normal, view_direction));
+	halo_view_fade = smoothstep(0.12, 0.62, view_facing);
+	glyph_quad_extent = mix(1.0, HALO_QUAD_EXTENT, halo_strength > 0.001 ? halo_view_fade : 0.0);
+	local *= half_size * glyph_quad_extent;
 	vec3 world = center + right * local.x + up * local.y;
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world, 1.0);
 }
@@ -151,15 +159,14 @@ void fragment() {
 	if (glyph_color.a <= 0.001) {
 		discard;
 	}
-	float quad_extent = halo_strength > 0.001 ? HALO_QUAD_EXTENT : 1.0;
-	vec2 p = (UV - vec2(0.5)) * vec2(2.0 * quad_extent, -2.0 * quad_extent);
+	vec2 p = (UV - vec2(0.5)) * vec2(2.0 * glyph_quad_extent, -2.0 * glyph_quad_extent);
 	float sdf = glyph_sdf(p, glyph_type, glyph_seed);
 	float edge = max(fwidth(sdf), 0.012);
 	float inside = 1.0 - smoothstep(-edge, edge, sdf);
 	float ring = 1.0 - smoothstep(edge * 1.1, edge * 3.7, abs(sdf));
 	float core_alpha = max(inside * 0.28, ring);
 	float outside = max(sdf, 0.0);
-	float halo = halo_strength * halo_near_fade * 0.20 * exp(-pow(outside / 0.35, 2.0));
+	float halo = halo_strength * halo_near_fade * halo_view_fade * 0.20 * exp(-pow(outside / 0.35, 2.0));
 	float alpha = max(core_alpha, halo);
 	if (alpha < 0.025) {
 		discard;

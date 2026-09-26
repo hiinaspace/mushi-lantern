@@ -292,9 +292,12 @@ func _mode_color(filter_mode: LightField.Mode) -> Color:
 		return Color("ed5d49")
 	return Color("f8e5b2")
 
-func set_mode(new_mode: LightField.Mode) -> void:
+func set_mode(new_mode: LightField.Mode, preserve_dial_preview: bool = false) -> void:
 	_transition_phase = 0
-	_dial_preview_active = false
+	# A hand-held dial can cross several detents before the grip is released.
+	# Other mode setters still cancel an in-flight preview.
+	if not preserve_dial_preview:
+		_dial_preview_active = false
 	if not _dial_preview_active:
 		_settling_split = false
 		_settle_elapsed = 1.0

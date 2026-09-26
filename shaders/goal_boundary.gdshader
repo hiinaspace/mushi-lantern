@@ -3,6 +3,7 @@ render_mode unshaded, blend_add, cull_disabled, depth_draw_never;
 
 uniform float adaptation : hint_range(0.0, 1.0) = 0.0;
 uniform float return_pulse : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 ring_color : source_color = vec3(1.0, 0.67, 0.27);
 
 void fragment() {
 	float radial = 1.0 - abs(UV.y * 2.0 - 1.0);
@@ -12,7 +13,7 @@ void fragment() {
 		+ 0.05 * sin(angle * 19.0 - TIME * 0.38);
 	float slow_pulse = 0.94 + 0.06 * sin(TIME * 1.25);
 	float intensity = (0.34 + adaptation * 0.16 + return_pulse * 0.42) * variation * slow_pulse;
-	vec3 gold = vec3(1.0, 0.67, 0.27);
+	vec3 gold = ring_color;
 	ALBEDO = gold * intensity;
 	EMISSION = gold * intensity * 1.35;
 	ALPHA = radial * (0.46 + return_pulse * 0.22);

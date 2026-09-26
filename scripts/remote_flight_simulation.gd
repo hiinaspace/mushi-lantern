@@ -88,3 +88,7 @@ func stale_agents(seconds: float) -> int:
 		if _received[id] != 0 and _since_packet[id] > seconds:
 			result += 1
 	return result
+
+
+func has_fresh_agent(id: int, seconds: float) -> bool:
+	return id >= 0 and id < _received.size() and _received[id] != 0 and _since_packet[id] <= seconds

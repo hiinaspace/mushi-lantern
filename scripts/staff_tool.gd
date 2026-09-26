@@ -64,6 +64,8 @@ var _adjust_origin_dial := 0.0
 var _adjust_last_dial := 0.0
 var _recall_hand := Transform3D.IDENTITY
 var external_pose_owned := false
+var _identity_hue: float = 0.0
+var _identity_material: StandardMaterial3D
 var _shaft_hint_material: StandardMaterial3D
 var _control_hint_material: StandardMaterial3D
 
@@ -149,6 +151,22 @@ func _build_visual() -> void:
 	shaft.position.y = (SHAFT_TOP_Y + SHAFT_BOTTOM_Y) * 0.5
 	shaft.material_override = _material(Color("51402b"), 0.75, 0.0)
 	add_child(shaft)
+	# An emissive wrap stays visible from either side without adding a light.
+	# Keep it between grip positions so hands do not conceal the owner cue.
+	var identity_band := MeshInstance3D.new()
+	identity_band.name = "IdentityStripe"
+	var identity_mesh := CylinderMesh.new()
+	identity_mesh.top_radius = 0.027
+	identity_mesh.bottom_radius = 0.028
+	identity_mesh.height = 0.10
+	identity_mesh.radial_segments = 16
+	identity_band.mesh = identity_mesh
+	identity_band.position.y = 0.58
+	identity_band.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_identity_material = _material(Color.WHITE, 0.7, 0.55)
+	identity_band.material_override = _identity_material
+	add_child(identity_band)
+	set_identity_hue(_identity_hue)
 	for y: float in GRIP_Y:
 		var wrap := MeshInstance3D.new()
 		var wrap_mesh := CylinderMesh.new()
@@ -275,6 +293,16 @@ func _material(color: Color, roughness: float, emission: float) -> StandardMater
 		mat.emission = color
 		mat.emission_energy_multiplier = emission
 	return mat
+
+func set_identity_hue(hue_turns: float) -> void:
+	# Ukon's authored garment is red; its network color rotates that hue.
+	# Cache before _ready as well, for remote staff created after avatar packets.
+	_identity_hue = fposmod(hue_turns, 1.0)
+	if _identity_material != null:
+		var color := Color.from_hsv(_identity_hue, 0.78, 0.85)
+		_identity_material.albedo_color = color
+		_identity_material.emission = color
+
 
 func set_world_surface(surface: Variant) -> void:
 	world_surface = surface
@@ -451,12 +479,12 @@ func update_adjust(hand_world: Transform3D) -> void:
 			detent = 0
 		if detent != _last_yaw_detent:
 			_last_yaw_detent = detent
-			lantern.set_mode(LightField.Mode.CLEAR if detent == 0 else LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE)
+			lantern.set_mode(LightField.Mode.CLEAR if detent == 0 else LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE, true)
 
 func end_adjust() -> void:
 	if _adjusting:
 		var final_detent := -1 if _adjust_last_dial < -FILTER_STEP_YAW * 0.5 else 1 if _adjust_last_dial > FILTER_STEP_YAW * 0.5 else 0
-		lantern.set_mode(LightField.Mode.CLEAR if final_detent == 0 else LightField.Mode.BLUE if final_detent < 0 else LightField.Mode.ORANGE)
+		lantern.set_mode(LightField.Mode.CLEAR if final_detent == 0 else LightField.Mode.BLUE if final_detent < 0 else LightField.Mode.ORANGE, true)
 	_adjusting = false
 	lantern.end_dial_preview()
 	_previous_pivot = _swing.global_position

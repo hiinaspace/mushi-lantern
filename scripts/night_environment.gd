@@ -62,6 +62,24 @@ static func add_beacon(parent: Node3D, ground_height: float) -> Node3D:
 	return beacon
 
 
+static func add_pvp_beacon(parent: Node3D, point: Vector2, ground_height: float, color: Color) -> Node3D:
+	var beacon := Node3D.new()
+	beacon.name = "ShrineBeacon"
+	beacon.position = Vector3(point.x, ground_height, point.y)
+	parent.add_child(beacon)
+	var core := _beam_mesh("Core", 0.10, Color(color.r, color.g, color.b, 0.34), true)
+	(core.mesh as CylinderMesh).height = 16.0
+	core.position.y = 8.0
+	(core.material_override as StandardMaterial3D).emission_energy_multiplier = 0.16
+	beacon.add_child(core)
+	var halo := _beam_mesh("Halo", 0.35, Color(color.r, color.g, color.b, 0.035), true)
+	(halo.mesh as CylinderMesh).height = 16.0
+	halo.position.y = 8.0
+	(halo.material_override as StandardMaterial3D).emission_energy_multiplier = 0.08
+	beacon.add_child(halo)
+	return beacon
+
+
 static func _beam_mesh(mesh_name: String, radius: float, color: Color, transparent: bool) -> MeshInstance3D:
 	var cylinder := CylinderMesh.new()
 	cylinder.top_radius = radius

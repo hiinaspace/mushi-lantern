@@ -38,6 +38,7 @@ var _stress_active := false
 var _enabled := false
 var _clock := 0.0
 var _last_snapshot := -100.0
+var _last_remote_selection := -100.0
 var _revision := -1
 var _rng := RandomNumberGenerator.new()
 var _streams: Dictionary = {}
@@ -51,6 +52,7 @@ var _staff_speed := 0.0
 var _last_shutter := -1.0
 var _last_requested_mode := -1
 var _shutter_quiet_time := 1.0
+var _shutter_sound_cooldown := 0.0
 var _filter_cooldown := 0.0
 var _filter_transition_was_active := false
 var _filter_variant := 0
@@ -104,9 +106,10 @@ func get_mushi_pitch_range() -> Vector2:
 func bind_simulation(new_simulation: Variant) -> void:
 	if _simulation is GpuFlightSimulation and (_simulation as GpuFlightSimulation).snapshot_applied.is_connected(_on_snapshot):
 		(_simulation as GpuFlightSimulation).snapshot_applied.disconnect(_on_snapshot)
-	_simulation = new_simulation if new_simulation is GpuFlightSimulation else null
+	_simulation = new_simulation if new_simulation is FlightSimulation else null
 	_revision = -1
 	_last_snapshot = -100.0
+	_last_remote_selection = -100.0
 	for slot: Dictionary in _mushi:
 		_release(slot)
 	if _simulation is GpuFlightSimulation:
@@ -181,7 +184,14 @@ func _process(delta: float) -> void:
 	var dt := minf(delta, 0.1)
 	_clock += dt
 	_shutter_quiet_time += dt
+	_shutter_sound_cooldown = maxf(0.0, _shutter_sound_cooldown - dt)
 	_filter_cooldown = maxf(0.0, _filter_cooldown - dt)
+	if _simulation is RemoteFlightSimulation and _remote_snapshot_complete() and _clock - _last_remote_selection >= 0.12:
+		# Remote replicas do not emit the GPU snapshot_applied signal. Sample the
+		# interpolated host state at the network snapshot cadence instead.
+		_last_remote_selection = _clock
+		_last_snapshot = _clock
+		_select_mushi()
 	var camera := _listener_camera
 	if camera == null or not is_instance_valid(camera) or not camera.is_inside_tree():
 		_fade_all(dt)
@@ -208,6 +218,8 @@ func _select_mushi() -> void:
 	var count := mini(_simulation.positions.size(), _simulation.lifecycles.size())
 	for id: int in count:
 		if _simulation.lifecycles[id] != FlightSimulation.Lifecycle.ACTIVE:
+			continue
+		if _simulation is RemoteFlightSimulation and not (_simulation as RemoteFlightSimulation).has_fresh_agent(id, STALE_SECONDS):
 			continue
 		var at: Vector3 = _simulation.positions[id]
 		if not at.is_finite():
@@ -279,11 +291,15 @@ func _mushi_activity(arousal: float) -> float:
 
 
 func _update_mushi(dt: float) -> void:
-	var fresh := _clock - _last_snapshot <= STALE_SECONDS and _simulation is GpuFlightSimulation and (_simulation as GpuFlightSimulation).snapshot_revision == _revision
+	var fresh := false
+	if _simulation is GpuFlightSimulation:
+		fresh = _clock - _last_snapshot <= STALE_SECONDS and (_simulation as GpuFlightSimulation).snapshot_revision == _revision
+	elif _simulation is RemoteFlightSimulation:
+		fresh = _remote_snapshot_complete() and _clock - _last_snapshot <= STALE_SECONDS
 	for slot: Dictionary in _mushi:
 		if int(slot.id) >= 0 and fresh:
 			var id: int = slot.id
-			if id >= _simulation.positions.size() or id >= _simulation.lifecycles.size() or _simulation.lifecycles[id] != FlightSimulation.Lifecycle.ACTIVE:
+			if id >= _simulation.positions.size() or id >= _simulation.lifecycles.size() or _simulation.lifecycles[id] != FlightSimulation.Lifecycle.ACTIVE or (_simulation is RemoteFlightSimulation and not (_simulation as RemoteFlightSimulation).has_fresh_agent(id, STALE_SECONDS)):
 				_release(slot)
 			else:
 				var at: Vector3 = _simulation.positions[id]
@@ -314,6 +330,14 @@ func _update_mushi(dt: float) -> void:
 		if not fresh:
 			_release(slot)
 		_fade(slot, dt)
+
+
+func _remote_snapshot_complete() -> bool:
+	if not _simulation is RemoteFlightSimulation:
+		return false
+	var replica := _simulation as RemoteFlightSimulation
+	return replica.positions.size() > 0 and replica.received_count >= replica.positions.size() \
+		and replica.stale_agents(STALE_SECONDS) < replica.received_count
 
 
 func _build_forest_sites() -> void:
@@ -397,8 +421,9 @@ func _update_tool(dt: float) -> void:
 	var requested_mode: int = int(_staff.lantern.get("_requested_mode"))
 	var filter_transition: bool = int(_staff.lantern.get("_transition_phase")) != 0
 	if _last_shutter >= 0.0 and absf(shutter - _last_shutter) > 0.003 and not filter_transition and not _filter_transition_was_active:
-		if _shutter_quiet_time >= 0.14 and proximity > 0.02:
+		if _shutter_quiet_time >= 0.14 and _shutter_sound_cooldown <= 0.0 and proximity > 0.02:
 			_play(_tool[1], "lantern_shutter_open" if shutter > _last_shutter else "lantern_shutter_close", -17.0)
+			_shutter_sound_cooldown = 0.65
 			_tool[1].gain = proximity
 			_tool[1].target = proximity
 		_shutter_quiet_time = 0.0
@@ -501,6 +526,7 @@ func _reset_polled_state() -> void:
 	_last_shutter = _staff.lantern.shutter_openness if _staff != null and _staff.lantern != null else -1.0
 	_last_requested_mode = int(_staff.lantern.get("_requested_mode")) if _staff != null and _staff.lantern != null else -1
 	_shutter_quiet_time = 1.0
+	_shutter_sound_cooldown = 0.0
 	_filter_transition_was_active = false
 
 

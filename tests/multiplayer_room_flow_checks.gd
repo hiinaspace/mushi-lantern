@@ -10,9 +10,13 @@ func _run() -> void:
 	assert(game._network == null, "Room menu should load transport only when needed")
 	game._force_tutorial = true
 	game.friend_menu.set_room_code("test")
+	game.friend_menu._mode_selectors[0].select(1)
+	game.friend_menu._mode_selectors[0].item_selected.emit(1)
 	game.friend_menu._submit_room(true)
 	assert(game._network != null, "Menu Host should initialize native transport")
 	assert(game._multiplayer_role == "host")
+	assert(game._game_mode == "two_shrines" and game.simulation.goal_mode_two,
+		"Room Host should apply the chosen two-shrine mode on the first start")
 	assert(game._skip_tutorial_requested and not game._force_tutorial,
 		"Multiplayer room should bypass the solo tutorial")
 	game.friend_menu.multiplayer_leave_requested.emit()

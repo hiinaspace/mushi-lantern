@@ -41,7 +41,20 @@ func _run() -> void:
 	interaction.broom_active = true
 	interaction._update_broom(1.0 / 90.0)
 	assert(rig._broom_landing_requested and interaction.broom_active,
-		"Releasing a grip high above ground must start landing while retaining grabs")
+		"Releasing a grip high above ground must start descent while retaining grabs")
+	assert(rig.resume_broom_flight() and not rig._broom_landing_requested and is_zero_approx(rig._broom_vertical_speed),
+		"Regripping above the cutoff must restore hover without another trigger dwell")
+	rig.stop_broom_flight()
+	rig._body.global_position.y = 1.5
+	assert(not rig.resume_broom_flight(), "The near-ground release remains a landing gesture")
+	rig.fall_recovered.connect(interaction._on_fall_recovered)
+	rig._has_safe_ground_position = true
+	rig._last_safe_ground_position = Vector3(1.0, 0.25, 2.0)
+	rig._recover_out_of_bounds_fall()
+	assert(not rig.is_broom_flying() and rig._body.global_position.distance_to(Vector3(1.0, 0.25, 2.0)) < 0.1,
+		"Out-of-bounds recovery must stop flight and return the player to safe terrain")
+	assert(test_staff.global_position.distance_to(Vector3(1.65, 1.0, 1.45)) < 0.1,
+		"Out-of-bounds recovery must return the staff near the player")
 	rig.left_pickup.picked_up_object = null
 	rig.right_pickup.picked_up_object = null
 	test_staff.queue_free()

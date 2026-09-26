@@ -515,13 +515,19 @@ vec3 flight_band_force(vec3 xyz, float e, float vertical_phase) {
     return vec3(0.0, clamp((preferred - xyz.y) * mix(0.48, 0.72, vertical_energy), -1.25, 1.25), 0.0);
 }
 
-vec3 goal_resistance(vec3 xyz) {
-    vec2 offset = xyz.xz - vec2(pf(59), pf(60));
+vec3 goal_resistance_at(vec3 xyz, vec2 goal) {
+    vec2 offset = xyz.xz - goal;
     float distance = length(offset);
     float outer = max(0.0, pf(28));
     if (distance < 0.001 || distance >= pf(61) + outer || outer <= 0.001) return vec3(0.0);
     float strength = smoothstep(pf(61) - 0.8, pf(61), distance) * (1.0 - smoothstep(pf(61), pf(61) + outer, distance)) * pf(27);
     return vec3(offset.x / distance * strength, 0.0, offset.y / distance * strength);
+}
+
+vec3 goal_resistance(vec3 xyz) {
+    vec3 force = goal_resistance_at(xyz, vec2(pf(59), pf(60)));
+    if (pf(80) > 0.5) force += goal_resistance_at(xyz, vec2(pf(81), pf(82)));
+    return force;
 }
 
 void constrain_motion(vec3 start, inout vec3 velocity, inout vec3 position) {
@@ -616,13 +622,14 @@ void main() {
     vec3 next_pos = xyz;
     vec3 next_vel = velocity;
 
+    vec2 committed_goal = heading.w > 1.5 ? vec2(pf(81), pf(82)) : vec2(pf(59), pf(60));
     if (lifecycle == COMMITTED) {
-        vec3 target = vec3(pf(59), xyz.y, pf(60));
+        vec3 target = vec3(committed_goal.x, xyz.y, committed_goal.y);
         next_pos = mix(xyz, target, 1.0 - exp(-dt * 4.0));
         next_vel = vec3(0.0);
         if (aux.z >= 0.22) { aux.x = float(DESCENDING); aux.z = 0.0; }
     } else if (lifecycle == DESCENDING) {
-        vec3 target = vec3(pf(59), ground_height(vec2(pf(59), pf(60))) - STREAM_DEPTH_BELOW_GROUND, pf(60));
+        vec3 target = vec3(committed_goal.x, ground_height(committed_goal) - STREAM_DEPTH_BELOW_GROUND, committed_goal.y);
         next_pos = mix(xyz, target, 1.0 - exp(-dt * 2.2));
         next_vel = vec3(0.0, -1.0, 0.0);
         if (aux.z >= 6.0) { aux.x = float(RELEASED); aux.z = 0.0; }
@@ -655,12 +662,22 @@ void main() {
         vec3 mushroom_force;
         mushroom_field(xyz, velocity, mushroom_exposure, mushroom_force);
         extra.y = mushroom_exposure;
+        // Negative heading.w is the ACTIVE orange-in-patch exposure clock;
+        // committed agents replace it with their positive shrine ID.
+        float orange_here = pf(79) > 1.5 ? orange_exposure : (int(pf(3)) == 2 ? old_v.w : 0.0);
+        bool sustained_orange = orange_here >= 0.2 && orange_here > blue_exposure;
+        float orange_seconds = max(0.0, -heading.w);
+        if (pf(31) > 0.5 && sustained_orange && mushroom_exposure > 0.001)
+            orange_seconds = min(5.0, orange_seconds + dt);
+        else orange_seconds = max(0.0, orange_seconds - dt * 2.0);
+        heading.w = -orange_seconds;
+        float escape_assist = sustained_orange && mushroom_exposure > 0.001 ? smoothstep(2.0, 5.0, orange_seconds) : 0.0;
 
         if (pf(31) > 0.5) {
             float neutral = saturate(pf(32) + sin(pf(2) * pf(35) + phases.x) * pf(34) + trait1(id).w);
             float rate = max(0.0, pf(33));
             float weighted = rate * neutral;
-            float mushroom_rate = max(0.0, pf(38)) * mushroom_exposure * trait1(id).z;
+            float mushroom_rate = max(0.0, pf(38)) * mushroom_exposure * trait1(id).z * (1.0 - escape_assist);
             rate += mushroom_rate;
             weighted += mushroom_rate * pf(39);
             if (int(pf(3)) == 1 || pf(79) > 1.5) {
@@ -668,7 +685,7 @@ void main() {
                 rate += blue_rate; weighted += blue_rate * pf(39);
             }
             if (int(pf(3)) == 2 || pf(79) > 1.5) {
-                float orange_rate = max(0.0, pf(42)) * (pf(79) > 1.5 ? orange_exposure : old_v.w) * trait1(id).y;
+                float orange_rate = max(0.0, pf(42)) * (pf(79) > 1.5 ? orange_exposure : old_v.w) * trait1(id).y + escape_assist * 1.5;
                 rate += orange_rate; weighted += orange_rate * pf(41);
             }
             if (contagion > neutral) {
@@ -709,7 +726,7 @@ void main() {
         float follower_scale = coupled ? 0.5 : 1.0;
         vec3 force = pre_update_wander + social + (pf(79) > 1.5 ? combined_lantern_force : lantern_force(xyz, velocity, old_v.w)) * follower_scale;
         if (pf(31) > 0.5) {
-            mushroom_force *= trait1(id).z;
+            mushroom_force *= trait1(id).z * (1.0 - escape_assist);
             if (pf(79) > 1.5) mushroom_force *= 1.0 - saturate(orange_exposure) * 0.85;
             else if (int(pf(3)) == 2) mushroom_force *= 1.0 - old_v.w * 0.85;
             if (aux.w > 0.0) mushroom_force *= 0.05;
@@ -730,12 +747,15 @@ void main() {
         } else next_vel = limited(velocity + force * dt, pf(16) * trait0(id).z * mix(0.88, 1.18, e));
         constrain_motion(xyz, next_vel, next_pos);
         if (pf(78) > 0.5) {
-            if (distance(next_pos.xz, vec2(pf(59), pf(60))) <= pf(61)) {
+            int selected_goal = distance(next_pos.xz, vec2(pf(59), pf(60))) <= pf(61) ? 1 :
+                (pf(80) > 0.5 && distance(next_pos.xz, vec2(pf(81), pf(82))) <= pf(61) ? 2 : 0);
+            if (selected_goal > 0) {
                 aux.y += dt;
                 if (aux.y >= pf(62)) {
                     aux.x = float(COMMITTED);
                     aux.z = 0.0;
-                    events[id] = 1u;
+                    heading.w = float(selected_goal);
+                    events[id] = uint(selected_goal);
                 }
             } else aux.y = max(0.0, aux.y - dt * 2.0);
         } else aux.y = 0.0;

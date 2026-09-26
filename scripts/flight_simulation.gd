@@ -30,6 +30,13 @@ var lantern_response_factors := PackedFloat32Array()
 var mushroom_response_factors := PackedFloat32Array()
 var neighbor_visits: int = 0
 var goal_position := Vector2.ZERO
+var goal_mode_two: bool = false
+var second_goal_position := Vector2.ZERO
+## Per-shrine counters; score remains the combined total for existing callers.
+var goal_scores := PackedInt32Array([0, 0])
+## Zero before commit, then primary=1 or secondary=2 for the rest of the run.
+var committed_goals := PackedInt32Array()
+var _orange_patch_seconds := PackedFloat32Array()
 var goal_radius: float = 2.65
 var goal_dwell_seconds: float = 0.45
 ## Tutorial gate: progress is accepted only after the scripted reveal completes.
@@ -96,6 +103,11 @@ func reset(agent_count: int, new_seed: int, new_preset: HerdPreset) -> void:
 	_energy_time = 0.0
 	_last_field_mode = -1
 	score = 0
+	goal_scores = PackedInt32Array([0, 0])
+	committed_goals.resize(agent_count)
+	committed_goals.fill(0)
+	_orange_patch_seconds.resize(agent_count)
+	_orange_patch_seconds.fill(0.0)
 	committed_this_step = PackedInt32Array()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = new_seed
@@ -196,6 +208,8 @@ func step(delta: float, field: LightField, social_multiplier: float = 1.0, wande
 			var mushroom_force: Vector3 = mushroom_influence[1]
 			mushroom_force *= mushroom_response_factors[index]
 			if field.mode == LightField.Mode.ORANGE:
+				if exposures[index] >= 0.2:
+					mushroom_force *= 1.0 - smoothstep(2.0, 5.0, _orange_patch_seconds[index])
 				mushroom_force *= 1.0 - exposures[index] * 0.85
 			if _wake_remaining[index] > 0.0:
 				mushroom_force *= 0.05
@@ -467,6 +481,13 @@ func _lantern_force(position: Vector3, velocity: Vector3, field: LightField, sti
 
 func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, mushroom_exposure: float, delta: float, old_arousals: PackedFloat32Array = PackedFloat32Array()) -> void:
 	if preset.energy_dynamics:
+		# Brief orange passes retain their existing feel. Sustained meaningful
+		# exposure gradually overcomes even the strongest mushroom sleepers.
+		if field_mode == LightField.Mode.ORANGE and stimulus >= 0.2 and mushroom_exposure > 0.001:
+			_orange_patch_seconds[index] = minf(5.0, _orange_patch_seconds[index] + delta)
+		else:
+			_orange_patch_seconds[index] = maxf(0.0, _orange_patch_seconds[index] - delta * 2.0)
+		var escape_assist := smoothstep(2.0, 5.0, _orange_patch_seconds[index]) if field_mode == LightField.Mode.ORANGE and stimulus >= 0.2 and mushroom_exposure > 0.001 else 0.0
 		var recovery_rate := maxf(0.0, preset.energy_recovery_rate)
 		var total_rate := recovery_rate
 		var neutral := _individual_neutral_target(_energy_phases[index])
@@ -475,7 +496,7 @@ func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, m
 		var weighted_target := recovery_rate * neutral
 		var mushroom_response := mushroom_response_factors[index] if index < mushroom_response_factors.size() else 1.0
 		var lamp_response := lantern_response_factors[index] if index < lantern_response_factors.size() else 1.0
-		var mushroom_rate := maxf(0.0, preset.mushroom_suppression_rate) * mushroom_exposure * mushroom_response
+		var mushroom_rate := maxf(0.0, preset.mushroom_suppression_rate) * mushroom_exposure * mushroom_response * (1.0 - escape_assist)
 		total_rate += mushroom_rate
 		weighted_target += mushroom_rate * preset.blue_energy_target
 		if field_mode == LightField.Mode.BLUE:
@@ -483,7 +504,7 @@ func _update_arousal(index: int, field_mode: LightField.Mode, stimulus: float, m
 			total_rate += blue_rate
 			weighted_target += blue_rate * preset.blue_energy_target
 		elif field_mode == LightField.Mode.ORANGE:
-			var orange_rate := maxf(0.0, preset.orange_energy_response) * stimulus * lamp_response
+			var orange_rate := maxf(0.0, preset.orange_energy_response) * stimulus * lamp_response + escape_assist * 1.5
 			total_rate += orange_rate
 			weighted_target += orange_rate * preset.orange_energy_target
 		var contagion := _neighbor_arousal(index, old_arousals)
@@ -643,7 +664,14 @@ func _sync_flight_height() -> void:
 
 
 func _goal_resistance(position: Vector3) -> Vector3:
-	var offset := Vector2(position.x, position.z) - goal_position
+	var force := _goal_resistance_at(position, goal_position)
+	if goal_mode_two:
+		force += _goal_resistance_at(position, second_goal_position)
+	return force
+
+
+func _goal_resistance_at(position: Vector3, goal: Vector2) -> Vector3:
+	var offset := Vector2(position.x, position.z) - goal
 	var distance := offset.length()
 	var outer_width := maxf(0.0, preset.goal_repulsion_outer_width)
 	if distance < 0.001 or distance >= goal_radius + outer_width or outer_width <= 0.001:
@@ -658,27 +686,32 @@ func _update_goal(index: int, position: Vector3, delta: float) -> void:
 	if not goal_accepting:
 		_goal_dwells[index] = 0.0
 		return
-	if Vector2(position.x, position.z).distance_to(goal_position) <= goal_radius:
+	var xz := Vector2(position.x, position.z)
+	var selected_goal := 1 if xz.distance_to(goal_position) <= goal_radius else 2 if goal_mode_two and xz.distance_to(second_goal_position) <= goal_radius else 0
+	if selected_goal > 0:
 		_goal_dwells[index] += delta
 		if _goal_dwells[index] >= goal_dwell_seconds:
 			lifecycles[index] = Lifecycle.COMMITTED
 			lifecycle_times[index] = 0.0
 			score += 1
+			committed_goals[index] = selected_goal
+			goal_scores[selected_goal - 1] += 1
 			committed_this_step.append(index)
 	else:
 		_goal_dwells[index] = maxf(0.0, _goal_dwells[index] - delta * 2.0)
 
 
 func _update_lifecycle(index: int, delta: float, next_positions: PackedVector3Array, next_velocities: PackedVector3Array) -> void:
+	var target_goal := second_goal_position if committed_goals[index] == 2 else goal_position
 	if lifecycles[index] == Lifecycle.COMMITTED:
-		var target := Vector3(goal_position.x, positions[index].y, goal_position.y)
+		var target := Vector3(target_goal.x, positions[index].y, target_goal.y)
 		next_positions[index] = positions[index].lerp(target, 1.0 - exp(-delta * 4.0))
 		next_velocities[index] = Vector3.ZERO
 		if lifecycle_times[index] >= 0.22:
 			lifecycles[index] = Lifecycle.ASCENDING
 			lifecycle_times[index] = 0.0
 	elif lifecycles[index] == Lifecycle.ASCENDING:
-		var target := Vector3(goal_position.x, max_height + 1.0, goal_position.y)
+		var target := Vector3(target_goal.x, max_height + 1.0, target_goal.y)
 		next_positions[index] = positions[index].lerp(target, 1.0 - exp(-delta * 2.2))
 		next_velocities[index] = Vector3.UP
 		if lifecycle_times[index] >= 2.35:
