@@ -134,6 +134,11 @@ func _build_visual() -> void:
 		glyph_material.emission_enabled = true
 		_glyph_materials.append(glyph_material)
 	_side_glow_material = _make_side_glow_material()
+	# Side panes are much narrower on screen. Show a larger piece of the paper
+	# sheet so its fibers and darkened edge survive headset filtering.
+	_side_glow_material.set_shader_parameter("paper_uv_scale", Vector2(0.55, 0.85))
+	_side_glow_material.set_shader_parameter("paper_contrast", 1.0)
+	_side_glow_material.set_shader_parameter("edge_darkness", 0.42)
 	_add_glow_face("Rear", Vector3(0.0, 0.0, 0.126), 0.0, rear_face, Vector2(0.29, 0.33))
 	_add_glow_face("Left", Vector3(-0.182, 0.0, 0.0), -PI * 0.5, rear_face, Vector2(0.20, 0.33))
 	_add_glow_face("Right", Vector3(0.182, 0.0, 0.0), PI * 0.5, rear_face, Vector2(0.20, 0.33))
@@ -178,6 +183,9 @@ uniform float split_fraction = 0.0;
 uniform bool split_active = false;
 uniform float shutter_open = 1.0;
 uniform float glow_strength = 0.28;
+uniform vec2 paper_uv_scale = vec2(1.4, 1.7);
+uniform float paper_contrast = 0.2;
+uniform float edge_darkness = 0.18;
 uniform sampler2D paper_texture : source_color, filter_linear_mipmap, repeat_enable;
 void fragment() {
 	float row = UV.y;
@@ -196,13 +204,14 @@ void fragment() {
 	float source_line = source_chevron < -0.5 ? blue_line : source_chevron > 0.5 ? red_line : 0.0;
 	float target_line = target_chevron < -0.5 ? blue_line : target_chevron > 0.5 ? red_line : 0.0;
 	color *= 1.0 - 0.19 * mix(source_line, target_line, mix_amount);
-	// The real paper grain stays subtle beneath the sliding color and glyphs.
-	vec3 paper = texture(paper_texture, UV * vec2(1.4, 1.7)).rgb;
-	float grain = smoothstep(0.58, 0.83, dot(paper, vec3(0.2126, 0.7152, 0.0722)));
+	// Lower frequency paper variation reads on the narrow side panes.
+	vec3 paper = texture(paper_texture, UV * paper_uv_scale).rgb;
+	float grain = dot(paper, vec3(0.2126, 0.7152, 0.0722));
 	float side_edge = smoothstep(0.0, 0.14, UV.x) * smoothstep(0.0, 0.14, 1.0 - UV.x);
 	float end_edge = smoothstep(0.0, 0.13, UV.y) * smoothstep(0.0, 0.13, 1.0 - UV.y);
-	float vignette = mix(0.82, 1.0, side_edge * end_edge);
-	color *= (0.90 + 0.20 * grain) * vignette;
+	float vignette = mix(1.0 - edge_darkness, 1.0, side_edge * end_edge);
+	// source_color textures arrive in linear light; the paper averages near 0.45.
+	color *= clamp(1.0 + (grain - 0.45) * 4.0 * paper_contrast, 0.55, 1.35) * vignette;
 	// Unshaded materials write their visible light through ALBEDO.
 	ALBEDO = vec3(0.012, 0.012, 0.018) + color * lit * glow_strength;
 }
@@ -577,7 +586,7 @@ func _apply_visual() -> void:
 		glow_material.set_shader_parameter("split_active", split_active)
 		glow_material.set_shader_parameter("shutter_open", shutter_openness)
 	_front_glow_material.set_shader_parameter("glow_strength", (1.5 + shutter_openness * 2.5) * maxf(shutter_openness, 0.12) * _flame_gain)
-	_side_glow_material.set_shader_parameter("glow_strength", (0.12 + shutter_openness * 0.16) * _flame_gain)
+	_side_glow_material.set_shader_parameter("glow_strength", (0.16 + shutter_openness * 0.22) * _flame_gain)
 	if _last_visual_openness != shutter_openness:
 		spot.visible = shutter_openness > 0.01
 		_last_visual_openness = shutter_openness

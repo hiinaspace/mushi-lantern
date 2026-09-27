@@ -44,6 +44,9 @@ var _desktop_start: Button
 var _xr_start: Button
 var _restart_confirm: ConfirmationDialog
 var _xr_restart_armed := false
+var _xr_restart_armed_until_msec := 0
+var _xr_restart_cancel: Button
+var _xr_skip: Button
 var _desktop_avatar_fit: VBoxContainer
 var _avatar_fit_height := 1.6
 var _avatar_fit_reach := 1.3
@@ -101,11 +104,17 @@ func _ready() -> void:
 	_desktop_root.visible = _desktop_visible
 
 
+func _process(_delta: float) -> void:
+	if _xr_restart_armed and Time.get_ticks_msec() >= _xr_restart_armed_until_msec:
+		_reset_xr_restart_confirmation()
+
+
 func set_open(open: bool) -> void:
 	if _desktop_root == null or _desktop_visible == open:
 		return
 	if not open:
 		commit_avatar_fit()
+		_reset_xr_restart_confirmation()
 	_desktop_visible = open
 	_desktop_root.visible = open
 	if open:
@@ -128,16 +137,17 @@ func update_session(status: String, tutorial_active: bool, tuning_unlocked: bool
 		_desktop_tuning.visible = tuning_unlocked
 	if _xr_status != null:
 		_xr_status.text = "Paused · " + status
+	if _xr_skip != null:
+		_xr_skip.visible = tutorial_active
 
 
 func set_shared_role(role: String) -> void:
 	_shared_role = role
-	_xr_restart_armed = false
+	_reset_xr_restart_confirmation()
 	if _desktop_start != null:
 		_desktop_start.disabled = role == "client"
 	if _xr_start != null:
 		_xr_start.disabled = role == "client"
-		_xr_start.text = "Start / restart"
 	for selector in _mode_selectors:
 		selector.get_parent().visible = role != "client"
 	_refresh_room_ui()
@@ -392,7 +402,10 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	var mushi := _create_xr_tab("Advanced", settings_tabs)
 	for child in intro_nodes:
 		var is_tuning := child.name == "TuningSandboxScroll" or (child is Button and "tuning sandbox" in (child as Button).text.to_lower())
-		child.reparent(mushi if is_tuning else intro)
+		var is_skip := child is Button and "skip introduction" in (child as Button).text.to_lower()
+		child.reparent(mushi if is_tuning else session if is_skip else intro)
+		if is_skip:
+			_xr_skip = child as Button
 	var title := Label.new()
 	title.text = "MUSHI LANTERN"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -413,6 +426,8 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	start.name = "XRStartButton"
 	_xr_start = start
 	_xr_start.disabled = _shared_role == "client"
+	_xr_restart_cancel = _add_xr_button(session, "Cancel restart", _reset_xr_restart_confirmation)
+	_xr_restart_cancel.visible = false
 	var session_hint := Label.new()
 	session_hint.text = "Continue exploring, or restart the grove."
 	session_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -626,6 +641,8 @@ func _build_desktop_menu() -> void:
 	play_hint.text = "Continue exploring, or restart the grove."
 	play_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	play.add_child(play_hint)
+	_desktop_skip = _add_desktop_button(play, "Skip introduction", func() -> void: skip_requested.emit())
+	_desktop_skip.visible = false
 	_add_desktop_button(play, "Quit", _on_quit)
 	_build_desktop_room(session)
 	var guide_intro := Label.new()
@@ -636,8 +653,6 @@ func _build_desktop_menu() -> void:
 	controls.text = "Move: WASD · Look: mouse · Aim lamp: hold left mouse\nHold right mouse: drag down/up for shutter, sideways for filter\nDrop / pick up staff: G · Recall: hold E"
 	controls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	guide.add_child(controls)
-	_desktop_skip = _add_desktop_button(guide, "Skip introduction", func() -> void: skip_requested.emit())
-	_desktop_skip.visible = false
 	_desktop_tuning = _add_desktop_button(advanced, "Open tuning sandbox", func() -> void: tuning_requested.emit())
 	_desktop_tuning.visible = false
 	_add_comfort_controls(comfort)
@@ -671,10 +686,10 @@ func _build_desktop_menu() -> void:
 	close_hint.add_theme_color_override("font_color", Color("8b9b98"))
 	stack.add_child(close_hint)
 	_restart_confirm = ConfirmationDialog.new()
-	_restart_confirm.title = "Restart shared game?"
-	_restart_confirm.dialog_text = "Reset the mushi and score for everyone in this session?"
+	_restart_confirm.title = "Start / restart game?"
+	_restart_confirm.dialog_text = "Reset the mushi and score?"
 	_restart_confirm.confirmed.connect(func() -> void:
-		mode_requested.emit(_selected_mode)
+		mode_requested.emit(_selected_mode if _shared_role == "host" else "classic")
 		new_game_requested.emit()
 		set_open(false)
 	)
@@ -862,20 +877,31 @@ func _add_mode_selector(parent: VBoxContainer) -> void:
 func _on_new_game() -> void:
 	if _shared_role == "client":
 		return
-	if _shared_role == "host":
-		if _desktop_visible:
-			_restart_confirm.popup_centered()
-			return
-		if not _xr_restart_armed:
-			_xr_restart_armed = true
-			_xr_start.text = "Confirm restart for everyone"
-			return
-		_xr_restart_armed = false
-		_xr_start.text = "Start / restart"
+	if _desktop_visible:
+		_restart_confirm.title = "Restart shared game?" if _shared_role == "host" else "Start / restart game?"
+		_restart_confirm.dialog_text = "Reset the mushi and score for everyone in this session?" if _shared_role == "host" else "Reset the mushi and score?"
+		_restart_confirm.popup_centered()
+		return
+	if not _xr_restart_armed:
+		_xr_restart_armed = true
+		_xr_restart_armed_until_msec = Time.get_ticks_msec() + 8000
+		_xr_start.text = "Confirm restart for everyone" if _shared_role == "host" else "Confirm start / restart"
+		_xr_restart_cancel.visible = true
+		return
+	_reset_xr_restart_confirmation()
 	mode_requested.emit(_selected_mode if _shared_role == "host" else "classic")
 	new_game_requested.emit()
 	if _desktop_visible:
 		set_open(false)
+
+
+func _reset_xr_restart_confirmation() -> void:
+	_xr_restart_armed = false
+	_xr_restart_armed_until_msec = 0
+	if _xr_start != null:
+		_xr_start.text = "Start / restart"
+	if _xr_restart_cancel != null:
+		_xr_restart_cancel.visible = false
 
 
 func _on_settings() -> void:

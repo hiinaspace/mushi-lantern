@@ -30,6 +30,8 @@ func _run() -> void:
 	var scroll := surface.find_child("AudioScroll", true, false) as ScrollContainer
 	assert(scroll != null and scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED)
 	var panel := surface.get_node("Panel") as PanelContainer
+	assert(panel.size == Vector2(900, 550) and panel.scale == Vector2(2, 2),
+		"XR menu keeps its logical layout at double raster resolution")
 	var style := panel.get_theme_stylebox("panel") as StyleBoxFlat
 	assert(style != null and style.bg_color.a >= 0.95)
 	print("XR_FRIEND_MENU_TABS_OK")

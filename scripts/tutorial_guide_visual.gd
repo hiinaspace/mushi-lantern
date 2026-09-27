@@ -6,6 +6,9 @@ const DORMANT_COLOR := Color(0.18, 0.58, 1.0)
 const WAKING_COLOR := Color(1.0, 0.37, 0.11)
 const NEUTRAL_COLOR := Color(0.58, 0.95, 0.84)
 const GLYPH_SHADER: Shader = preload("res://shaders/mushi_glyph.gdshader")
+const BRASS_ALBEDO: Texture2D = preload("res://assets/lantern/st-brass/brass_albedo_1k.jpg")
+const BRASS_NORMAL: Texture2D = preload("res://assets/lantern/st-brass/brass_normal_1k.jpg")
+const BRASS_ROUGHNESS: Texture2D = preload("res://assets/lantern/st-brass/brass_roughness_1k.jpg")
 
 var _jar: MeshInstance3D
 var _jar_top: MeshInstance3D
@@ -157,13 +160,13 @@ void fragment() {
 	knob.height = 0.075
 	_jar_top = _mesh_instance(knob, "JarLid")
 	_jar_top.position.y = 0.967
-	_jar_top.material_override = _dark_jar_material(Color("252c29"))
+	_jar_top.material_override = _brass_jar_material()
 	var open_rim := TorusMesh.new()
 	open_rim.inner_radius = 0.357
 	open_rim.outer_radius = 0.378
 	_jar_bottom = _mesh_instance(open_rim, "JarBase")
 	_jar_bottom.position.y = 0.085
-	_jar_bottom.material_override = _dark_jar_material(Color("1f2523"))
+	_jar_bottom.material_override = _brass_jar_material()
 
 	_build_glyph()
 	_glow = OmniLight3D.new()
@@ -211,13 +214,17 @@ func _mesh_instance(mesh: Mesh, node_name: String, parent: Node3D = null) -> Mes
 	return instance
 
 
-func _dark_jar_material(color: Color) -> StandardMaterial3D:
+func _brass_jar_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
-	material.albedo_color = color
+	material.albedo_color = Color("bba88d")
+	material.albedo_texture = BRASS_ALBEDO
+	material.normal_enabled = true
+	material.normal_texture = BRASS_NORMAL
+	material.normal_scale = 0.3
+	material.roughness_texture = BRASS_ROUGHNESS
+	material.roughness = 0.42
+	material.metallic = 0.7
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	# A dark unshaded value keeps the lid legible during full adaptation
-	# without any emitted light or bloom.
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	return material
 
 
