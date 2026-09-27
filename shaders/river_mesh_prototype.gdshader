@@ -110,11 +110,12 @@ void fragment() {
 	float dots = spark(uv1, 0.78) + 0.48 * spark(uv2, 0.88);
 	float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
 	float edge_softness = smoothstep(0.02, 0.78, facing);
-	float far_merge = smoothstep(120.0, 900.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
+	float far_merge = smoothstep(80.0, 850.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
+	float spark_retire = smoothstep(500.0, 1600.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
 	// Sparks fall below a pixel in the far arms. Merge their energy into one
-	// outer-shell haze instead of leaving three concentric, additive rings.
-	dots *= 1.0 - far_merge;
-	float diffuse = shell_index == 0 ? mix(0.045 * pow(facing, 0.8), 0.20, far_merge) : 0.0;
+	// outer-shell haze before retiring them, so the two ranges overlap.
+	dots *= 1.0 - spark_retire;
+	float diffuse = shell_index == 0 ? mix(0.045 * pow(facing, 0.8), 0.13, far_merge) : 0.0;
 	float view_softness = mix(edge_softness, 0.92, smoothstep(350.0, 1800.0, abs(river_x)));
 	float far_fade = 1.0 - smoothstep(3200.0, 3800.0, abs(river_x));
 	// The close light vein emerges first; its arms follow toward the horizon.
