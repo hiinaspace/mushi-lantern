@@ -5,11 +5,17 @@ stencil_mode read, compare_not_equal, 1;
 uniform int shell_index = 0;
 uniform float river_animation_rate = 1.0;
 uniform float river_night_vision = 1.0;
+uniform float river_width = 2.5;
+// Scales the entire submerged centerline: both the arms and crest move deeper.
+uniform float river_depth = 1.0;
 uniform float path_long_scale = 1.0;
 uniform float path_medium_scale = 1.0;
+uniform float path_long_frequency = 1.0;
+uniform float path_medium_frequency = 1.0;
 uniform float path_long_speed = 1.0;
 uniform float path_medium_speed = 1.0;
 uniform float surface_bump_scale = 1.0;
+uniform float surface_bump_frequency = 1.0;
 uniform float surface_bump_speed = 1.0;
 
 varying vec2 river_uv;
@@ -28,28 +34,31 @@ float noise1(float p) {
 
 float center_y(float x) {
 	float shoulder = max(1.0 - x * x / 784.0, 0.0);
-	return -30.0 + 14.0 * shoulder * shoulder * shoulder;
+	return (-30.0 + 14.0 * shoulder * shoulder * shoulder) * river_depth;
 }
 
 vec3 centerline(float x) {
 	float anchor = smoothstep(0.0, 8.0, abs(x));
 	float horizon_straight = 1.0 - smoothstep(320.0, 1700.0, abs(x));
-	float drift_y = (1.15 * path_long_scale * noise1(x / 105.0 - (TIME * river_animation_rate) * 0.042 * path_long_speed)
-		+ 0.48 * path_medium_scale * noise1(x / 43.0 - (TIME * river_animation_rate) * 0.085 * path_medium_speed)
-		+ 0.26 * noise1(x / 24.0 - (TIME * river_animation_rate) * 0.135 * path_medium_speed)) * anchor * horizon_straight;
-	float drift_z = (0.92 * path_long_scale * noise1(x / 122.0 - (TIME * river_animation_rate) * 0.034 * path_long_speed + 17.0)
-		+ 0.43 * path_medium_scale * noise1(x / 47.0 - (TIME * river_animation_rate) * 0.075 * path_medium_speed + 31.0)
-		+ 0.24 * noise1(x / 26.0 - (TIME * river_animation_rate) * 0.120 * path_medium_speed + 53.0)) * anchor * horizon_straight;
+	float drift_y = (1.15 * path_long_scale * noise1(x * path_long_frequency / 105.0 - (TIME * river_animation_rate) * 0.042 * path_long_speed)
+		+ 0.48 * path_medium_scale * noise1(x * path_medium_frequency / 43.0 - (TIME * river_animation_rate) * 0.085 * path_medium_speed)
+		+ 0.26 * noise1(x * path_medium_frequency / 24.0 - (TIME * river_animation_rate) * 0.135 * path_medium_speed)) * anchor * horizon_straight;
+	float drift_z = (0.92 * path_long_scale * noise1(x * path_long_frequency / 122.0 - (TIME * river_animation_rate) * 0.034 * path_long_speed + 17.0)
+		+ 0.43 * path_medium_scale * noise1(x * path_medium_frequency / 47.0 - (TIME * river_animation_rate) * 0.075 * path_medium_speed + 31.0)
+		+ 0.24 * noise1(x * path_medium_frequency / 26.0 - (TIME * river_animation_rate) * 0.120 * path_medium_speed + 53.0)) * anchor * horizon_straight;
 	return vec3(x, center_y(x) + drift_y, -2.0 + drift_z);
 }
 
 float radius_at(float x, float theta) {
-	float medium = 0.78 * surface_bump_scale * noise1(x / 32.0 - (TIME * river_animation_rate) * 0.075 * surface_bump_speed + 7.0);
-	float fine = 0.30 * surface_bump_scale * noise1(x / 14.0 - (TIME * river_animation_rate) * 0.145 * surface_bump_speed + 29.0);
-	float turning_bump = 0.30 * surface_bump_scale * noise1(x / 25.0 - (TIME * river_animation_rate) * 0.130 * surface_bump_speed
+	float medium = 0.78 * surface_bump_scale * noise1(x * surface_bump_frequency / 32.0 - (TIME * river_animation_rate) * 0.075 * surface_bump_speed + 7.0);
+	float fine = 0.30 * surface_bump_scale * noise1(x * surface_bump_frequency / 14.0 - (TIME * river_animation_rate) * 0.145 * surface_bump_speed + 29.0);
+	float turning_bump = 0.30 * surface_bump_scale * noise1(x * surface_bump_frequency / 25.0 - (TIME * river_animation_rate) * 0.130 * surface_bump_speed
 		+ 1.8 * cos(theta - (TIME * river_animation_rate) * 0.22 * surface_bump_speed));
 	float crest = 1.0 - smoothstep(5.0, 34.0, abs(x));
-	return 4.05 - 1.65 * crest + medium + fine + turning_bump - float(shell_index) * 0.54;
+	// The tight upwelling bend cannot carry the same radius as the straight arms
+	// without the additive shells folding across each other.
+	float width_here = mix(min(river_width, 1.6), river_width, smoothstep(12.0, 70.0, abs(x)));
+	return (4.05 - 1.65 * crest + medium + fine + turning_bump - float(shell_index) * 0.54) * width_here;
 }
 
 float hash21(vec2 p) {

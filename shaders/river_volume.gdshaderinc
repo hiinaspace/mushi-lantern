@@ -3,6 +3,7 @@ uniform sampler2D river_path_map : filter_linear, repeat_disable;
 uniform float river_size = 640.0;
 uniform float river_length = 600.0;
 uniform float river_plane_y = -30.0;
+uniform float river_depth = 1.0;
 uniform vec2 river_goal_xz = vec2(0.0);
 uniform float river_night_vision = 0.0;
 uniform float river_mote_motion = 1.0;
@@ -31,19 +32,19 @@ float river_spark(vec2 uv, float threshold, vec2 dx, vec2 dy) {
 float river_center_y(vec2 offset) {
 	float unit = offset.x / 28.0;
 	float shoulder = max(1.0 - unit * unit, 0.0);
-	return river_plane_y + 14.0 * shoulder * shoulder * shoulder;
+	return river_plane_y + 14.0 * river_depth * shoulder * shoulder * shoulder;
 }
 
 float river_center_slope(float x) {
 	float unit = x / 28.0;
 	float shoulder = max(1.0 - unit * unit, 0.0);
-	return -3.0 * unit * shoulder * shoulder;
+	return -3.0 * river_depth * unit * shoulder * shoulder;
 }
 
 float river_center_curvature(float x) {
 	float unit = x / 28.0;
 	float shoulder = max(1.0 - unit * unit, 0.0);
-	return -0.10714286 * (shoulder * shoulder - 4.0 * unit * unit * shoulder);
+	return -0.10714286 * river_depth * (shoulder * shoulder - 4.0 * unit * unit * shoulder);
 }
 
 float river_radius(float x) {
@@ -173,7 +174,7 @@ float river_angle_at(vec3 surface, float q) {
 float river_goal_beam(vec3 eye, vec3 ray, float receiver_t) {
     float beam = 0.0;
     float top_t = (0.0 - eye.y) / ray.y;
-	float bottom_t = (river_plane_y + 13.0 - eye.y) / ray.y;
+	float bottom_t = (river_plane_y + 13.0 * river_depth - eye.y) / ray.y;
     float start_t = max(receiver_t + 0.02, top_t);
     if (bottom_t > start_t) {
         vec2 center = river_goal_xz + vec2(0.0, -1.0);
@@ -182,7 +183,7 @@ float river_goal_beam(vec3 eye, vec3 ray, float receiver_t) {
         if (speed > 0.00001) { closest_t = dot(center - eye.xz, ray.xz) / speed; }
         float beam_t = clamp(closest_t, start_t, bottom_t);
         float beam_y = eye.y + ray.y * beam_t;
-		float down = clamp(-beam_y / 17.0, 0.0, 1.0);
+		float down = clamp(-beam_y / (17.0 * river_depth), 0.0, 1.0);
         float width = mix(2.15, 4.25, down);
         float distance_m = length(eye.xz + ray.xz * beam_t - center);
         float softness = 1.0 - smoothstep(0.0, width, distance_m);

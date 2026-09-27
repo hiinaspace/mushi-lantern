@@ -35,6 +35,10 @@ func set_night_vision(value: float) -> void:
 func set_tube_enabled(enabled: bool) -> void:
 	_material.set_shader_parameter("river_tube_enabled", 1.0 if enabled else 0.0)
 
+func set_depth(scale: float) -> void:
+	_material.set_shader_parameter("river_plane_y", TerrainRiverReveal.RIVER_PLANE_Y * scale)
+	_material.set_shader_parameter("river_depth", scale)
+
 func _build_mesh(surface: EnvironmentSurface, extent: int) -> ArrayMesh:
 	var vertices := PackedVector3Array()
 	var indices := PackedInt32Array()

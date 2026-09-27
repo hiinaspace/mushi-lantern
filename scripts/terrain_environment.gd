@@ -171,9 +171,17 @@ static func advance_stream_visibility(current: float, target: float, delta: floa
 func set_visual_tuning(values: Dictionary) -> void:
 	if _river_mesh_active and _river_mesh != null:
 		_river_mesh.set_tuning(values)
+	var depth := clampf(float(values.get("river_depth", 1.0)), 0.1, 3.0)
+	if terrain_reveal_active:
+		terrain.material.set_shader_param("river_plane_y", TerrainRiverReveal.RIVER_PLANE_Y * depth)
+		terrain.material.set_shader_param("river_depth", depth)
+		if _river_far_receiver != null:
+			_river_far_receiver.set_depth(depth)
 	for material in _foliage_materials:
 		material.set_shader_parameter("foliage_reveal_start", float(values.get("foliage_start", 0.90)))
 		material.set_shader_parameter("foliage_reveal_end", float(values.get("foliage_end", 0.99)))
+		material.set_shader_parameter("river_plane_y", TerrainRiverReveal.RIVER_PLANE_Y * depth)
+		material.set_shader_parameter("river_depth", depth)
 
 func _set_mesh_night_vision(node: Node, value: float) -> void:
 	if node is MeshInstance3D:

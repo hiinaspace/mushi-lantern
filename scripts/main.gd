@@ -187,6 +187,7 @@ var _desktop_recall_held: bool = false
 var _xr_recall_owner: XRController3D
 var _skip_tutorial_requested := false
 var _force_tutorial := false
+var _visual_tuning_override := false
 var _last_tutorial_score := -1
 var _stream_visibility := 0.0
 var _visual_sliders: Dictionary = {}
@@ -197,8 +198,10 @@ var _visual_tuning := {
 	"star_start": 0.14, "star_end": 0.89, "milky_start": 0.64, "milky_end": 0.96,
 	"foliage_start": 0.90, "foliage_end": 0.99,
 	"clear_start": 0.10, "clear_end": 0.65, "clear_distance_start": 17.0, "clear_distance_end": 52.0,
+	"river_width": 2.5, "river_depth": 1.0,
 	"path_long": 1.0, "path_medium": 1.0, "path_long_speed": 1.0, "path_medium_speed": 1.0,
-	"surface_bump": 1.0, "surface_bump_speed": 1.0,
+	"path_long_frequency": 1.0, "path_medium_frequency": 1.0,
+	"surface_bump": 1.0, "surface_bump_speed": 1.0, "surface_bump_frequency": 1.0,
 }
 
 func _ready() -> void:
@@ -1398,7 +1401,7 @@ func _on_tutorial_sandbox_visibility_changed(open: bool) -> void:
 
 
 func _tutorial_sandbox_available() -> bool:
-	return tutorial_director == null or not tutorial_director.tutorial_enabled or tutorial_director.reward_is_unlocked
+	return _visual_tuning_override or tutorial_director == null or not tutorial_director.tutorial_enabled or tutorial_director.reward_is_unlocked
 
 func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
@@ -1510,11 +1513,16 @@ func _build_ui() -> void:
 	_add_visual_slider(stack, "Clear fade near (m)", 0.0, 60.0, 17.0, 1.0, &"clear_distance_start")
 	_add_visual_slider(stack, "Clear fade far (m)", 5.0, 100.0, 52.0, 1.0, &"clear_distance_end")
 	_add_visual_group_label(stack, "River mesh · path and surface")
+	_add_visual_slider(stack, "River width scale", 0.6, 4.0, 2.5, 0.05, &"river_width")
+	_add_visual_slider(stack, "River depth scale", 0.6, 1.8, 1.0, 0.05, &"river_depth")
 	_add_visual_slider(stack, "Path long wobble", 0.0, 2.5, 1.0, 0.05, &"path_long")
+	_add_visual_slider(stack, "Path long frequency", 0.2, 4.0, 1.0, 0.05, &"path_long_frequency")
 	_add_visual_slider(stack, "Path medium wobble", 0.0, 2.5, 1.0, 0.05, &"path_medium")
+	_add_visual_slider(stack, "Path medium frequency", 0.2, 4.0, 1.0, 0.05, &"path_medium_frequency")
 	_add_visual_slider(stack, "Long motion speed", 0.0, 3.0, 1.0, 0.05, &"path_long_speed")
 	_add_visual_slider(stack, "Medium motion speed", 0.0, 3.0, 1.0, 0.05, &"path_medium_speed")
 	_add_visual_slider(stack, "Surface bump", 0.0, 2.5, 1.0, 0.05, &"surface_bump")
+	_add_visual_slider(stack, "Surface bump frequency", 0.2, 4.0, 1.0, 0.05, &"surface_bump_frequency")
 	_add_visual_slider(stack, "Bump motion speed", 0.0, 3.0, 1.0, 0.05, &"surface_bump_speed")
 	var energy_title := Label.new()
 	energy_title.text = "Energy experiment · 90% response times"
@@ -2339,6 +2347,9 @@ func _parse_arguments() -> void:
 		elif args[index] == "--tutorial":
 			_force_tutorial = true
 			_skip_tutorial_requested = false
+			index += 1
+		elif args[index] == "--visual-tuning":
+			_visual_tuning_override = true
 			index += 1
 		elif args[index] == "--flat-lab":
 			environment_enabled = false

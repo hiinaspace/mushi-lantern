@@ -18,6 +18,8 @@ func _init() -> void:
 	material.render_priority = 0
 	material_override = material
 	mesh = _build_mesh()
+	# Shader deformation can widen and deepen the tube beyond its base vertices.
+	custom_aabb = AABB(Vector3(-3020.0, -85.0, -32.0), Vector3(6040.0, 95.0, 64.0))
 
 
 func _ready() -> void:
@@ -32,6 +34,7 @@ func _ready() -> void:
 		material.set_shader_parameter("shell_index", layer)
 		material.render_priority = layer
 		shell.material_override = material
+		shell.custom_aabb = custom_aabb
 		add_child(shell)
 	apply_tuning({})
 
@@ -41,9 +44,9 @@ func set_tuning(values: Dictionary) -> void:
 
 
 func apply_tuning(values: Dictionary) -> void:
-	var names := ["path_long_scale", "path_medium_scale", "path_long_speed", "path_medium_speed", "surface_bump_scale", "surface_bump_speed"]
-	var keys := [&"path_long", &"path_medium", &"path_long_speed", &"path_medium_speed", &"surface_bump", &"surface_bump_speed"]
-	var defaults := [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+	var names := ["river_width", "river_depth", "path_long_scale", "path_medium_scale", "path_long_frequency", "path_medium_frequency", "path_long_speed", "path_medium_speed", "surface_bump_scale", "surface_bump_frequency", "surface_bump_speed"]
+	var keys := [&"river_width", &"river_depth", &"path_long", &"path_medium", &"path_long_frequency", &"path_medium_frequency", &"path_long_speed", &"path_medium_speed", &"surface_bump", &"surface_bump_frequency", &"surface_bump_speed"]
+	var defaults := [2.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 	var targets: Array[Node] = [self]
 	for child: Node in get_children():
 		if child is MeshInstance3D:
