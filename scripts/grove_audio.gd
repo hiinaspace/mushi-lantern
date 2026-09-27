@@ -412,11 +412,12 @@ func _update_tool(dt: float) -> void:
 	var flame := _tool[0]
 	var pos: Vector3 = _staff.lantern.global_position
 	var proximity := 1.0 - smoothstep(1.5, 12.0, pos.distance_to(_listener_camera.global_position))
+	var flame_proximity := 1.0 - smoothstep(0.8, 3.5, pos.distance_to(_listener_camera.global_position))
 	for slot: Dictionary in _tool:
 		(slot.player as Node3D).global_position = pos
 	if str(flame.stream) == "":
 		_play(flame, "lantern_wick", -21.0, 1.0, true)
-	flame.target = proximity * (0.65 if _staff.lantern.shutter_openness > 0.02 else 0.28)
+	flame.target = flame_proximity * (0.65 if _staff.lantern.shutter_openness > 0.02 else 0.28)
 	var shutter: float = _staff.lantern.shutter_openness
 	var requested_mode: int = int(_staff.lantern.get("_requested_mode"))
 	var filter_transition: bool = int(_staff.lantern.get("_transition_phase")) != 0
