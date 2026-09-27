@@ -255,6 +255,9 @@ func update_ukon_proximity(distance: float, director: TutorialDirector, xr_activ
 			_world_line.text = full_line
 			_world_line.visible_characters = int(_spoken_characters)
 			_world_hint.text = ""
+		else:
+			_last_spoken_line = ""
+			_spoken_characters = 0.0
 	if _desktop_nearby != null:
 		_desktop_nearby.visible = false
 
