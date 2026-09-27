@@ -509,7 +509,7 @@ func begin_adjust(hand_world: Transform3D) -> void:
 	lantern.begin_dial_preview()
 	lantern.set_dial_preview(_adjust_origin_dial)
 
-func update_adjust(hand_world: Transform3D) -> void:
+func update_adjust(hand_world: Transform3D, allow_shutter: bool = true, allow_filter: bool = true) -> void:
 	if not _adjusting or not _valid_transform(hand_world):
 		return
 	var hand_local := _adjust_frame().affine_inverse() * hand_world
@@ -523,8 +523,9 @@ func update_adjust(hand_world: Transform3D) -> void:
 	# Raise/lower the adjusting hand for aperture; horizontal controller yaw selects a filter.
 	var height_delta := _adjust_wrist_height(hand_local) - _adjust_origin_y
 	var shutter_motion := signf(height_delta) * maxf(absf(height_delta) - SHUTTER_DEAD_ZONE_M, 0.0)
-	lantern.set_shutter(clampf(_adjust_open + shutter_motion / SHUTTER_HAND_TRAVEL_M, 0.0, 1.0))
-	if reference_axis.length_squared() > 0.04 and current_axis.length_squared() > 0.04:
+	if allow_shutter:
+		lantern.set_shutter(clampf(_adjust_open + shutter_motion / SHUTTER_HAND_TRAVEL_M, 0.0, 1.0))
+	if allow_filter and reference_axis.length_squared() > 0.04 and current_axis.length_squared() > 0.04:
 		reference_axis = reference_axis.normalized()
 		current_axis = current_axis.normalized()
 		var yaw := atan2(-reference_axis.cross(current_axis).y, reference_axis.dot(current_axis))

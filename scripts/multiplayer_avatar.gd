@@ -12,6 +12,7 @@ const FINGERS = preload("res://scripts/miko_fingers.gd")
 const PLACEMENT = preload("res://addons/renik/renik_placement.gd")
 const LEG_ANIMATION_SOURCE := "res://assets/animations/explosive_rpg_unarmed.glb"
 const VIEW_OFFSET := Vector3(0.0, 0.023, -0.015)
+const XR_EYE_HEIGHT := 1.65
 
 var body: Node3D
 var skeleton: Skeleton3D
@@ -212,9 +213,9 @@ func get_authored_eye_height() -> float:
 
 
 func set_player_eye_height(_height_m: float) -> void:
-	# XR device coordinates are fitted to Ukon's authored height by the rig.
-	# Keep the mesh at its authored size so reach and staff scale use one frame.
-	set_eye_height(get_authored_eye_height())
+	# The imported VRM's eye height is only about 1.25 m. Fit the local body
+	# to an adult game-space height so the staff and lantern keep their scale.
+	set_eye_height(XR_EYE_HEIGHT)
 	_height_calibrated = true
 
 

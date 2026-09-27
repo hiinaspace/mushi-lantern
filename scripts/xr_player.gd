@@ -18,6 +18,7 @@ class BroomFlightProvider extends XRToolsMovementProvider:
 signal recall_requested(controller: XRController3D)
 signal recall_released(controller: XRController3D)
 signal menu_toggled(open: bool)
+signal tutorial_trigger_pressed
 signal fall_recovered(body_position: Vector3)
 
 @export var recall_hold_seconds: float = 0.5
@@ -51,6 +52,7 @@ var _controller_active_mask: int = -1 # Force an initial route refresh before ei
 var _jump_input_latched: bool = false
 var _recall_pressed_at: Dictionary = {}
 var _recall_active: Dictionary = {}
+var _tutorial_trigger_down := [false, false]
 var _last_ground_recovery_msec: int = -10000
 var _last_safe_ground_position := Vector3.ZERO
 var _has_safe_ground_position := false
@@ -149,6 +151,14 @@ func _process(_delta: float) -> void:
 			_movement_neutral_required = false
 			_update_movement()
 	var now: float = Time.get_ticks_msec() / 1000.0
+	# Several OpenXR profiles expose trigger_click through an analog binding.
+	# Edge-detect the value instead, once for either tracked controller.
+	for index in range(2):
+		var controller: XRController3D = left_controller if index == 0 else right_controller
+		var down: bool = controller.get_is_active() and controller.get_float("trigger") >= 0.65
+		if down and not _tutorial_trigger_down[index] and not _menu_open:
+			tutorial_trigger_pressed.emit()
+		_tutorial_trigger_down[index] = down
 	for controller in [left_controller, right_controller]:
 		if _recall_pressed_at.has(controller) and not _recall_active.has(controller):
 			if now - float(_recall_pressed_at[controller]) >= recall_hold_seconds:

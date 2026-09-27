@@ -274,10 +274,7 @@ func _ready() -> void:
 	tutorial_ui.attach_ukon(ukon_anchor, tutorial_viewer)
 	if xr_player != null and xr_player.xr_active:
 		tutorial_ui.attach_xr_camera(xr_player.camera)
-		for controller: XRController3D in [xr_player.left_controller, xr_player.right_controller]:
-			controller.button_pressed.connect(func(action: String) -> void:
-				if action == "trigger_click" and not xr_player.is_menu_open():
-					tutorial_ui.request_advance())
+		xr_player.tutorial_trigger_pressed.connect(_on_xr_tutorial_trigger_pressed)
 		var tutorial_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
 		if tutorial_surface.scene_node is Control:
 			tutorial_ui.attach_xr_menu(tutorial_surface.scene_node as Control)
@@ -671,7 +668,7 @@ func _calibrate_xr_avatar_scale(delta: float) -> void:
 	if _xr_avatar_calibration_seconds < 0.5:
 		return
 	var player_height := _avatar_eye_height_override if _avatar_eye_height_override > 0.0 else _xr_avatar_raw_eye_height
-	var authored_height := _local_avatar.get_authored_eye_height()
+	var authored_height: float = MushiMultiplayerAvatar.XR_EYE_HEIGHT
 	xr_player.world_scale = clampf(authored_height / player_height, 0.6, 1.25)
 	_xr_avatar_scale_ready = true
 	if friend_menu != null and _avatar_eye_height_override <= 0.0:
@@ -700,7 +697,7 @@ func _on_avatar_fit_changed(standing_height: float, arm_reach: float) -> void:
 	if _local_avatar != null:
 		_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
 	if _xr_avatar_scale_ready and xr_player != null and xr_player.xr_active and _local_avatar != null:
-		xr_player.world_scale = clampf(_local_avatar.get_authored_eye_height() /
+		xr_player.world_scale = clampf(MushiMultiplayerAvatar.XR_EYE_HEIGHT /
 			_avatar_eye_height_override, 0.6, 1.25)
 	var file := FileAccess.open(AVATAR_FIT_PATH, FileAccess.WRITE)
 	if file != null:
@@ -996,11 +993,16 @@ func _add_miko_presentation() -> void:
 func _update_ukon_gaze(guide: Node3D, delta: float, viewer_position: Vector3) -> void:
 	if guide == null or not guide.has_method("set_guide_look_target"):
 		return
-	if tutorial_director != null and tutorial_director.tutorial_enabled \
-			and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY:
-		guide.rotation.y = _ukon_authored_yaw
-		return
 	guide.call("set_guide_look_target", viewer_position, true, delta)
+
+
+func _on_xr_tutorial_trigger_pressed() -> void:
+	if tutorial_director == null or not tutorial_director.tutorial_enabled or xr_player.is_menu_open():
+		return
+	if tutorial_director.stage == TutorialDirector.Stage.WELCOME:
+		tutorial_director.choose_tutorial()
+	else:
+		tutorial_ui.request_advance()
 
 func _build_player() -> void:
 	player = DesktopPlayer.new()
@@ -1085,7 +1087,7 @@ func _build_audio() -> void:
 
 
 func _xr_initial_staff_pose() -> Transform3D:
-	var start := Vector2(player.global_position.x + 0.65, player.global_position.z - 0.65)
+	var start := Vector2(player.global_position.x + 0.60, player.global_position.z + 0.52)
 	var ground := _ground_height(start)
 	return Transform3D(Basis.IDENTITY, Vector3(start.x, ground + 0.79, start.y))
 
@@ -1128,6 +1130,9 @@ func _update_staff_pose(delta: float) -> void:
 	if xr_player != null and xr_player.xr_active:
 		staff_tool.clear_desktop_yaw_reference()
 		if xr_staff_interaction != null:
+			var tutorial_stage: int = tutorial_director.stage if tutorial_director != null and tutorial_director.tutorial_enabled else TutorialDirector.Stage.FREE_PLAY
+			xr_staff_interaction.tutorial_allow_shutter = tutorial_stage in [TutorialDirector.Stage.SHUTTER, TutorialDirector.Stage.REVEAL_WAIT, TutorialDirector.Stage.FREE_PLAY]
+			xr_staff_interaction.tutorial_allow_filter = tutorial_stage in [TutorialDirector.Stage.JAR_BLUE, TutorialDirector.Stage.JAR_ORANGE, TutorialDirector.Stage.FREE_PLAY]
 			xr_staff_interaction.update(delta)
 		staff_tool.set_flight_aim(xr_player.is_broom_flying(), -xr_player.camera.global_basis.z)
 		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
@@ -1244,7 +1249,9 @@ func _recenter_xr_tutorial_if_needed(delta: float) -> void:
 		var forward: Vector3 = -xr_player.camera.global_basis.z
 		forward.y = 0.0
 		forward = forward.normalized() if forward.length_squared() > 0.0001 else Vector3.RIGHT
-		var staff_xz: Vector2 = TUTORIAL_XZ + Vector2(forward.x, forward.z) * 0.32
+		var right := forward.cross(Vector3.UP)
+		var head_xz := Vector2(xr_player.camera.global_position.x, xr_player.camera.global_position.z)
+		var staff_xz: Vector2 = head_xz + Vector2(right.x, right.z) * 0.66 + Vector2(forward.x, forward.z) * 0.08
 		var staff_ground: float = _ground_height(staff_xz)
 		staff_tool.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(staff_xz.x, staff_ground + 0.9, staff_xz.y)), 1.0, false)
 	_xr_tutorial_centered = true

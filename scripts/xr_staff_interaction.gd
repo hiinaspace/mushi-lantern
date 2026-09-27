@@ -35,6 +35,8 @@ var rig: MushiXRPlayer
 var broom_unlocked := false
 var broom_test_override := false
 var broom_active := false
+var tutorial_allow_shutter := true
+var tutorial_allow_filter := true
 var _broom_arm_elapsed := 0.0
 var _controllers: Array[XRController3D] = []
 var _pickups: Array[XRToolsFunctionPickup] = []
@@ -110,7 +112,7 @@ func update(delta: float) -> void:
 		if controller == _adjust_owner:
 			pickup.enabled = false
 			if grip_down and not rig.is_menu_open():
-				staff.update_adjust(controller.global_transform)
+				staff.update_adjust(controller.global_transform, tutorial_allow_shutter, tutorial_allow_filter)
 				_update_adjust_haptic(controller, delta)
 				_snap_hand(controller)
 			else:
