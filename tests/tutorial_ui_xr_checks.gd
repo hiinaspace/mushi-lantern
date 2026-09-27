@@ -36,7 +36,7 @@ func run_checks() -> void:
 	assert(ui._xr_begin.visible and ui._xr_skip.visible, "XR menu offers tutorial or explore choice")
 	assert(ui._xr_status.visible_characters == 0, "XR menu dialogue starts unrevealed")
 	ui.finish_text()
-	assert(ui._xr_status.visible_characters == -1 and not ui._xr_continue.visible, "XR menu can fast-forward dialogue")
+	assert(ui._xr_status.visible_characters == -1, "XR menu can fast-forward dialogue")
 	assert(ui._world_root.visible, "Ukon's world dialogue should be visible while tutorial is active")
 	assert(ui._world_root.get_parent() == ukon, "dialogue must be attached to Ukon, not the tracked headset")
 	assert(not ui._desktop_skip.visible, "desktop K skip button should not appear in XR")
@@ -44,9 +44,14 @@ func run_checks() -> void:
 	director.stage = TutorialDirector.Stage.ADAPTATION
 	director.status_text = "Keep shutter closed to reveal the stream"
 	ui.update_director(director, true)
+	var full_line := ui._world_line.text
+	ui._process(0.2)
+	assert(ui._world_line.text == full_line and ui._world_line.visible_characters > 0
+		and ui._world_line.visible_characters < full_line.length(),
+		"typewriter reveals a fixed full line without changing wrapping")
 	ui.finish_text()
 	assert(ui._world_root.visible and ui._world_line.text.contains("Keep shutter closed"), "dialogue must remain visible through scripted stream reveal")
-	assert(not ui._world_line.text.contains("Space") and not ui._world_line.text.contains("Continue"), "XR tutorial has no manual advance instructions")
+	assert(ui._world_line.visible_characters == -1, "world line can be fully revealed without changing its layout")
 	director.stage = TutorialDirector.Stage.GROUPS
 	ui.update_director(director, true)
 	director.stage = TutorialDirector.Stage.FREE_PLAY

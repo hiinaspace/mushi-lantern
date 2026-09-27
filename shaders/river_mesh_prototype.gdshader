@@ -58,7 +58,7 @@ float radius_at(float x, float theta) {
 	// The tight upwelling bend cannot carry the same radius as the straight arms
 	// without the additive shells folding across each other.
 	float width_here = mix(min(river_width, 1.6), river_width, smoothstep(12.0, 70.0, abs(x)));
-	return (4.05 - 1.65 * crest + medium + fine + turning_bump - float(shell_index) * 0.54) * width_here;
+	return max(1.0, 4.05 - 1.65 * crest + medium + fine + turning_bump - float(shell_index) * 0.54) * width_here;
 }
 
 float hash21(vec2 p) {

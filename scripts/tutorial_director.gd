@@ -10,17 +10,17 @@ signal reward_unlocked
 signal broom_reward_unlocked
 signal guide_released
 
-enum Stage { WELCOME, SHUTTER, ADAPTATION, JAR_BLUE, JAR_ORANGE, GUIDE, GROUPS, FREE_PLAY }
+enum Stage { WELCOME, SHUTTER, ADAPTATION, REVEAL_WAIT, JAR_NEUTRAL, JAR_BLUE, JAR_ORANGE, GUIDE, GROUPS, FREE_PLAY }
 enum GuideState { JARRED, DORMANT, WAKING, RELEASED }
 
 const BLUE_MODE: int = LightField.Mode.BLUE
 const ORANGE_MODE: int = LightField.Mode.ORANGE
-const BLUE_DEMO_SECONDS := 0.8
-const ORANGE_DEMO_SECONDS := 0.8
-const COLOR_OBSERVATION_SECONDS := 0.45
-const GUIDE_SECONDS := 3.5
-const GROUPS_SECONDS := 3.0
+const JAR_OBSERVATION_SECONDS := 5.0
+const GUIDE_SECONDS := 5.0
+const GROUPS_SECONDS := 5.0
 const ADAPTATION_SECONDS := 8.0
+const REVEAL_HOLD_SECONDS := 5.0
+const DIALOGUE_PAUSE_SECONDS := 5.0
 const REWARD_RATIO := 0.60
 const BROOM_REWARD_RATIO := 0.80
 const ACTIVE_SHUTTER_THRESHOLD := 0.05
@@ -42,6 +42,8 @@ var _stage_elapsed := 0.0
 var _orange_elapsed := 0.0
 var _blue_elapsed := 0.0
 var _guide_release_emitted := false
+var _adaptation_page := 0
+var _page_elapsed := 0.0
 
 
 func begin_run(enabled: bool, run_total: int) -> void:
@@ -57,6 +59,8 @@ func begin_run(enabled: bool, run_total: int) -> void:
 	_orange_elapsed = 0.0
 	_blue_elapsed = 0.0
 	_guide_release_emitted = false
+	_adaptation_page = 0
+	_page_elapsed = 0.0
 	guide_state = GuideState.JARRED if enabled else GuideState.RELEASED
 	guide_alpha = 1.0 if enabled else 0.0
 	stage = Stage.WELCOME if enabled else Stage.FREE_PLAY
@@ -72,6 +76,56 @@ func choose_tutorial() -> void:
 		_update_status()
 
 
+func request_continue() -> void:
+	if not tutorial_enabled or not can_continue():
+		return
+	match stage:
+		Stage.ADAPTATION:
+			if _adaptation_page < 2:
+				_adaptation_page += 1
+				_page_elapsed = 0.0
+			elif _stage_elapsed >= ADAPTATION_SECONDS:
+				_change_stage(Stage.REVEAL_WAIT)
+		Stage.JAR_NEUTRAL:
+			if _stage_elapsed >= JAR_OBSERVATION_SECONDS:
+				_change_stage(Stage.JAR_BLUE)
+		Stage.JAR_BLUE:
+			if _blue_elapsed >= JAR_OBSERVATION_SECONDS:
+				_change_stage(Stage.JAR_ORANGE)
+		Stage.JAR_ORANGE:
+			if _orange_elapsed >= JAR_OBSERVATION_SECONDS:
+				release_guide()
+				_change_stage(Stage.GUIDE)
+		Stage.GUIDE:
+			if _stage_elapsed >= GUIDE_SECONDS:
+				_change_stage(Stage.GROUPS)
+		Stage.GROUPS:
+			if _stage_elapsed >= GROUPS_SECONDS:
+				_change_stage(Stage.FREE_PLAY)
+	_update_status()
+
+
+func can_continue() -> bool:
+	match stage:
+		Stage.ADAPTATION:
+			return _page_elapsed >= DIALOGUE_PAUSE_SECONDS and (_adaptation_page < 2 or _stage_elapsed >= ADAPTATION_SECONDS)
+		Stage.JAR_NEUTRAL:
+			return _stage_elapsed >= JAR_OBSERVATION_SECONDS
+		Stage.JAR_BLUE:
+			return _blue_elapsed >= JAR_OBSERVATION_SECONDS
+		Stage.JAR_ORANGE:
+			return _orange_elapsed >= JAR_OBSERVATION_SECONDS
+		Stage.GUIDE:
+			return _stage_elapsed >= GUIDE_SECONDS
+		Stage.GROUPS:
+			return _stage_elapsed >= GROUPS_SECONDS
+	return false
+
+
+func reveal_can_reopen() -> bool:
+	return stage == Stage.REVEAL_WAIT and _stage_elapsed >= REVEAL_HOLD_SECONDS
+
+
 func advance(delta: float, mode: int, shutter: float, _night_vision: float) -> void:
 	if not tutorial_enabled or stage == Stage.FREE_PLAY:
 		return
@@ -79,40 +133,33 @@ func advance(delta: float, mode: int, shutter: float, _night_vision: float) -> v
 	var shutter_open := shutter > ACTIVE_SHUTTER_THRESHOLD
 	match stage:
 		Stage.SHUTTER:
-			if not shutter_open:
+			_stage_elapsed += dt
+			if not shutter_open and _stage_elapsed >= DIALOGUE_PAUSE_SECONDS:
 				_change_stage(Stage.ADAPTATION)
 				adaptation_started.emit()
 		Stage.ADAPTATION:
 			_stage_elapsed += dt
+			_page_elapsed += dt
 			_set_adaptation_progress(_stage_elapsed / ADAPTATION_SECONDS)
 			_set_reveal(adaptation_progress)
-			if _stage_elapsed >= ADAPTATION_SECONDS:
-				_change_stage(Stage.JAR_BLUE)
+		Stage.REVEAL_WAIT:
+			_stage_elapsed += dt
+			if reveal_can_reopen() and shutter_open:
+				_change_stage(Stage.JAR_NEUTRAL)
+		Stage.JAR_NEUTRAL:
+			_stage_elapsed += dt
 		Stage.JAR_BLUE:
 			if shutter_open and mode == BLUE_MODE:
 				guide_state = GuideState.DORMANT
 				_blue_elapsed += dt
-				if _blue_elapsed >= BLUE_DEMO_SECONDS + COLOR_OBSERVATION_SECONDS:
-					_change_stage(Stage.JAR_ORANGE)
-			else:
-				_blue_elapsed = 0.0
 		Stage.JAR_ORANGE:
 			if shutter_open and mode == ORANGE_MODE:
 				guide_state = GuideState.WAKING
 				_orange_elapsed += dt
-				if _orange_elapsed >= ORANGE_DEMO_SECONDS + COLOR_OBSERVATION_SECONDS:
-					release_guide()
-					_change_stage(Stage.GUIDE)
-			else:
-				_orange_elapsed = 0.0
 		Stage.GUIDE:
 			_stage_elapsed += dt
-			if _stage_elapsed >= GUIDE_SECONDS:
-				_change_stage(Stage.GROUPS)
 		Stage.GROUPS:
 			_stage_elapsed += dt
-			if _stage_elapsed >= GROUPS_SECONDS:
-				_change_stage(Stage.FREE_PLAY)
 	_update_status()
 
 
@@ -165,7 +212,9 @@ func _change_stage(next_stage: Stage) -> void:
 		return
 	stage = next_stage
 	_stage_elapsed = 0.0
+	_page_elapsed = 0.0
 	if stage == Stage.ADAPTATION:
+		_adaptation_page = 0
 		_set_adaptation_progress(0.0, true)
 		_set_reveal(0.0, true)
 	if stage == Stage.FREE_PLAY:
@@ -204,12 +253,16 @@ func _update_status() -> void:
 		Stage.SHUTTER:
 			status_text = "Ukon: First, close the lantern's shutter. Let your eyes settle into the dark."
 		Stage.ADAPTATION:
-			if adaptation_progress < 0.35:
+			if _adaptation_page == 0:
 				status_text = "Ukon: This grove follows a 光脈筋 (koumyakusuji), a light vein the mushi navigate."
-			elif adaptation_progress < 0.72:
+			elif _adaptation_page == 1:
 				status_text = "Ukon: Some mushi are left adrift from the golden stream below. See it beneath the stars?"
 			else:
 				status_text = "Ukon: It's dark here, but you're safe. No jumpscares; the mushi and other creatures won't hurt you."
+		Stage.REVEAL_WAIT:
+			status_text = "Ukon: There is the light vein. Take a moment to look; open the shutter when you are ready."
+		Stage.JAR_NEUTRAL:
+			status_text = "Ukon: Watch this mushi wander in the jar first. It has no reason to settle yet."
 		Stage.JAR_BLUE:
 			status_text = "Ukon: Shine blue light into this jar. Watch the green mushi settle and draw toward it."
 		Stage.JAR_ORANGE:

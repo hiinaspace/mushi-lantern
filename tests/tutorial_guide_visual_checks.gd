@@ -20,10 +20,12 @@ func _run() -> void:
 	assert(neutral_position.length() > 0.07 and absf(neutral_heading.g) < 0.8,
 		"neutral mushi should visibly bounce and rotate")
 	guide.set_guide_state(TutorialDirector.GuideState.DORMANT)
-	guide._process(0.3)
+	guide.set_light_source(Vector3(1.0, 0.0, 0.0))
+	guide._process(2.0)
 	var dormant_position: Vector3 = guide.get_node("GuideMushi").position
 	var dormant_heading: Color = guide._glyph_image.get_pixel(0, 2)
-	assert(absf(dormant_position.x) < 0.01 and absf(dormant_position.z) < 0.01)
+	assert(dormant_position.x > 0.15 and absf(dormant_position.z) < 0.03,
+		"blue-lit mushi should settle toward the light")
 	assert(dormant_heading.g > 0.99, "blue-lit mushi should settle upright")
 	print("TUTORIAL_GUIDE_VISUAL_CHECKS_OK")
 	quit(0)

@@ -171,7 +171,7 @@ static func advance_stream_visibility(current: float, target: float, delta: floa
 func set_visual_tuning(values: Dictionary) -> void:
 	if _river_mesh_active and _river_mesh != null:
 		_river_mesh.set_tuning(values)
-	var depth := clampf(float(values.get("river_depth", 1.0)), 0.1, 3.0)
+	var depth := clampf(float(values.get("river_depth", 1.0)), 0.1, 3.5)
 	if terrain_reveal_active:
 		terrain.material.set_shader_param("river_plane_y", TerrainRiverReveal.RIVER_PLANE_Y * depth)
 		terrain.material.set_shader_param("river_depth", depth)

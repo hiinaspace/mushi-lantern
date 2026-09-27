@@ -255,12 +255,17 @@ func _ready() -> void:
 	add_child(tutorial_ui)
 	tutorial_ui.skip_requested.connect(_skip_tutorial)
 	tutorial_ui.begin_requested.connect(tutorial_director.choose_tutorial)
+	tutorial_ui.continue_requested.connect(tutorial_director.request_continue)
 	tutorial_ui.sandbox_visibility_changed.connect(_on_tutorial_sandbox_visibility_changed)
 	var ukon_anchor := get_node_or_null("MikoPresentation") as Node3D
 	var tutorial_viewer: Camera3D = xr_player.camera if xr_player != null and xr_player.xr_active else player.camera
 	tutorial_ui.attach_ukon(ukon_anchor, tutorial_viewer)
 	if xr_player != null and xr_player.xr_active:
 		tutorial_ui.attach_xr_camera(xr_player.camera)
+		for controller: XRController3D in [xr_player.left_controller, xr_player.right_controller]:
+			controller.button_pressed.connect(func(action: String) -> void:
+				if action == "trigger_click" and not xr_player.is_menu_open():
+					tutorial_ui.request_advance())
 		_build_xr_tutorial_chain_cue()
 		var tutorial_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
 		if tutorial_surface.scene_node is Control:
@@ -389,7 +394,8 @@ func _process(delta: float) -> void:
 		elapsed += delta
 		mode_times[int(lantern.mode)] += delta
 		_recenter_xr_tutorial_if_needed(delta)
-		if tutorial_director != null and tutorial_director.stage == TutorialDirector.Stage.ADAPTATION:
+		if tutorial_director != null and (tutorial_director.stage == TutorialDirector.Stage.ADAPTATION \
+				or tutorial_director.stage == TutorialDirector.Stage.REVEAL_WAIT and not tutorial_director.reveal_can_reopen()):
 			# The eight-second guided reveal owns both shutter and adaptation so
 			# other controls cannot interrupt the first sky/ground composition.
 			lantern.set_shutter(0.0)
@@ -402,10 +408,14 @@ func _process(delta: float) -> void:
 		tutorial_director.advance(delta, int(lantern.mode), lantern.shutter_openness, lantern.night_vision)
 		if was_guided_adaptation:
 			lantern.reset_adaptation(tutorial_director.adaptation_progress)
+		if tutorial_director.stage == TutorialDirector.Stage.JAR_NEUTRAL:
+			lantern.request_mode(LightField.Mode.CLEAR)
 	if spectator_camera != null and spectator_camera.active and _spectator_adaptation >= 0.0:
 		lantern.reset_adaptation(_spectator_adaptation)
 	_sync_tutorial_movement_lock()
 	if tutorial_guide != null:
+		if lantern != null:
+			tutorial_guide.set_light_source(lantern.global_position)
 		tutorial_guide.set_guide_state(tutorial_director.guide_state)
 		if tutorial_director.tutorial_enabled and tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY:
 			tutorial_guide.visible = false
@@ -1515,17 +1525,17 @@ func _build_ui() -> void:
 	_add_visual_slider(stack, "Clear fade near (m)", 0.0, 60.0, 17.0, 1.0, &"clear_distance_start")
 	_add_visual_slider(stack, "Clear fade far (m)", 5.0, 100.0, 52.0, 1.0, &"clear_distance_end")
 	_add_visual_group_label(stack, "River mesh · path and surface")
-	_add_visual_slider(stack, "River width scale", 0.6, 4.0, 2.5, 0.05, &"river_width")
-	_add_visual_slider(stack, "River depth scale", 0.6, 1.8, 1.0, 0.05, &"river_depth")
-	_add_visual_slider(stack, "Path long wobble", 0.0, 2.5, 1.0, 0.05, &"path_long")
-	_add_visual_slider(stack, "Path long frequency", 0.2, 4.0, 1.0, 0.05, &"path_long_frequency")
-	_add_visual_slider(stack, "Path medium wobble", 0.0, 2.5, 1.0, 0.05, &"path_medium")
-	_add_visual_slider(stack, "Path medium frequency", 0.2, 4.0, 1.0, 0.05, &"path_medium_frequency")
-	_add_visual_slider(stack, "Long motion speed", 0.0, 3.0, 1.0, 0.05, &"path_long_speed")
-	_add_visual_slider(stack, "Medium motion speed", 0.0, 3.0, 1.0, 0.05, &"path_medium_speed")
-	_add_visual_slider(stack, "Surface bump", 0.0, 2.5, 1.0, 0.05, &"surface_bump")
-	_add_visual_slider(stack, "Surface bump frequency", 0.2, 4.0, 1.0, 0.05, &"surface_bump_frequency")
-	_add_visual_slider(stack, "Bump motion speed", 0.0, 3.0, 1.0, 0.05, &"surface_bump_speed")
+	_add_visual_slider(stack, "River width scale", 0.6, 8.0, 2.5, 0.05, &"river_width")
+	_add_visual_slider(stack, "River depth scale", 0.6, 3.5, 1.0, 0.05, &"river_depth")
+	_add_visual_slider(stack, "Path long wobble", 0.0, 5.0, 1.0, 0.05, &"path_long")
+	_add_visual_slider(stack, "Path long frequency", 0.2, 6.0, 1.0, 0.05, &"path_long_frequency")
+	_add_visual_slider(stack, "Path medium wobble", 0.0, 5.0, 1.0, 0.05, &"path_medium")
+	_add_visual_slider(stack, "Path medium frequency", 0.2, 6.0, 1.0, 0.05, &"path_medium_frequency")
+	_add_visual_slider(stack, "Long motion speed", 0.0, 5.0, 1.0, 0.05, &"path_long_speed")
+	_add_visual_slider(stack, "Medium motion speed", 0.0, 5.0, 1.0, 0.05, &"path_medium_speed")
+	_add_visual_slider(stack, "Surface bump", 0.0, 5.0, 1.0, 0.05, &"surface_bump")
+	_add_visual_slider(stack, "Surface bump frequency", 0.2, 6.0, 1.0, 0.05, &"surface_bump_frequency")
+	_add_visual_slider(stack, "Bump motion speed", 0.0, 5.0, 1.0, 0.05, &"surface_bump_speed")
 	var energy_title := Label.new()
 	energy_title.text = "Energy experiment · 90% response times"
 	energy_title.add_theme_font_size_override("font_size", 13)

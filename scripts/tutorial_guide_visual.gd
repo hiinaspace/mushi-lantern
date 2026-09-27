@@ -21,6 +21,7 @@ var _released := false
 var _age := 0.0
 var _display_arousal := 0.45
 var _release_tween: Tween
+var _blue_pull := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -42,12 +43,20 @@ func _process(delta: float) -> void:
 				cos(_age * 2.3) * 0.07)
 		else:
 			var motion := 0.060 if waking else 0.008
-			_creature.position = Vector3(sin(_age * flutter * 0.54) * motion,
+			var drift := Vector3(sin(_age * flutter * 0.54) * motion,
 				height + sin(_age * flutter) * motion, cos(_age * flutter * 0.46) * motion)
+			_creature.position = _creature.position.lerp(drift + (_blue_pull if dormant else Vector3.ZERO),
+				1.0 - exp(-delta * (1.3 if dormant else 3.0)))
 		_glow.light_energy = (0.78 if waking else 0.12 if dormant else 0.32) * (0.88 + 0.12 * sin(_age * flutter))
 	var target_arousal := 1.0 if _state == TutorialDirector.GuideState.WAKING else 0.0 if _state == TutorialDirector.GuideState.DORMANT else 0.45
 	_display_arousal = move_toward(_display_arousal, target_arousal, delta * 1.8)
 	_update_glyph()
+
+
+func set_light_source(source_world_position: Vector3) -> void:
+	var direction := source_world_position - global_position
+	direction.y = 0.0
+	_blue_pull = direction.normalized() * 0.21 if direction.length_squared() > 0.001 else Vector3.ZERO
 
 
 func reset_guide(world_position: Vector3) -> void:
@@ -56,6 +65,7 @@ func reset_guide(world_position: Vector3) -> void:
 	_released = false
 	_age = 0.0
 	_display_arousal = 0.45
+	_blue_pull = Vector3.ZERO
 	scale = Vector3.ONE
 	global_position = world_position
 	_creature.position = Vector3.ZERO

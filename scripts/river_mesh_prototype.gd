@@ -19,7 +19,7 @@ func _init() -> void:
 	material_override = material
 	mesh = _build_mesh()
 	# Shader deformation can widen and deepen the tube beyond its base vertices.
-	custom_aabb = AABB(Vector3(-3020.0, -85.0, -32.0), Vector3(6040.0, 95.0, 64.0))
+	custom_aabb = AABB(Vector3(-3020.0, -135.0, -70.0), Vector3(6040.0, 150.0, 140.0))
 
 
 func _ready() -> void:
