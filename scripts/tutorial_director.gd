@@ -10,7 +10,7 @@ signal reward_unlocked
 signal near_complete_reached
 signal guide_released
 
-enum Stage { WELCOME, SHUTTER, ADAPTATION, REVEAL_WAIT, JAR_NEUTRAL, JAR_BLUE, JAR_ORANGE, GUIDE, GROUPS, FREE_PLAY }
+enum Stage { WELCOME, PICKUP, SHUTTER, ADAPTATION, REVEAL_WAIT, JAR_NEUTRAL, JAR_BLUE, JAR_ORANGE, GUIDE, GROUPS, FREE_PLAY }
 enum GuideState { JARRED, DORMANT, WAKING, RELEASED }
 
 const BLUE_MODE: int = LightField.Mode.BLUE
@@ -70,9 +70,9 @@ func begin_run(enabled: bool, run_total: int) -> void:
 	_update_status()
 
 
-func choose_tutorial() -> void:
+func choose_tutorial(xr_active: bool = false) -> void:
 	if tutorial_enabled and stage == Stage.WELCOME:
-		_change_stage(Stage.SHUTTER)
+		_change_stage(Stage.PICKUP if xr_active else Stage.SHUTTER)
 		_update_status()
 
 
@@ -126,12 +126,15 @@ func reveal_can_reopen() -> bool:
 	return stage == Stage.REVEAL_WAIT and _stage_elapsed >= REVEAL_HOLD_SECONDS
 
 
-func advance(delta: float, mode: int, shutter: float, _night_vision: float) -> void:
+func advance(delta: float, mode: int, shutter: float, _night_vision: float, staff_held: bool = false) -> void:
 	if not tutorial_enabled or stage == Stage.FREE_PLAY:
 		return
 	var dt := maxf(0.0, delta)
 	var shutter_open := shutter > ACTIVE_SHUTTER_THRESHOLD
 	match stage:
+		Stage.PICKUP:
+			if staff_held:
+				_change_stage(Stage.SHUTTER)
 		Stage.SHUTTER:
 			_stage_elapsed += dt
 			if not shutter_open and _stage_elapsed >= DIALOGUE_PAUSE_SECONDS:
@@ -208,20 +211,20 @@ func ukon_nearby_line(tip_index: int = 0) -> String:
 	if progress_ratio >= 0.50:
 		var mid_tips := [
 			"Half the grove has come home. Blue gathers them; red can nudge them toward a shrine.",
-			"Wonderful progress. A broad lantern sweep can find strays along the light vein.",
+			"Wonderful progress. Close the lantern shutter to spot strays along the light vein.",
 			"So many have returned. You can keep wandering, or rest here a while."
 		]
 		return mid_tips[tip]
 	if progress_ratio >= 0.25:
 		var early_tips := [
 			"Good work bringing them home. Blue draws mushi close; red can guide them toward a shrine.",
-			"The light vein is still flowing beneath us. A slow lantern sweep can help you spot strays.",
+			"The light vein is still flowing beneath us. Close the shutter to help spot strays.",
 			"The light vein bends beneath the earth. A few returns at a time is plenty."
 		]
 		return early_tips[tip]
 	var opening_tips := [
 		"Take your time; the mushi won't hurt you. Blue draws them close, and red can guide them home.",
-		"A slow lantern sweep can reveal strays. The light vein is patient; there is no rush.",
+		"With the lantern shutter closed, strays shine more clearly. The light vein is patient; there is no rush.",
 		"Some mushi have strayed among the trees. Help a few find the shrine when you like."
 	]
 	return opening_tips[tip]
@@ -270,6 +273,8 @@ func _update_status() -> void:
 	match stage:
 		Stage.WELCOME:
 			status_text = "Welcome to the grove. Shall I show you the lantern, or would you like to explore?"
+		Stage.PICKUP:
+			status_text = "First, grip the staff shaft beside you to pick up the lantern."
 		Stage.SHUTTER:
 			status_text = "First, pull the control rope down to close the shutter. Give your eyes a moment to settle into the dark."
 		Stage.ADAPTATION:

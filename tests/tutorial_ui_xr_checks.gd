@@ -34,6 +34,7 @@ func run_checks() -> void:
 	director.begin_run(true, 1024)
 	ui.update_director(director, true)
 	assert(ui._xr_skip.visible, "XR menu retains introduction skip")
+	assert(ui._xr_skip.text == "Skip introduction · begin exploring", "welcome skip keeps an explicit label")
 	assert(ui._xr_status == null and ui._xr_begin == null and ui._xr_continue == null,
 		"Ukon dialogue and advance actions are only shown in the grove")
 	ui.finish_text()
@@ -41,6 +42,9 @@ func run_checks() -> void:
 	assert(ui._world_root.get_parent() == ukon, "dialogue must be attached to Ukon, not the tracked headset")
 	assert(not ui._desktop_skip.visible, "desktop K skip button should not appear in XR")
 	assert(ui._world_hint.text.contains("Y / B"))
+	director.choose_tutorial(true)
+	ui.update_director(director, true)
+	assert(ui._world_hint.text.contains("Grip the staff shaft"), "pickup instruction appears before the shutter instruction")
 	director.stage = TutorialDirector.Stage.ADAPTATION
 	director.status_text = "Keep shutter closed to reveal the stream"
 	ui.update_director(director, true)

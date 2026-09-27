@@ -211,7 +211,7 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 		_desktop_status.visible_characters = -1 if completion_visible else int(_spoken_characters)
 	if _xr_skip != null:
 		_xr_skip.visible = active
-		_xr_skip.text = "Explore myself" if director.stage == TutorialDirector.Stage.WELCOME else "Skip introduction"
+		_xr_skip.text = "Skip introduction · begin exploring" if director.stage == TutorialDirector.Stage.WELCOME else "Skip introduction"
 		set_sandbox_unlocked(not director.tutorial_enabled or director.reward_is_unlocked)
 	if _reward_toast != null:
 		_reward_toast.visible = _reward_remaining > 0.0 and not xr_active
@@ -261,6 +261,8 @@ func _styled_dialogue(line: String) -> String:
 func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
 	if director.stage == TutorialDirector.Stage.WELCOME:
 		return "Trigger: begin · Y / B > Play > Skip introduction" if xr_active else "Enter: quick lesson · K: explore"
+	if director.stage == TutorialDirector.Stage.PICKUP:
+		return "Grip the staff shaft beside you" if xr_active else ""
 	if director.stage == TutorialDirector.Stage.SHUTTER:
 		return "Close the lantern shutter" if xr_active else "Hold right mouse and drag down to close"
 	if director.stage == TutorialDirector.Stage.ADAPTATION:
