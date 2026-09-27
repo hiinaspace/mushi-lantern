@@ -410,7 +410,8 @@ func _process(delta: float) -> void:
 			else:
 				lantern.advance_adaptation_to(delta, _viewer_multiplayer_adaptation_target())
 		var was_guided_adaptation := tutorial_director.stage == TutorialDirector.Stage.ADAPTATION
-		tutorial_director.advance(delta, int(lantern.mode), lantern.shutter_openness, lantern.night_vision)
+		tutorial_director.advance(delta, int(lantern.mode), lantern.shutter_openness, lantern.night_vision,
+			xr_player != null and xr_player.xr_active and staff_tool != null and staff_tool.is_picked_up())
 		if was_guided_adaptation:
 			lantern.reset_adaptation(tutorial_director.adaptation_progress)
 		if tutorial_director.stage == TutorialDirector.Stage.JAR_NEUTRAL:
@@ -1013,7 +1014,7 @@ func _on_xr_tutorial_trigger_pressed() -> void:
 	if tutorial_director == null or not tutorial_director.tutorial_enabled or xr_player.is_menu_open():
 		return
 	if tutorial_director.stage == TutorialDirector.Stage.WELCOME:
-		tutorial_director.choose_tutorial()
+		tutorial_director.choose_tutorial(true)
 	else:
 		tutorial_ui.request_advance()
 
@@ -1301,6 +1302,9 @@ func _update_xr_tutorial_chain_cue() -> void:
 	var caption := ""
 	if show:
 		match tutorial_director.stage:
+			TutorialDirector.Stage.PICKUP:
+				if xr_player != null and xr_player.xr_active:
+					caption = "Grip the staff shaft to pick it up"
 			TutorialDirector.Stage.JAR_ORANGE:
 				caption = "Grip chain · twist to red" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag right to red"
 			TutorialDirector.Stage.JAR_BLUE:
@@ -1311,7 +1315,8 @@ func _update_xr_tutorial_chain_cue() -> void:
 	_tutorial_chain_label.visible = show
 	if not show:
 		return
-	var control: Vector3 = staff_tool.control_world_position()
+	var control: Vector3 = staff_tool.grip_world_position(StaffTool.MID_GRIP_INDEX) \
+		if tutorial_director.stage == TutorialDirector.Stage.PICKUP else staff_tool.control_world_position()
 	var viewer: Camera3D = xr_player.camera if xr_player != null and xr_player.xr_active else player.camera
 	_tutorial_chain_label.global_position = control - viewer.global_basis.x * 0.42 + Vector3.UP * 0.13
 	_tutorial_chain_label.text = caption
