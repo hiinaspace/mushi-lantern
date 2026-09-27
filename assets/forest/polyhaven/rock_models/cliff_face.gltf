@@ -69,17 +69,17 @@
 	"images":[
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_face_02_nor_gl_1k",
+			"name":"rock_face_02_nor_gl",
 			"uri":"textures/rock_face_02_nor_gl_1k.jpg"
 		},
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_face_02_diff_1k",
+			"name":"rock_face_02_diff",
 			"uri":"textures/rock_face_02_diff_1k.jpg"
 		},
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_face_02_arm_1k",
+			"name":"rock_face_02_rough",
 			"uri":"textures/rock_face_02_arm_1k.jpg"
 		}
 	],
@@ -87,61 +87,61 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":1017,
+			"count":2682,
 			"max":[
-				1.3563967943191528,
-				2.4731881618499756,
-				1.0367146730422974
+				1.3559808731079102,
+				2.477557420730591,
+				1.0643247365951538
 			],
 			"min":[
-				-1.3560962677001953,
-				-0.008072379976511002,
-				-1.066213846206665
+				-1.3559808731079102,
+				0,
+				-1.0643247365951538
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":1017,
+			"count":2682,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":1017,
+			"count":2682,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":3600,
+			"count":11994,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":12204,
+			"byteLength":32184,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":12204,
-			"byteOffset":12204,
+			"byteLength":32184,
+			"byteOffset":32184,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":8136,
-			"byteOffset":24408,
+			"byteLength":21456,
+			"byteOffset":64368,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":7200,
-			"byteOffset":32544,
+			"byteLength":23988,
+			"byteOffset":85824,
 			"target":34963
 		}
 	],
@@ -153,7 +153,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":39744,
+			"byteLength":109812,
 			"uri":"cliff_face.bin"
 		}
 	]

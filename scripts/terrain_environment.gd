@@ -317,7 +317,12 @@ func apply_quality(settings: Dictionary) -> void:
 			var yaw_spread := (float(variant) - 1.0) * (0.42 if kind == "rock" else 0.08)
 			var yaw := float(prop.yaw) + yaw_spread
 			var basis := Basis(Vector3.UP, yaw).scaled(prop_scale)
-			groups[mesh_id].append(Transform3D(basis, prop.position))
+			var position: Vector3 = prop.position
+			if kind == "rock" and forest_style == "pine":
+				# Embed the photographed boulders so their irregular feet meet the
+				# terrain; the prop record stays fixed for coarse collision/avoidance.
+				position.y -= GroveRockModels.rock_height(variant) * prop_scale.y * 0.30
+			groups[mesh_id].append(Transform3D(basis, position))
 		for mesh_id in groups.size():
 			terrain.instancer.clear_by_mesh(mesh_id)
 			terrain.instancer.add_transforms(mesh_id, groups[mesh_id])

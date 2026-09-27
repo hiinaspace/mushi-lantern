@@ -21,7 +21,7 @@
 	"materials":[
 		{
 			"doubleSided":true,
-			"name":"rock_moss_set_01",
+			"name":"rock_moss_set_01.002",
 			"normalTexture":{
 				"index":0
 			},
@@ -38,7 +38,7 @@
 	],
 	"meshes":[
 		{
-			"name":"modelShape.003",
+			"name":"modelShape.011",
 			"primitives":[
 				{
 					"attributes":{
@@ -69,79 +69,79 @@
 	"images":[
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_moss_set_01_nor_gl_1k",
-			"uri":"textures/rock_moss_set_01_nor_gl_1k.jpg"
+			"name":"rock_moss_set_01_nor_gl.002",
+			"uri":"textures/rock_moss_set_01_nor_gl_2k.jpg"
 		},
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_moss_set_01_diff_1k",
-			"uri":"textures/rock_moss_set_01_diff_1k.jpg"
+			"name":"rock_moss_set_01_diff.002",
+			"uri":"textures/rock_moss_set_01_diff_2k.jpg"
 		},
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_moss_set_01_rough_1k",
-			"uri":"textures/rock_moss_set_01_rough_1k.jpg"
+			"name":"rock_moss_set_01_rough.002",
+			"uri":"textures/rock_moss_set_01_rough_2k.jpg"
 		}
 	],
 	"accessors":[
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":532,
+			"count":1515,
 			"max":[
-				0.6078291535377502,
-				0.8096567988395691,
-				0.9973382353782654
+				0.6056397557258606,
+				0.804661214351654,
+				1
 			],
 			"min":[
-				-0.6063225269317627,
-				-0.004672435112297535,
-				-0.998581051826477
+				-0.6056397557258606,
+				0,
+				-1
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":532,
+			"count":1515,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":532,
+			"count":1515,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":2397,
+			"count":8400,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":6384,
+			"byteLength":18180,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":6384,
-			"byteOffset":6384,
+			"byteLength":18180,
+			"byteOffset":18180,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4256,
-			"byteOffset":12768,
+			"byteLength":12120,
+			"byteOffset":36360,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4794,
-			"byteOffset":17024,
+			"byteLength":16800,
+			"byteOffset":48480,
 			"target":34963
 		}
 	],
@@ -153,7 +153,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":21820,
+			"byteLength":65280,
 			"uri":"moss_rock05.bin"
 		}
 	]

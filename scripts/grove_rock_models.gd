@@ -9,10 +9,16 @@ const ROCK_SCENES := [
 	preload("res://assets/forest/polyhaven/rock_models/moss_rock05.gltf"),
 ]
 const CLIFF_SCENE: PackedScene = preload("res://assets/forest/polyhaven/rock_models/cliff_face.gltf")
+## Source meshes have their lowest vertex at y=0; these are their local heights.
+const ROCK_HEIGHTS := [0.876, 1.043, 0.805]
 
 
 static func rock_mesh(variant: int) -> Mesh:
 	return _mesh_from_scene(ROCK_SCENES[posmod(variant, ROCK_SCENES.size())] as PackedScene)
+
+
+static func rock_height(variant: int) -> float:
+	return ROCK_HEIGHTS[posmod(variant, ROCK_HEIGHTS.size())]
 
 
 static func cliff_mesh() -> Mesh:

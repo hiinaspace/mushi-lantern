@@ -69,79 +69,79 @@
 	"images":[
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_moss_set_01_nor_gl_1k",
-			"uri":"textures/rock_moss_set_01_nor_gl_1k.jpg"
+			"name":"rock_moss_set_01_nor_gl",
+			"uri":"textures/rock_moss_set_01_nor_gl_2k.jpg"
 		},
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_moss_set_01_diff_1k",
-			"uri":"textures/rock_moss_set_01_diff_1k.jpg"
+			"name":"rock_moss_set_01_diff",
+			"uri":"textures/rock_moss_set_01_diff_2k.jpg"
 		},
 		{
 			"mimeType":"image/jpeg",
-			"name":"rock_moss_set_01_rough_1k",
-			"uri":"textures/rock_moss_set_01_rough_1k.jpg"
+			"name":"rock_moss_set_01_rough",
+			"uri":"textures/rock_moss_set_01_rough_2k.jpg"
 		}
 	],
 	"accessors":[
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":583,
+			"count":1497,
 			"max":[
-				0.6722543239593506,
-				0.8764671087265015,
-				1.0065759420394897
+				0.6650012135505676,
+				0.8758715987205505,
+				1
 			],
 			"min":[
-				-0.6736740469932556,
-				0.007167880889028311,
-				-1.0067466497421265
+				-0.6650012135505676,
+				0,
+				-1
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":583,
+			"count":1497,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":583,
+			"count":1497,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":2100,
+			"count":7200,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":6996,
+			"byteLength":17964,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":6996,
-			"byteOffset":6996,
+			"byteLength":17964,
+			"byteOffset":17964,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4664,
-			"byteOffset":13992,
+			"byteLength":11976,
+			"byteOffset":35928,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4200,
-			"byteOffset":18656,
+			"byteLength":14400,
+			"byteOffset":47904,
 			"target":34963
 		}
 	],
@@ -153,7 +153,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":22856,
+			"byteLength":62304,
 			"uri":"moss_rock01.bin"
 		}
 	]
