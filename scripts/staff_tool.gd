@@ -678,8 +678,15 @@ func _update_swing(dt: float) -> void:
 		simulation_pivot = _swing_sim_pivot + (pivot - _previous_pivot) - yaw_arc
 	var render_offset := pivot - simulation_pivot
 	var simulation_bob := _bob_world - (_previous_pivot - _swing_sim_pivot)
-	if _adjusting:
+	if _adjusting or _desktop_adjusting:
 		simulation_bob += simulation_pivot - _swing_sim_pivot
+		if _desktop_adjusting:
+			# Bring the hanging lamp into the offhand's reach before its fingers
+			# close. A brief physical settle avoids chasing a moving control grip.
+			var settled := simulation_pivot + Vector3.DOWN * SUSPENSION_LENGTH
+			simulation_bob = simulation_bob.lerp(settled, 1.0 - exp(-14.0 * dt))
+			var direction := (simulation_bob - simulation_pivot).normalized()
+			simulation_bob = simulation_pivot + direction * SUSPENSION_LENGTH
 		_bob_velocity = Vector3.ZERO
 		_previous_pivot_velocity = Vector3.ZERO
 	else:

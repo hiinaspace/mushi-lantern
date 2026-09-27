@@ -189,6 +189,11 @@ var _want_xr: bool = false
 var _desktop_aim: Vector2 = Vector2.ZERO
 var _desktop_left_hand_pose := Transform3D.IDENTITY
 var _desktop_left_hand_blend := 0.0
+var _desktop_adjust_elapsed := 0.0
+var _desktop_release_elapsed := -1.0
+var _desktop_release_reach := 0.0
+var _desktop_release_curl := 0.0
+var _desktop_grip_curl := 0.0
 var _desktop_recall_held: bool = false
 var _xr_recall_owner: XRController3D
 var _skip_tutorial_requested := false
@@ -204,12 +209,12 @@ var _visual_tuning := {
 	"star_start": 0.14, "star_end": 0.89, "milky_start": 0.64, "milky_end": 0.96,
 	"foliage_start": 0.90, "foliage_end": 0.99,
 	"clear_start": 0.10, "clear_end": 0.65, "clear_distance_start": 17.0, "clear_distance_end": 52.0,
-	"river_width": 2.5, "river_depth": 1.0,
+	"river_width": 4.0, "river_depth": 1.8,
 	"horizon_flare_strength": 0.25, "horizon_flare_spread": 1.0,
 	"far_scintillation_blend": 1.0,
-	"path_long": 1.0, "path_medium": 1.0, "path_long_speed": 1.0, "path_medium_speed": 1.0,
-	"path_long_frequency": 1.0, "path_medium_frequency": 1.0,
-	"surface_bump": 1.0, "surface_bump_speed": 1.0, "surface_bump_frequency": 1.0,
+	"path_long": 2.5, "path_medium": 1.45, "path_long_speed": 1.4, "path_medium_speed": 1.0,
+	"path_long_frequency": 1.25, "path_medium_frequency": 0.85,
+	"surface_bump": 0.55, "surface_bump_speed": 1.6, "surface_bump_frequency": 0.95,
 }
 
 func _ready() -> void:
@@ -582,6 +587,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_RIGHT and player.look_enabled:
 			staff_tool.begin_desktop_adjust()
 			player.lamp_adjusting = true
+			_desktop_adjust_elapsed = 0.0
+			_desktop_release_elapsed = -1.0
 			get_viewport().set_input_as_handled()
 			return
 		if mouse.pressed and mouse.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
@@ -997,6 +1004,7 @@ func _add_miko_presentation() -> void:
 	presentation.add_child(avatar)
 	add_child(presentation)
 	avatar.set_guide_idle(true)
+	avatar.eye_glow = 2.5
 
 func _build_player() -> void:
 	player = DesktopPlayer.new()
@@ -1109,6 +1117,10 @@ func _on_desktop_lamp_adjust_motion(relative: Vector2) -> void:
 
 
 func _end_desktop_lamp_adjust() -> void:
+	if player != null and player.lamp_adjusting:
+		_desktop_release_elapsed = 0.0
+		_desktop_release_reach = _desktop_left_hand_blend
+		_desktop_release_curl = _desktop_grip_curl
 	if player != null:
 		player.lamp_adjusting = false
 	if staff_tool != null:
@@ -1128,8 +1140,21 @@ func _update_staff_pose(delta: float) -> void:
 	else:
 		if player.lamp_adjusting and (not staff_tool.desktop_can_control_lantern() or not player.look_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
 			_end_desktop_lamp_adjust()
+		if player.lamp_adjusting:
+			_desktop_adjust_elapsed += delta
+			_desktop_left_hand_blend = smoothstep(0.15, 0.45, _desktop_adjust_elapsed)
+			_desktop_grip_curl = smoothstep(0.45, 0.58, _desktop_adjust_elapsed)
+		elif _desktop_release_elapsed >= 0.0:
+			_desktop_release_elapsed += delta
+			_desktop_grip_curl = _desktop_release_curl * (1.0 - smoothstep(0.0, 0.10, _desktop_release_elapsed))
+			_desktop_left_hand_blend = _desktop_release_reach * (1.0 - smoothstep(0.10, 0.36, _desktop_release_elapsed))
+			if _desktop_release_elapsed >= 0.36:
+				_desktop_release_elapsed = -1.0
+		else:
+			_desktop_grip_curl = 0.0
+			_desktop_left_hand_blend = 0.0
 		player.staff_adjust_blend = move_toward(player.staff_adjust_blend,
-			1.0 if player.lamp_adjusting else 0.0, delta * 5.0)
+			1.0 if player.lamp_adjusting or (_desktop_release_elapsed >= 0.0 and _desktop_release_elapsed < 0.10) else 0.0, delta * 5.0)
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_desktop_aim = _desktop_aim.lerp(Vector2.ZERO, 1.0 - exp(-delta * 3.5))
 		if _desktop_recall_held:
@@ -1501,20 +1526,20 @@ func _build_ui() -> void:
 	_add_visual_slider(stack, "Clear fade near (m)", 0.0, 60.0, 17.0, 1.0, &"clear_distance_start")
 	_add_visual_slider(stack, "Clear fade far (m)", 5.0, 100.0, 52.0, 1.0, &"clear_distance_end")
 	_add_visual_group_label(stack, "River mesh · path and surface")
-	_add_visual_slider(stack, "River width scale", 0.6, 8.0, 2.5, 0.05, &"river_width")
-	_add_visual_slider(stack, "River depth scale", 0.6, 3.5, 1.0, 0.05, &"river_depth")
+	_add_visual_slider(stack, "River width scale", 0.6, 8.0, 4.0, 0.05, &"river_width")
+	_add_visual_slider(stack, "River depth scale", 0.6, 3.5, 1.8, 0.05, &"river_depth")
 	_add_visual_slider(stack, "Horizon gold flare", 0.0, 2.0, 0.25, 0.05, &"horizon_flare_strength")
 	_add_visual_slider(stack, "Horizon flare spread", 0.2, 2.5, 1.0, 0.05, &"horizon_flare_spread")
 	_add_visual_slider(stack, "Far light vein diffuse blend", 0.0, 1.0, 1.0, 0.05, &"far_scintillation_blend")
-	_add_visual_slider(stack, "Path long wobble", 0.0, 5.0, 1.0, 0.05, &"path_long")
-	_add_visual_slider(stack, "Path long frequency", 0.2, 6.0, 1.0, 0.05, &"path_long_frequency")
-	_add_visual_slider(stack, "Path medium wobble", 0.0, 5.0, 1.0, 0.05, &"path_medium")
-	_add_visual_slider(stack, "Path medium frequency", 0.2, 6.0, 1.0, 0.05, &"path_medium_frequency")
-	_add_visual_slider(stack, "Long motion speed", 0.0, 5.0, 1.0, 0.05, &"path_long_speed")
+	_add_visual_slider(stack, "Path long wobble", 0.0, 5.0, 2.5, 0.05, &"path_long")
+	_add_visual_slider(stack, "Path long frequency", 0.2, 6.0, 1.25, 0.05, &"path_long_frequency")
+	_add_visual_slider(stack, "Path medium wobble", 0.0, 5.0, 1.45, 0.05, &"path_medium")
+	_add_visual_slider(stack, "Path medium frequency", 0.2, 6.0, 0.85, 0.05, &"path_medium_frequency")
+	_add_visual_slider(stack, "Long motion speed", 0.0, 5.0, 1.4, 0.05, &"path_long_speed")
 	_add_visual_slider(stack, "Medium motion speed", 0.0, 5.0, 1.0, 0.05, &"path_medium_speed")
-	_add_visual_slider(stack, "Surface bump", 0.0, 5.0, 1.0, 0.05, &"surface_bump")
-	_add_visual_slider(stack, "Surface bump frequency", 0.2, 6.0, 1.0, 0.05, &"surface_bump_frequency")
-	_add_visual_slider(stack, "Bump motion speed", 0.0, 5.0, 1.0, 0.05, &"surface_bump_speed")
+	_add_visual_slider(stack, "Surface bump", 0.0, 5.0, 0.55, 0.05, &"surface_bump")
+	_add_visual_slider(stack, "Surface bump frequency", 0.2, 6.0, 0.95, 0.05, &"surface_bump_frequency")
+	_add_visual_slider(stack, "Bump motion speed", 0.0, 5.0, 1.6, 0.05, &"surface_bump_speed")
 	var energy_title := Label.new()
 	energy_title.text = "Energy experiment · 90% response times"
 	energy_title.add_theme_font_size_override("font_size", 13)
@@ -2015,6 +2040,12 @@ func _reset_run(record_previous: bool) -> void:
 	_desktop_aim = Vector2.ZERO
 	_desktop_recall_held = false
 	_end_desktop_lamp_adjust()
+	_desktop_adjust_elapsed = 0.0
+	_desktop_release_elapsed = -1.0
+	_desktop_left_hand_blend = 0.0
+	_desktop_grip_curl = 0.0
+	_desktop_left_hand_pose = Transform3D.IDENTITY
+	player.staff_adjust_blend = 0.0
 	if xr_player != null and xr_player.xr_active:
 		if xr_staff_interaction != null:
 			xr_staff_interaction.reset_for_run()
@@ -2754,16 +2785,14 @@ func _update_local_avatar(delta: float) -> void:
 	if xr_player == null or not xr_player.xr_active:
 		var rest_pose := player.camera.global_transform * Transform3D(Basis.IDENTITY,
 			Vector3(-0.28, -0.58, -0.34))
-		var holding_rope: bool = player.lamp_adjusting and staff_tool != null \
+		var holding_rope: bool = (player.lamp_adjusting or _desktop_release_elapsed >= 0.0) and staff_tool != null \
 			and staff_tool.placement == StaffTool.Placement.HELD
 		var target_pose: Transform3D = local_pose.left if holding_rope else rest_pose
 		if _desktop_left_hand_pose == Transform3D.IDENTITY:
 			_desktop_left_hand_pose = rest_pose
 		_desktop_left_hand_pose = _desktop_left_hand_pose.interpolate_with(target_pose,
-			1.0 - exp(-delta * 6.0))
-		_desktop_left_hand_blend = move_toward(_desktop_left_hand_blend,
-			1.0 if holding_rope else 0.0, delta * 4.0)
-		if _desktop_left_hand_blend > 0.01:
+			1.0 - exp(-delta * 16.0))
+		if holding_rope:
 			local_pose.left = _desktop_left_hand_pose
 			local_pose.tracking |= 1
 	if xr_player != null and xr_player.xr_active:
@@ -3113,17 +3142,19 @@ func _sample_local_avatar_pose() -> Dictionary:
 		right = Transform3D(staff_tool.global_basis,
 			staff_tool.grip_world_position(staff_tool.grip_index) + staff_tool.global_basis * desktop_right_grip_offset)
 		tracked = 2
-		if player.lamp_adjusting:
-			left = Transform3D(staff_tool.lantern.global_basis,
+		if player.lamp_adjusting or _desktop_release_elapsed >= 0.0:
+			var control_pose := Transform3D(staff_tool.lantern.global_basis,
 				staff_tool.control_world_position() + staff_tool.global_basis * desktop_left_control_offset)
+			var rest_pose := view * Transform3D(Basis.IDENTITY, Vector3(-0.28, -0.58, -0.34))
+			left = rest_pose.interpolate_with(control_pose, _desktop_left_hand_blend)
 			tracked = 3
 	var motion := player.velocity
 	motion.y = 0.0
 	var empty_fingers: Array[Quaternion] = []
 	var desktop_curls := PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-	if player.lamp_adjusting:
+	if player.lamp_adjusting or _desktop_release_elapsed >= 0.0:
 		for finger in range(5):
-			desktop_curls[finger] = [0.65, 0.85, 0.9, 0.9, 0.8][finger]
+			desktop_curls[finger] = [0.65, 0.85, 0.9, 0.9, 0.8][finger] * _desktop_grip_curl
 	return {"body": body, "head": view, "left": left, "right": right,
 		"tracking": tracked, "velocity": motion,
 		"fingers": empty_fingers, "masks": PackedInt32Array([0, 0]),

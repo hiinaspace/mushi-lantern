@@ -30,6 +30,17 @@ func _run() -> void:
 	assert(is_equal_approx(staff.lantern.shutter_openness, 1.0))
 	staff.end_desktop_adjust()
 	assert(staff.find_child("ControlGripPulse", true, false) == null)
+	# The offhand reaches a stable hanging control rather than a moving bob.
+	staff.reset_to_pose(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.0, 0.0)))
+	for frame in range(12):
+		staff.set_held_world_pose(Transform3D(Basis.IDENTITY,
+			Vector3(0.22 if frame % 2 == 0 else -0.22, 1.0, 0.0)))
+		staff.advance(1.0 / 60.0)
+	staff.begin_desktop_adjust()
+	for frame in range(30):
+		staff.advance(1.0 / 60.0)
+	assert(staff._swing.global_basis.y.dot(Vector3.UP) > 0.98)
+	staff.end_desktop_adjust()
 	var player := DesktopPlayer.new()
 	var camera := Camera3D.new()
 	camera.name = "Camera"
