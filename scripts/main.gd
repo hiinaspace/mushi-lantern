@@ -43,7 +43,6 @@ var _tutorial_movement_locked: bool = false
 var _xr_tutorial_centered: bool = false
 var _xr_recenter_cooldown: float = 0.0
 var _tutorial_chain_label: Label3D
-var _tutorial_chain_marker: MeshInstance3D
 var _quality_settings: Dictionary = {}
 var _menu_was_paused: bool = false
 var _friend_was_paused: bool = false
@@ -1240,22 +1239,6 @@ func _tutorial_locks_shutter() -> bool:
 
 
 func _build_xr_tutorial_chain_cue() -> void:
-	_tutorial_chain_marker = MeshInstance3D.new()
-	_tutorial_chain_marker.name = "TutorialChainMarker"
-	var marker_mesh := SphereMesh.new()
-	marker_mesh.radius = 0.043
-	marker_mesh.height = 0.086
-	_tutorial_chain_marker.mesh = marker_mesh
-	var marker_material := StandardMaterial3D.new()
-	marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	marker_material.albedo_color = Color("ffe0a0")
-	marker_material.emission_enabled = true
-	marker_material.emission = Color("ffc872")
-	marker_material.emission_energy_multiplier = 2.0
-	_tutorial_chain_marker.material_override = marker_material
-	_tutorial_chain_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_tutorial_chain_marker.visible = false
-	add_child(_tutorial_chain_marker)
 	_tutorial_chain_label = Label3D.new()
 	_tutorial_chain_label.name = "TutorialChainTooltip"
 	_tutorial_chain_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -1272,7 +1255,7 @@ func _build_xr_tutorial_chain_cue() -> void:
 
 
 func _update_xr_tutorial_chain_cue() -> void:
-	if _tutorial_chain_label == null or _tutorial_chain_marker == null:
+	if _tutorial_chain_label == null:
 		return
 	var show: bool = tutorial_director != null and tutorial_director.tutorial_enabled
 	var caption := ""
@@ -1286,11 +1269,9 @@ func _update_xr_tutorial_chain_cue() -> void:
 				caption = "Grip chain · pull down to close" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag down to close"
 	show = show and not caption.is_empty()
 	_tutorial_chain_label.visible = show
-	_tutorial_chain_marker.visible = show
 	if not show:
 		return
 	var control: Vector3 = staff_tool.control_world_position()
-	_tutorial_chain_marker.global_position = control
 	var viewer: Camera3D = xr_player.camera if xr_player != null and xr_player.xr_active else player.camera
 	_tutorial_chain_label.global_position = control - viewer.global_basis.x * 0.42 + Vector3.UP * 0.13
 	_tutorial_chain_label.text = caption

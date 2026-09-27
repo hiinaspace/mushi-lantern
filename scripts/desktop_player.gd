@@ -103,5 +103,9 @@ func staff_hold_transform(aim: Vector2, adjusting: bool = false) -> Transform3D:
 		return global_transform
 	var rest_offset := STAFF_HOLD_OFFSET.lerp(Vector3(0.05, -0.17, -0.17), staff_adjust_blend)
 	var offset := rest_offset + Vector3(aim.x * 0.38, aim.y * 0.24, 0.0)
-	var staff_basis := camera.global_basis * Basis.from_euler(Vector3(-0.10 + aim.y * 0.52, aim.x * 0.58, 0.0))
+	# While the offhand takes the cord, turn the hanging lantern toward the
+	# body's center. The shaft stays at the right-hand grip and the motion uses
+	# the existing blend, so releasing the cord returns to the resting pose.
+	var staff_basis := camera.global_basis * Basis.from_euler(Vector3(-0.10 + aim.y * 0.52,
+		aim.x * 0.58 + staff_adjust_blend * 0.25, 0.0))
 	return Transform3D(staff_basis.orthonormalized(), camera.global_transform * offset)

@@ -29,6 +29,24 @@ func _run() -> void:
 	assert(staff.lantern.mode == LightField.Mode.BLUE)
 	assert(is_equal_approx(staff.lantern.shutter_openness, 1.0))
 	staff.end_desktop_adjust()
+	assert(staff.find_child("ControlGripPulse", true, false) == null)
+	var player := DesktopPlayer.new()
+	var camera := Camera3D.new()
+	camera.name = "Camera"
+	player.add_child(camera)
+	add_child(player)
+	player.staff_adjust_blend = 0.0
+	var resting := player.staff_hold_transform(Vector2.ZERO)
+	player.staff_adjust_blend = 1.0
+	var drawn_in := player.staff_hold_transform(Vector2.ZERO, true)
+	# The suspended control sits ahead of the shaft and must come inward when
+	# the right hand turns the shaft for the offhand reach.
+	var control_offset := StaffTool.SUSPENSION_PIVOT_LOCAL + Vector3(0.0,
+		-StaffTool.SUSPENSION_LENGTH - 0.29, 0.0)
+	var resting_control := resting * control_offset
+	var drawn_control := drawn_in * control_offset
+	var camera_right := player.camera.global_basis.x
+	assert((drawn_control - resting_control).dot(camera_right) < -0.07)
 	staff.release_final()
 	staff.begin_desktop_adjust()
 	assert(not staff.desktop_is_adjusting())

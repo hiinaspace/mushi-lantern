@@ -72,7 +72,6 @@ var external_pose_owned := false
 var _identity_hue: float = 0.0
 var _identity_material: StandardMaterial3D
 var _shaft_hint_material: StandardMaterial3D
-var _control_hint_material: StandardMaterial3D
 
 ## Desktop lamp controls are available only while the desktop driver owns the
 ## held staff. A parked, recalling, or XR-owned staff cannot be adjusted via
@@ -272,8 +271,8 @@ func _build_visual() -> void:
 	lantern.name = "Lantern"
 	lantern.position = Vector3(0.0, -SUSPENSION_LENGTH, 0.0)
 	_swing.add_child(lantern)
-	# Hover feedback is a small lit dash at the grip and a pinpoint at the
-	# lantern control, rather than XR Tools' large billboard ring.
+	# Hover feedback is a small lit dash at the shaft grip. The control is
+	# deliberately unobscured; the tutorial has a nearby world-space tooltip.
 	var shaft_hint := MeshInstance3D.new()
 	shaft_hint.name = "ShaftGripPulse"
 	var shaft_hint_mesh := CylinderMesh.new()
@@ -286,17 +285,6 @@ func _build_visual() -> void:
 	shaft_hint.material_override = _shaft_hint_material
 	shaft_hint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(shaft_hint)
-	var control_hint := MeshInstance3D.new()
-	control_hint.name = "ControlGripPulse"
-	var control_hint_mesh := SphereMesh.new()
-	control_hint_mesh.radius = 0.018
-	control_hint_mesh.height = 0.036
-	control_hint.mesh = control_hint_mesh
-	control_hint.position = lantern.position + lantern.control_grip_local_position()
-	_control_hint_material = _make_hint_material()
-	control_hint.material_override = _control_hint_material
-	control_hint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_swing.add_child(control_hint)
 
 func _make_hint_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
@@ -308,11 +296,9 @@ func _make_hint_material() -> StandardMaterial3D:
 	mat.emission_energy_multiplier = 0.0
 	return mat
 
-func set_interaction_hint(shaft_strength: float, control_strength: float) -> void:
+func set_interaction_hint(shaft_strength: float, _control_strength: float) -> void:
 	if _shaft_hint_material != null:
 		_set_hint_strength(_shaft_hint_material, shaft_strength)
-	if _control_hint_material != null:
-		_set_hint_strength(_control_hint_material, control_strength)
 
 func _set_hint_strength(mat: StandardMaterial3D, strength: float) -> void:
 	var value := clampf(strength, 0.0, 1.0)
