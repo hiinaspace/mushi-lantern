@@ -204,6 +204,9 @@ func _attach_river_mesh_blockers() -> void:
 					print("RIVER_MESH_HAND_MASK path=%s meshes=%d" % [hand_path, hand_meshes])
 					if hand_meshes == 0:
 						push_warning("River mesh stencil has no hand mesh at %s" % hand_path)
+	var ukon := lab.get_node_or_null("MikoPresentation")
+	if ukon != null:
+		count += _attach_river_mesh_mask(ukon, mask)
 	print("RIVER_MESH_BLOCKERS count=%d" % count)
 
 func _attach_river_mesh_mask(node: Node, material: ShaderMaterial) -> int:

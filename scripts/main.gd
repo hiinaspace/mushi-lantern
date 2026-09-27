@@ -6,7 +6,8 @@ const GROVE_GOAL_RADIUS := 2.65
 const PVP_LEFT_GOAL := Vector2(-38.0, 6.0)
 const PVP_RIGHT_GOAL := Vector2(38.0, 6.0)
 const PVP_CENTER_SPAWNS := [Vector2(0.0, -3.0), Vector2(0.0, 0.0), Vector2(0.0, 3.0)]
-const TUTORIAL_XZ := Vector2(-8.0, -2.0)
+const TUTORIAL_XZ := Vector2(-3.0, 4.0)
+const TUTORIAL_LOOK_XZ := Vector2(14.0, -2.0)
 const PATCH_CENTERS := [Vector2(-14.4, -13.2), Vector2(14.6, -12.0), Vector2(15.4, 13.6)]
 const ARENA_LAYOUT := "wide-60m-v1"
 const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
@@ -252,6 +253,9 @@ func _ready() -> void:
 	tutorial_ui.skip_requested.connect(_skip_tutorial)
 	tutorial_ui.begin_requested.connect(tutorial_director.choose_tutorial)
 	tutorial_ui.sandbox_visibility_changed.connect(_on_tutorial_sandbox_visibility_changed)
+	var ukon_anchor := get_node_or_null("MikoPresentation") as Node3D
+	var tutorial_viewer: Camera3D = xr_player.camera if xr_player != null and xr_player.xr_active else player.camera
+	tutorial_ui.attach_ukon(ukon_anchor, tutorial_viewer)
 	if xr_player != null and xr_player.xr_active:
 		tutorial_ui.attach_xr_camera(xr_player.camera)
 		_build_xr_tutorial_chain_cue()
@@ -977,7 +981,7 @@ func _add_miko_presentation() -> void:
 
 	var presentation := Node3D.new()
 	presentation.name = "MikoPresentation"
-	var xz := Vector2(-2.5, -1.0)
+	var xz := Vector2(0.0, 2.0)
 	presentation.position = Vector3(xz.x, _ground_height(xz), xz.y)
 	# The imported VRM faces +Z. Turn Ukon toward the authored introduction.
 	var avatar := avatar_scene.instantiate() as Node3D
@@ -1205,7 +1209,8 @@ func _recenter_xr_tutorial_if_needed(delta: float) -> void:
 	if _xr_recenter_cooldown > 0.0 or (_xr_tutorial_centered and offset <= 1.0):
 		return
 	var first_center: bool = not _xr_tutorial_centered
-	xr_player.snap_head_horizontal_to(TUTORIAL_XZ, Vector3.RIGHT)
+	var intro_forward := Vector3(TUTORIAL_LOOK_XZ.x - TUTORIAL_XZ.x, 0.0, TUTORIAL_LOOK_XZ.y - TUTORIAL_XZ.y).normalized()
+	xr_player.snap_head_horizontal_to(TUTORIAL_XZ, intro_forward)
 	if first_center and staff_tool != null and not staff_tool.is_picked_up():
 		var forward: Vector3 = -xr_player.camera.global_basis.z
 		forward.y = 0.0
@@ -1996,7 +2001,7 @@ func _reset_run(record_previous: bool) -> void:
 	_xr_tutorial_centered = false
 	_xr_recenter_cooldown = 0.0
 	if authored_intro:
-		player.rotation.y = -PI * 0.5
+		player.look_at(Vector3(TUTORIAL_LOOK_XZ.x, player.position.y, TUTORIAL_LOOK_XZ.y), Vector3.UP)
 		player.camera.rotation.x = -0.025
 	if panel != null:
 		if xr_player == null or not xr_player.xr_active:
@@ -2013,7 +2018,8 @@ func _reset_run(record_previous: bool) -> void:
 			xr_staff_interaction.reset_for_run()
 			_update_broom_access()
 		_xr_recall_owner = null
-		xr_player.rotation.y = -PI * 0.5 if authored_intro else 0.0
+		var intro_direction := TUTORIAL_LOOK_XZ - TUTORIAL_XZ
+		xr_player.rotation.y = atan2(-intro_direction.x, -intro_direction.y) if authored_intro else 0.0
 		xr_player.reset_pose(player.global_position)
 		staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	else:
@@ -2023,7 +2029,8 @@ func _reset_run(record_previous: bool) -> void:
 			var guide_camera: Camera3D = xr_player.camera if xr_player != null and xr_player.xr_active else player.camera
 			var camera_origin := guide_camera.global_position
 			var camera_forward := -guide_camera.global_basis.z
-			var guide_xz := Vector2(camera_origin.x + camera_forward.x * 1.8, camera_origin.z + camera_forward.z * 1.8)
+			var camera_left := -guide_camera.global_basis.x
+			var guide_xz := Vector2(camera_origin.x + camera_forward.x * 1.65 + camera_left.x * 0.82, camera_origin.z + camera_forward.z * 1.65 + camera_left.z * 0.82)
 			var guide_position := Vector3(guide_xz.x, _ground_height(guide_xz) + 0.1, guide_xz.y)
 			tutorial_guide.reset_guide(guide_position)
 		else:

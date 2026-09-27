@@ -12,7 +12,6 @@ var _desktop_status: Label
 var _desktop_skip: Button
 var _desktop_begin: Button
 var _desktop_nearby: Label
-var _xr_cue: Label3D
 var _reward_toast: Label
 var _xr_status: Label
 var _xr_skip: Button
@@ -31,34 +30,69 @@ var _sandbox_unlocked := false
 var _tutorial_active := false
 var _last_spoken_line := ""
 var _spoken_characters := 0.0
+var _world_root: Node3D
+var _world_viewer: Camera3D
+var _world_line: Label3D
+var _world_hint: Label3D
 
 
 func _ready() -> void:
 	_build_desktop_ui()
 
 
-func attach_xr_camera(camera: XRCamera3D) -> void:
-	if camera == null or _xr_cue != null:
+func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
+	if ukon_anchor == null or viewer == null or _world_root != null:
 		return
-	var cue_root := Node3D.new()
-	cue_root.name = "TutorialCue3D"
-	camera.add_child(cue_root)
-	cue_root.position = Vector3(0.0, -0.24, -1.5)
-	_xr_cue = Label3D.new()
-	_xr_cue.name = "TutorialCueLabel"
-	_xr_cue.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	_xr_cue.pixel_size = 0.0012
-	_xr_cue.font_size = 30
-	_xr_cue.font = DIALOGUE_FONT
-	_xr_cue.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_xr_cue.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_xr_cue.modulate = Color("f0f3e9")
-	_xr_cue.outline_size = 10
-	_xr_cue.outline_modulate = Color(0.008, 0.018, 0.018, 0.94)
-	_xr_cue.no_depth_test = true
-	_xr_cue.text = ""
-	_xr_cue.visible = false
-	cue_root.add_child(_xr_cue)
+	_world_viewer = viewer
+	_world_root = Node3D.new()
+	_world_root.name = "UkonDialogue"
+	ukon_anchor.add_child(_world_root)
+	_world_root.position = Vector3(0.0, 2.34, 0.0)
+	var back := MeshInstance3D.new()
+	back.name = "DialoguePanel"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(3.65, 0.88)
+	back.mesh = quad
+	var panel := StandardMaterial3D.new()
+	panel.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	panel.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	panel.albedo_color = Color(0.025, 0.055, 0.065, 0.91)
+	panel.cull_mode = BaseMaterial3D.CULL_DISABLED
+	panel.render_priority = -20
+	back.material_override = panel
+	_world_root.add_child(back)
+	_world_line = Label3D.new()
+	_world_line.name = "UkonLine"
+	_world_line.position = Vector3(0.0, 0.105, 0.014)
+	_world_line.pixel_size = 0.0024
+	_world_line.font = DIALOGUE_FONT
+	_world_line.font_size = 70
+	_world_line.width = 1350.0
+	_world_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_world_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_world_line.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_world_line.modulate = Color("f3f4e8")
+	_world_line.outline_size = 7
+	_world_line.outline_modulate = Color(0.0, 0.0, 0.0, 0.92)
+	_world_line.no_depth_test = true
+	_world_root.add_child(_world_line)
+	_world_hint = Label3D.new()
+	_world_hint.name = "UkonHint"
+	_world_hint.position = Vector3(0.0, -0.31, 0.015)
+	_world_hint.pixel_size = 0.0022
+	_world_hint.font = DIALOGUE_FONT
+	_world_hint.font_size = 44
+	_world_hint.width = 1450.0
+	_world_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_world_hint.modulate = Color("c3dfd6")
+	_world_hint.no_depth_test = true
+	_world_root.add_child(_world_hint)
+	_world_root.visible = false
+
+
+func attach_xr_camera(camera: XRCamera3D) -> void:
+	# Dialogue is attached to Ukon in world space by attach_ukon().
+	_world_viewer = camera
 
 
 func attach_xr_menu(menu_root: Control) -> void:
@@ -75,6 +109,7 @@ func attach_xr_menu(menu_root: Control) -> void:
 	contents.add_child(title)
 	_xr_status = Label.new()
 	_xr_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_xr_status.visible = false
 	contents.add_child(_xr_status)
 	_xr_skip = Button.new()
 	_xr_skip.text = "Skip introduction"
@@ -87,6 +122,7 @@ func attach_xr_menu(menu_root: Control) -> void:
 	_xr_continue = Button.new()
 	_xr_continue.text = "Show full line"
 	_xr_continue.pressed.connect(finish_text)
+	_xr_continue.visible = false
 	contents.add_child(_xr_continue)
 	_xr_reward = Label.new()
 	_xr_reward.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -144,6 +180,11 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 	_last_tutorial_stage = director.stage
 	var completion_visible := _completion_remaining > 0.0
 	_tutorial_active = active
+	if _world_root != null:
+		_world_root.visible = active or completion_visible
+		if _world_root.visible:
+			_world_line.text = "Tutorial complete — explore!" if completion_visible else director.status_text.substr(0, int(_spoken_characters))
+			_world_hint.text = _world_prompt(director, xr_active) if active else ""
 	if _desktop_root != null:
 		_desktop_status.text = "Tutorial complete — explore!" if completion_visible else director.status_text
 		if director.stage == TutorialDirector.Stage.JAR_ORANGE or director.stage == TutorialDirector.Stage.JAR_BLUE:
@@ -155,17 +196,10 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 		_desktop_begin.visible = director.stage == TutorialDirector.Stage.WELCOME and not xr_active
 		if director.stage == TutorialDirector.Stage.WELCOME:
 			_desktop_status.text += "\nEnter: quick lesson · K: explore"
-		_desktop_root.visible = not xr_active and (active or completion_visible)
+		_desktop_root.visible = false
 		if director.stage == TutorialDirector.Stage.ADAPTATION:
 			_desktop_status.text += " · %d%%" % roundi(director.adaptation_progress * 100.0)
 		_desktop_status.visible_characters = -1 if completion_visible else int(_spoken_characters)
-	if _xr_cue != null:
-		_xr_cue.visible = xr_active and (active or completion_visible)
-		if _xr_cue.visible:
-			var status := "Tutorial complete — explore!" if completion_visible else director.status_text
-			if director.stage == TutorialDirector.Stage.ADAPTATION:
-				status += " · %d%%" % roundi(director.adaptation_progress * 100.0)
-			_xr_cue.text = status if completion_visible else "%s\nY / B opens menu" % status
 	if _xr_status != null:
 		_xr_status.text = director.status_text
 		_xr_status.visible_characters = int(_spoken_characters)
@@ -174,27 +208,38 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 		_xr_skip.visible = active
 		_xr_skip.text = "Explore myself" if director.stage == TutorialDirector.Stage.WELCOME else "Skip introduction"
 		_xr_begin.visible = director.stage == TutorialDirector.Stage.WELCOME
-		_xr_continue.visible = active and _spoken_characters < float(_last_spoken_line.length())
+		_xr_continue.visible = false
 		set_sandbox_unlocked(not director.tutorial_enabled or director.reward_is_unlocked)
 		if _xr_reward != null and _reward_remaining <= 0.0:
 			_xr_reward.text = ""
 	if _reward_toast != null:
 		_reward_toast.visible = _reward_remaining > 0.0 and not xr_active
-	if _desktop_nearby != null and active:
+	if _desktop_nearby != null:
 		_desktop_nearby.visible = false
 
 
 func update_ukon_proximity(distance: float, director: TutorialDirector, xr_active: bool = false) -> void:
 	var nearby := director.tutorial_enabled and director.stage == TutorialDirector.Stage.FREE_PLAY and distance <= 4.5
 	var line := director.ukon_nearby_line() if nearby else ""
+	if _world_root != null and not _tutorial_active and _completion_remaining <= 0.0:
+		_world_root.visible = nearby
+		if nearby:
+			_world_line.text = "Ukon: " + line
+			_world_hint.text = ""
 	if _desktop_nearby != null:
-		_desktop_nearby.text = "Ukon: " + line
-		_desktop_nearby.visible = nearby and not xr_active
-	if _xr_cue != null and xr_active and nearby:
-		_xr_cue.text = "Ukon: " + line
-		_xr_cue.visible = true
-	elif _xr_cue != null and xr_active and director.stage == TutorialDirector.Stage.FREE_PLAY and _completion_remaining <= 0.0:
-		_xr_cue.visible = false
+		_desktop_nearby.visible = false
+
+
+func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
+	if director.stage == TutorialDirector.Stage.WELCOME:
+		return "Y / B: menu · Show me / Explore myself" if xr_active else "Enter: quick lesson · K: explore"
+	if director.stage == TutorialDirector.Stage.SHUTTER:
+		return "Close the lantern shutter" if xr_active else "F / wheel / right-drag: close shutter"
+	if director.stage == TutorialDirector.Stage.ADAPTATION:
+		return "Wait for your eyes to adapt · %d%%" % roundi(director.adaptation_progress * 100.0)
+	if director.stage == TutorialDirector.Stage.JAR_BLUE or director.stage == TutorialDirector.Stage.JAR_ORANGE:
+		return "Use the lantern filters" if xr_active else "2: blue · 3: orange · or right-drag sideways"
+	return "Y / B: menu" if xr_active else "K: skip introduction"
 
 
 func finish_text() -> void:
@@ -203,6 +248,8 @@ func finish_text() -> void:
 		_desktop_status.visible_characters = -1
 	if _xr_status != null:
 		_xr_status.visible_characters = -1
+	if _world_line != null:
+		_world_line.text = _last_spoken_line
 	if _xr_continue != null:
 		_xr_continue.visible = false
 
@@ -246,19 +293,26 @@ func _close_xr_sandbox() -> void:
 
 
 func _process(delta: float) -> void:
+	if _world_root != null and is_instance_valid(_world_viewer):
+		var toward := _world_viewer.global_position - _world_root.global_position
+		toward.y = 0.0
+		if toward.length_squared() > 0.001:
+			_world_root.global_rotation.y = atan2(toward.x, toward.z)
 	if _tutorial_active and _spoken_characters < float(_last_spoken_line.length() + 80):
 		_spoken_characters += delta * 90.0
 		if _desktop_status != null:
 			_desktop_status.visible_characters = int(_spoken_characters)
 		if _xr_status != null:
 			_xr_status.visible_characters = int(_spoken_characters)
+		if _world_line != null:
+			_world_line.text = _last_spoken_line.substr(0, int(_spoken_characters))
 	if _completion_remaining > 0.0:
 		_completion_remaining = maxf(0.0, _completion_remaining - delta)
 		if _completion_remaining <= 0.0:
 			if _desktop_root != null and not _tutorial_active:
 				_desktop_root.visible = false
-			if _xr_cue != null and not _tutorial_active:
-				_xr_cue.visible = false
+			if _world_root != null and not _tutorial_active:
+				_world_root.visible = false
 	if _reward_remaining > 0.0:
 		_reward_remaining = maxf(0.0, _reward_remaining - delta)
 		if _reward_remaining <= 0.0:
@@ -271,7 +325,7 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if not _tutorial_active:
 		return
-	if _desktop_root == null or not _desktop_root.visible:
+	if _world_root == null or not _world_root.visible:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_K:
