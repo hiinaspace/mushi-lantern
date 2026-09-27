@@ -12,6 +12,10 @@ func _run() -> void:
 	var right := river.get_node("HorizonFlareRight") as MeshInstance3D
 	assert(left != null and right != null)
 	assert(left.position.x < 0.0 and right.position.x > 0.0)
+	assert(right.position.x - (right.mesh as QuadMesh).size.x * 0.5 < 2700.0,
+		"the flare overlaps the distant tube before its fade begins")
+	assert(left.position.x + (left.mesh as QuadMesh).size.x * 0.5 > -2700.0,
+		"the western flare overlaps the distant tube")
 	river.apply_tuning({"river_depth": 1.8, "horizon_flare_strength": 0.6,
 		"horizon_flare_spread": 1.4, "far_scintillation_blend": 0.7})
 	for flare in [left, right]:

@@ -58,6 +58,8 @@ func _run() -> void:
 	var sky_material := lab.night_environment.sky.sky_material as ShaderMaterial
 	# This fixture forces reveal endpoints independently of the scripted intro.
 	lab.tutorial_director.skip()
+	if lab.friend_menu != null:
+		lab.friend_menu.set_open(false)
 	lab.lantern.set_mode(LightField.Mode.CLEAR)
 	if lab.lantern.shutter_openness > 0.5:
 		lab.lantern.toggle_shutter()

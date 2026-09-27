@@ -109,19 +109,13 @@ void fragment() {
 	float dots = spark(uv1, 0.78) + 0.48 * spark(uv2, 0.88);
 	float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
 	float edge_softness = smoothstep(0.02, 0.78, facing);
-	float far_merge = smoothstep(300.0, 2200.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
-	// A trace of glints survives inside the diffuse tail, which now overlaps
-	// the distant flare plane instead of vanishing 500 m before it.
-	dots *= 1.0 - 0.94 * far_merge;
-	// End-on viewing makes facing approach zero along the river axis. Fade
-	// that silhouette suppression away as sparks resolve into distant haze.
-	float bridge = smoothstep(250.0, 1000.0, abs(river_x))
-		* (1.0 - smoothstep(2300.0, 3700.0, abs(river_x)))
-		* clamp(far_scintillation_blend, 0.0, 1.0);
-	float diffuse = shell_index == 0 ? 0.045 * pow(facing, 0.8)
-		+ 0.12 * far_merge + 0.20 * bridge : 0.0;
-	float view_softness = mix(edge_softness, 0.42, smoothstep(350.0, 1800.0, abs(river_x)));
-	float far_fade = 1.0 - smoothstep(2700.0, 3700.0, abs(river_x));
+	float far_merge = smoothstep(300.0, 1900.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
+	// Sparks fall below a pixel in the far arms. Merge their energy into one
+	// outer-shell haze instead of leaving three concentric, additive rings.
+	dots *= 1.0 - far_merge;
+	float diffuse = shell_index == 0 ? mix(0.045 * pow(facing, 0.8), 0.20, far_merge) : 0.0;
+	float view_softness = mix(edge_softness, 0.92, smoothstep(350.0, 1800.0, abs(river_x)));
+	float far_fade = 1.0 - smoothstep(3200.0, 3800.0, abs(river_x));
 	// The close light vein emerges first; its arms follow toward the horizon.
 	float distance_delay = smoothstep(16.0, 900.0, abs(river_x));
 	float reveal = smoothstep(0.30 + 0.48 * distance_delay,

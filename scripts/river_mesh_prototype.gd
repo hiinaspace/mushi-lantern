@@ -41,9 +41,9 @@ func _ready() -> void:
 		var flare := MeshInstance3D.new()
 		flare.name = "HorizonFlare%s" % ("Left" if side < 0.0 else "Right")
 		var quad := QuadMesh.new()
-		quad.size = Vector2(1800.0, 500.0)
+		quad.size = Vector2(2800.0, 500.0)
 		flare.mesh = quad
-		flare.position = Vector3(side * 3500.0, -250.0, -2.0)
+		flare.position = Vector3(side * 3200.0, -250.0, -2.0)
 		flare.rotation.y = PI * 0.5
 		flare.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		flare.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
