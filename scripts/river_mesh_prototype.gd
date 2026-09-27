@@ -4,7 +4,7 @@ extends MeshInstance3D
 ## Independent near-grove tube experiment. The live opaque receiver is left
 ## intact until this raster path proves stereo, foliage, and blocker masking.
 const SHADER: Shader = preload("res://shaders/river_mesh_prototype.gdshader")
-const CREST_HALF_M := 40.0
+const CREST_HALF_M := 28.0
 const SIDES := 24
 
 
@@ -86,7 +86,7 @@ func _build_mesh() -> ArrayMesh:
 		for side in SIDES + 1:
 			var theta := TAU * float(side) / float(SIDES)
 			var radial := Vector3(0.0, 0.0, cos(theta)) + cross_up * sin(theta)
-			vertices.append(center + radial * 2.72)
+			vertices.append(center + radial * 3.9)
 			normals.append(radial)
 			uv.append(Vector2(arc_length, float(side) / float(SIDES)))
 			uv2.append(Vector2(x, theta))
@@ -112,10 +112,10 @@ func _build_mesh() -> ArrayMesh:
 
 static func _center_y(x: float) -> float:
 	var shoulder := maxf(1.0 - (x / CREST_HALF_M) ** 2.0, 0.0)
-	return -30.0 + 25.0 * shoulder ** 3.0
+	return -30.0 + 14.0 * shoulder ** 3.0
 
 
 static func _center_slope(x: float) -> float:
 	var unit := x / CREST_HALF_M
 	var shoulder := maxf(1.0 - unit * unit, 0.0)
-	return -3.75 * unit * shoulder * shoulder
+	return -3.0 * unit * shoulder * shoulder

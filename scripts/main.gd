@@ -191,7 +191,7 @@ var _visual_sliders: Dictionary = {}
 var _visual_tuning_defaults: Dictionary = {}
 var _visual_tuning := {
 	"dark_seconds": 6.0, "light_seconds": 1.5,
-	"stream_start": 0.18, "stream_end": 0.68, "stream_seconds": 1.2,
+	"stream_start": 0.48, "stream_end": 0.90, "stream_seconds": 0.9,
 	"star_start": 0.14, "star_end": 0.89, "milky_start": 0.64, "milky_end": 0.96,
 	"foliage_start": 0.90, "foliage_end": 0.99,
 	"clear_start": 0.10, "clear_end": 0.65, "clear_distance_start": 17.0, "clear_distance_end": 52.0,
@@ -381,7 +381,7 @@ func _process(delta: float) -> void:
 		mode_times[int(lantern.mode)] += delta
 		_recenter_xr_tutorial_if_needed(delta)
 		if tutorial_director != null and tutorial_director.stage == TutorialDirector.Stage.ADAPTATION:
-			# The five-second guided reveal owns both shutter and adaptation so
+			# The eight-second guided reveal owns both shutter and adaptation so
 			# other controls cannot interrupt the first sky/ground composition.
 			lantern.set_shutter(0.0)
 		elif environment_enabled:
@@ -389,8 +389,9 @@ func _process(delta: float) -> void:
 				lantern.advance_adaptation(delta, _viewer_lantern_exposure())
 			else:
 				lantern.advance_adaptation_to(delta, _viewer_multiplayer_adaptation_target())
+		var was_guided_adaptation := tutorial_director.stage == TutorialDirector.Stage.ADAPTATION
 		tutorial_director.advance(delta, int(lantern.mode), lantern.shutter_openness, lantern.night_vision)
-		if tutorial_director.stage == TutorialDirector.Stage.ADAPTATION:
+		if was_guided_adaptation:
 			lantern.reset_adaptation(tutorial_director.adaptation_progress)
 	if spectator_camera != null and spectator_camera.active and _spectator_adaptation >= 0.0:
 		lantern.reset_adaptation(_spectator_adaptation)
@@ -1447,9 +1448,9 @@ func _build_ui() -> void:
 	_add_visual_group_label(stack, "Eye adaptation · stream")
 	_add_visual_slider(stack, "Dark adaptation (s)", 1.0, 18.0, 6.0, 0.1, &"dark_seconds")
 	_add_visual_slider(stack, "Light adaptation (s)", 0.25, 8.0, 1.5, 0.05, &"light_seconds")
-	_add_visual_slider(stack, "Stream starts at NV", 0.0, 0.8, 0.18, 0.01, &"stream_start")
-	_add_visual_slider(stack, "Stream full at NV", 0.2, 1.0, 0.68, 0.01, &"stream_end")
-	_add_visual_slider(stack, "Stream fade-in (s)", 0.1, 6.0, 1.2, 0.1, &"stream_seconds")
+	_add_visual_slider(stack, "Stream starts at NV", 0.0, 0.8, 0.48, 0.01, &"stream_start")
+	_add_visual_slider(stack, "Stream full at NV", 0.2, 1.0, 0.90, 0.01, &"stream_end")
+	_add_visual_slider(stack, "Stream fade-in (s)", 0.1, 6.0, 0.9, 0.1, &"stream_seconds")
 	_add_visual_group_label(stack, "Sky · foliage · lantern")
 	_add_visual_slider(stack, "Star detail starts", 0.0, 0.8, 0.14, 0.01, &"star_start")
 	_add_visual_slider(stack, "Star detail completes", 0.2, 1.0, 0.89, 0.01, &"star_end")

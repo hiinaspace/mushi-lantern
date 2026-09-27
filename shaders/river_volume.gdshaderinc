@@ -29,27 +29,28 @@ float river_spark(vec2 uv, float threshold, vec2 dx, vec2 dy) {
 }
 
 float river_center_y(vec2 offset) {
-	float unit = offset.x / 40.0;
+	float unit = offset.x / 28.0;
 	float shoulder = max(1.0 - unit * unit, 0.0);
-	return river_plane_y + 25.0 * shoulder * shoulder * shoulder;
+	return river_plane_y + 14.0 * shoulder * shoulder * shoulder;
 }
 
 float river_center_slope(float x) {
-	float unit = x / 40.0;
+	float unit = x / 28.0;
 	float shoulder = max(1.0 - unit * unit, 0.0);
-	return -3.75 * unit * shoulder * shoulder;
+	return -3.0 * unit * shoulder * shoulder;
 }
 
 float river_center_curvature(float x) {
-	float unit = x / 40.0;
+	float unit = x / 28.0;
 	float shoulder = max(1.0 - unit * unit, 0.0);
-	return -0.09375 * (shoulder * shoulder - 4.0 * unit * unit * shoulder);
+	return -0.10714286 * (shoulder * shoulder - 4.0 * unit * unit * shoulder);
 }
 
 float river_radius(float x) {
 	// Slow traveling lobes and waists change the silhouette independently of
 	// the much faster motes. All chords sample this same continuous function.
-	return 2.72 + 0.55 * sin(x * 0.14 - TIME * 0.36)
+	float crest = 1.0 - smoothstep(5.0, 34.0, abs(x));
+	return 3.9 - 1.5 * crest + 0.55 * sin(x * 0.14 - TIME * 0.36)
 		+ 0.22 * sin(x * 0.33 + TIME * 0.20);
 }
 
@@ -172,7 +173,7 @@ float river_angle_at(vec3 surface, float q) {
 float river_goal_beam(vec3 eye, vec3 ray, float receiver_t) {
     float beam = 0.0;
     float top_t = (0.0 - eye.y) / ray.y;
-    float bottom_t = (river_plane_y + 24.0 - eye.y) / ray.y;
+	float bottom_t = (river_plane_y + 13.0 - eye.y) / ray.y;
     float start_t = max(receiver_t + 0.02, top_t);
     if (bottom_t > start_t) {
         vec2 center = river_goal_xz + vec2(0.0, -1.0);
@@ -181,7 +182,7 @@ float river_goal_beam(vec3 eye, vec3 ray, float receiver_t) {
         if (speed > 0.00001) { closest_t = dot(center - eye.xz, ray.xz) / speed; }
         float beam_t = clamp(closest_t, start_t, bottom_t);
         float beam_y = eye.y + ray.y * beam_t;
-        float down = clamp(-beam_y / 6.0, 0.0, 1.0);
+		float down = clamp(-beam_y / 17.0, 0.0, 1.0);
         float width = mix(2.15, 4.25, down);
         float distance_m = length(eye.xz + ray.xz * beam_t - center);
         float softness = 1.0 - smoothstep(0.0, width, distance_m);
@@ -196,10 +197,11 @@ float river_goal_beam(vec3 eye, vec3 ray, float receiver_t) {
 
 vec4 river_evaluate(vec3 eye, vec3 ray, float receiver_t) {
     float vision = smoothstep(0.56, 0.94, river_night_vision);
-    if (vision < 0.001 || ray.y >= -0.0005) { return vec4(0.0); }
+    float beam_vision = smoothstep(0.08, 0.52, river_night_vision);
+    if (beam_vision < 0.001 || ray.y >= -0.0005) { return vec4(0.0); }
     if (river_tube_enabled < 0.5) {
         float beam_only = river_goal_beam(eye, ray, receiver_t);
-        return vec4(vec3(0.949, 0.800, 0.196) * vision * 0.44 * beam_only,
+        return vec4(vec3(0.949, 0.800, 0.196) * beam_vision * 0.44 * beam_only,
             beam_only);
     }
     float best_t = 4000.0;
@@ -335,6 +337,6 @@ vec4 river_evaluate(vec3 eye, vec3 ray, float receiver_t) {
     }
     float beam = river_goal_beam(eye, ray, receiver_t);
     vec3 gold = vec3(0.949, 0.800, 0.196);
-    vec3 glow = gold * vision * (0.075 * shell + 1.45 * stars + 0.44 * beam);
+    vec3 glow = gold * (vision * (0.075 * shell + 1.45 * stars) + beam_vision * 0.44 * beam);
     return vec4(glow, max(shell, beam));
 }
