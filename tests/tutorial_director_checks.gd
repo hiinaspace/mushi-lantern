@@ -67,7 +67,7 @@ func _run() -> void:
 	_check(director.reward_is_unlocked and reward_count == 1, "existing sandbox milestone still unlocks at 60 percent", failures)
 	director.observe_score(80)
 	_check(director.near_complete_milestone_reached and near_complete_count == 1 and director.ukon_nearby_line().contains("optional"), "80 percent frames completion as optional", failures)
-	_check(director.ukon_nearby_line().contains("Session"), "80 percent points to saved completion times", failures)
+	_check(director.ukon_nearby_line().contains("Play"), "80 percent points to saved completion times", failures)
 	director.observe_score(95)
 	_check(director.ukon_nearby_line().contains("Nearly everyone"), "95 percent gives a near-complete message", failures)
 	director.observe_score(100)

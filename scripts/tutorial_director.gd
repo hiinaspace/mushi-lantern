@@ -200,29 +200,29 @@ func ukon_nearby_line(tip_index: int = 0) -> String:
 		return ""
 	var tip := posmod(tip_index, 3)
 	if progress_ratio >= 1.0:
-		return "Every mushi found its way home. What a wonderful migration! Your completion time is in the Session menu."
+		return "Every mushi found its way home. What a wonderful migration! Your completion time is in the Play menu."
 	if progress_ratio >= 0.95:
-		return "Nearly everyone is home. The last few are optional; your completion time is in the Session menu."
+		return "Nearly everyone is home. The last few are optional; your completion time is in the Play menu."
 	if progress_ratio >= 0.80:
-		return "Most mushi have found their way back. Finding all is optional; your time is saved in Session."
+		return "Most mushi have found their way back. Finding all is optional; your time is saved in Play."
 	if progress_ratio >= 0.50:
 		var mid_tips := [
 			"Half the grove has come home. Blue gathers them; red can nudge them toward a shrine.",
 			"Wonderful progress. A broad lantern sweep can find strays along the light vein.",
-			"So many have returned! The Session menu keeps your completion times if you want to compare later."
+			"So many have returned. You can keep wandering, or rest here a while."
 		]
 		return mid_tips[tip]
 	if progress_ratio >= 0.25:
 		var early_tips := [
 			"Good work bringing them home. Blue draws mushi close; red can guide them toward a shrine.",
-			"Every return brightens the light vein. Try sweeping the lantern slowly across the grove.",
+			"The light vein is still flowing beneath us. A slow lantern sweep can help you spot strays.",
 			"The light vein bends beneath the earth. A few returns at a time is plenty."
 		]
 		return early_tips[tip]
 	var opening_tips := [
 		"Take your time; the mushi won't hurt you. Blue draws them close, and red can guide them home.",
 		"A slow lantern sweep can reveal strays. The light vein is patient; there is no rush.",
-		"The mushi wander where the buried light grows thin. Help a few find the shrine when you like."
+		"Some mushi have strayed among the trees. Help a few find either shrine when you like."
 	]
 	return opening_tips[tip]
 
@@ -269,27 +269,27 @@ func _set_adaptation_progress(value: float, force_signal: bool = false) -> void:
 func _update_status() -> void:
 	match stage:
 		Stage.WELCOME:
-			status_text = "Thanks for helping at the grove. Would you like a quick lesson, or explore on your own?"
+			status_text = "Welcome to the grove. Shall I show you the lantern, or would you like to explore?"
 		Stage.SHUTTER:
-			status_text = "First, hold the control rope and pull down to close the shutter. Let your eyes settle into the dark."
+			status_text = "First, pull the control rope down to close the shutter. Give your eyes a moment to settle into the dark."
 		Stage.ADAPTATION:
 			if _adaptation_page == 0:
-				status_text = "This is a mushi. They barely touch our world, and travel in great migrations."
+				status_text = "This little light is a mushi. They belong to a hidden world of living things."
 			elif _adaptation_page == 1:
-				status_text = "This grove lies over a 光脈筋 (koumyakusuji), a light vein. Its pull leaves some mushi adrift."
+				status_text = "A light vein runs beneath this grove: 光脈筋 (koumyakusuji). Some mushi stray from it and are left adrift."
 			else:
-				status_text = "The light vein shows through the ground, but the earth is solid. We guide the lost mushi back with lantern and shrine."
+				status_text = "You can see it through the earth, but the ground is solid. We'll guide the strays back through the shrine."
 		Stage.REVEAL_WAIT:
-			status_text = "There is the light vein. Take a moment to look; open the shutter when ready. There are no jumpscares or dangerous creatures here."
+			status_text = "Take a moment to watch, then open the shutter when ready. You're safe here: no jumpscares, and nothing will hurt you."
 		Stage.JAR_NEUTRAL:
-			status_text = "Watch this mushi wander first. Its green glow means it is awake and drifting."
+			status_text = "Watch the mushi in the glass. While it's green, it wanders on its own."
 		Stage.JAR_BLUE:
 			status_text = "Shine blue light into the glass. Blue quiets its energy and draws it close."
 		Stage.JAR_ORANGE:
-			status_text = "Now shine red light. It stirs the mushi's energy and nudges it away. I'll lift the glass; guide it toward the shrine."
+			status_text = "Now try red light. It wakes the mushi and nudges it away. I'll lift the glass so it can reach the shrine."
 		Stage.GUIDE:
 			status_text = "There it goes. The shrine leads it back into the light vein."
 		Stage.GROUPS:
-			status_text = "Groups gather with blue light and stretch away from red light. Try guiding a few home."
+			status_text = "Blue gathers a group; red sends it drifting away. Guide a few toward either shrine. There is no rush."
 		Stage.FREE_PLAY:
 			status_text = "Free play · %d%% returned" % roundi(progress_ratio * 100.0)
