@@ -26,7 +26,7 @@ func _ready() -> void:
 	camera = get_node("Camera") as Camera3D
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	floor_snap_length = 0.5
-	floor_max_angle = deg_to_rad(42.0)
+	floor_max_angle = deg_to_rad(50.0)
 	reset_look()
 
 func _physics_process(delta: float) -> void:

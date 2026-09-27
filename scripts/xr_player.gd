@@ -101,6 +101,9 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	if xr_active:
 		print("MUSHI_XR_ACTIVE: OpenXR player rig initialized")
+	# Match desktop's slightly more permissive grade limit so the rear ramps
+	# remain walkable while the sharp terrace lips stay too steep to climb.
+	_body.default_physics.move_max_slope = 50.0
 	# PlayerBody snapshots the movement-provider group in its own _ready().
 	# The broom provider is added dynamically, after that snapshot is taken.
 	if not _body._movement_providers.has(_broom_provider):
