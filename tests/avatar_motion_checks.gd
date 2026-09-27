@@ -29,7 +29,8 @@ func _initialize() -> void:
 	assert(avatar.skeleton.get_bone_pose_position(avatar.skeleton.find_bone("RightHand")).is_equal_approx(
 		avatar.skeleton.get_bone_rest(avatar.skeleton.find_bone("RightHand")).origin))
 	avatar.set_player_eye_height(1.6)
-	assert(absf(avatar.model_scale - 1.0) < 0.001)
+	assert(absf(avatar.eye_height - MushiMultiplayerAvatar.XR_EYE_HEIGHT) < 0.001)
+	assert(absf(avatar.model_scale * avatar.get_authored_eye_height() - avatar.eye_height) < 0.001)
 	var view := Transform3D(Basis.IDENTITY, Vector3(0, 1.6, 0))
 	var body := Transform3D.IDENTITY
 	avatar.apply_pose(body, view, Transform3D.IDENTITY, Transform3D.IDENTITY, 0, Vector3.ZERO, 0.016)
@@ -81,7 +82,7 @@ func _initialize() -> void:
 	floor.position.y = -0.1
 	floor.add_child(shape)
 	get_root().add_child(floor)
-	avatar.apply_pose(body, Transform3D(Basis.IDENTITY, Vector3(0.2, avatar.get_authored_eye_height(), 0)),
+	avatar.apply_pose(body, Transform3D(Basis.IDENTITY, Vector3(0.2, avatar.eye_height, 0)),
 		Transform3D.IDENTITY, Transform3D.IDENTITY, 0, Vector3.ZERO, 0.016)
 	for frame in range(5):
 		await physics_frame

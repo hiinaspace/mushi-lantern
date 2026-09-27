@@ -13,6 +13,9 @@ const PLACEMENT = preload("res://addons/renik/renik_placement.gd")
 const LEG_ANIMATION_SOURCE := "res://assets/animations/explosive_rpg_unarmed.glb"
 const VIEW_OFFSET := Vector3(0.0, 0.023, -0.015)
 const XR_EYE_HEIGHT := 1.65
+# Without pelvis tracking, keep the inferred body just behind the eyes. The
+# VRM rest pose leans back, putting its hips ahead of its head.
+const XR_HIP_BEHIND_EYES := 0.06
 
 var body: Node3D
 var skeleton: Skeleton3D
@@ -331,9 +334,16 @@ func _apply_display_pose(body_pose: Transform3D, view: Transform3D, left: Transf
 		if facing.length_squared() < 0.001:
 			facing = -global_basis.z
 		var hip_basis := Basis.looking_at(facing.normalized()) * Basis(Vector3.UP, PI)
+		var hip_position := view_position - facing.normalized() * XR_HIP_BEHIND_EYES
+		var spine_offset := (hip_rest.origin - head_rest.origin) * model_scale
+		var horizontal_offset := Vector2(hip_position.x - head_target.global_position.x,
+			hip_position.z - head_target.global_position.z).length_squared()
+		# Preserve the authored head-to-hips distance while allowing a slight
+		# forward torso lean, keeping the spine within reach of both targets.
+		hip_position.y = head_target.global_position.y - sqrt(maxf(0.0,
+			spine_offset.length_squared() - horizontal_offset))
 		var hip_target: Node3D = skeleton.get_node("HipsTarget")
-		hip_target.global_transform = Transform3D(hip_basis,
-			head_target.global_position + hip_basis * ((hip_rest.origin - head_rest.origin) * model_scale))
+		hip_target.global_transform = Transform3D(hip_basis, hip_position)
 	for i in range(2):
 		var is_tracked := (tracked_hands & (1 << i)) != 0
 		_set_arm_pose_length("Left" if i == 0 else "Right", arm_reach_scale if is_tracked else 1.0)
