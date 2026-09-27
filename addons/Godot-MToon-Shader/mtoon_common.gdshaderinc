@@ -81,6 +81,8 @@ uniform float _DebugMode : hint_range(0,3,1) = 0.0;
 uniform float _MToonVersion = 33;
 
 // Miko avatar preview controls. Defaults keep every imported VRM unchanged.
+// Only the local first-person material enables this small eye-clearance zone.
+uniform float _MikoFirstPersonClip = 0.0;
 uniform float _MikoHueShift : hint_range(0.0, 1.0) = 0.0;
 uniform float _MikoEyeGlow : hint_range(0.0, 24.0) = 0.0;
 uniform float _MikoVoiceGlow : hint_range(0.0, 8.0) = 0.0;
@@ -235,6 +237,7 @@ varying vec2 mainUv;
 varying vec3 viewNormal;
 
 void fragment() {
+	if (_MikoFirstPersonClip > 0.0 && length(VERTEX) < _MikoFirstPersonClip) { discard; }
 	bool _NORMALMAP = textureSize(_BumpMap, 0).x > 8;
 	bool MTOON_OUTLINE_COLOR_FIXED = _OutlineColorMode == 0.0;
 	bool MTOON_OUTLINE_COLOR_MIXED = _OutlineColorMode == 1.0;

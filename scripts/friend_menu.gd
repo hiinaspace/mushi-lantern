@@ -12,6 +12,7 @@ signal tuning_requested
 signal quit_requested
 signal menu_visibility_changed(open: bool)
 signal avatar_fit_changed(standing_height: float, arm_reach: float)
+signal avatar_calibrate_requested
 signal voice_mute_changed(muted: bool)
 signal voice_input_device_changed(device: String)
 signal voice_gain_changed(gain_db: float)
@@ -88,8 +89,8 @@ var _mode_selectors: Array[OptionButton] = []
 var _selected_mode := "classic"
 var _elapsed_labels: Array[Label] = []
 var _comfort := {"snap_turn": false, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
-var _comfort_turns: Array[OptionButton] = []
-var _comfort_hands: Array[OptionButton] = []
+var _comfort_turns: Array[Button] = []
+var _comfort_hands: Array[Button] = []
 var _comfort_vignettes: Array[HSlider] = []
 var _comfort_vignette_labels: Array[Label] = []
 var _comfort_haptics: Array[CheckButton] = []
@@ -98,7 +99,10 @@ var _desktop_comfort: VBoxContainer
 
 func _ready() -> void:
 	_font_theme = Theme.new()
-	_font_theme.default_font = load("res://assets/fonts/KleeOne-SemiBold.ttf") as Font
+	var menu_font := (load("res://assets/fonts/KleeOne-SemiBold.ttf") as FontFile).duplicate() as FontFile
+	# Control scale does not increase dynamic-font raster resolution.
+	menu_font.oversampling = 2.0
+	_font_theme.default_font = menu_font
 	_build_desktop_menu()
 	_desktop_root.theme = _font_theme
 	_desktop_root.visible = _desktop_visible
@@ -134,7 +138,8 @@ func update_session(status: String, tutorial_active: bool, tuning_unlocked: bool
 	if _desktop_status != null:
 		_desktop_status.text = status
 		_desktop_skip.visible = tutorial_active
-		_desktop_tuning.visible = tuning_unlocked
+		if _desktop_tuning != null:
+			_desktop_tuning.visible = tuning_unlocked
 	if _xr_status != null:
 		_xr_status.text = "Paused · " + status
 	if _xr_skip != null:
@@ -306,9 +311,9 @@ func set_comfort_values(settings: Dictionary) -> void:
 	_comfort["vignette_strength"] = clampf(float(settings.get("vignette_strength", _comfort["vignette_strength"])), 0.0, 1.0)
 	_comfort["haptics"] = bool(settings.get("haptics", _comfort["haptics"]))
 	for selector in _comfort_turns:
-		selector.select(1 if _comfort["snap_turn"] else 0)
+		selector.set_pressed_no_signal(bool(selector.get_meta("value")) == _comfort["snap_turn"])
 	for selector in _comfort_hands:
-		selector.select(1 if _comfort["move_hand"] == "right" else 0)
+		selector.set_pressed_no_signal(selector.get_meta("value") == _comfort["move_hand"])
 	for slider in _comfort_vignettes:
 		slider.set_value_no_signal(_comfort["vignette_strength"])
 	for label in _comfort_vignette_labels:
@@ -379,6 +384,12 @@ func _wrap_xr_audio_section(contents: VBoxContainer) -> void:
 func _build_xr_session(contents: VBoxContainer) -> void:
 	contents.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var intro_nodes := contents.get_children()
+	# Existing tuning controllers retain references for F1; keep their nodes
+	# outside the player menu beneath a permanently hidden parent.
+	var hidden_tuning := Control.new()
+	hidden_tuning.name = "HiddenTuningControls"
+	hidden_tuning.visible = false
+	contents.add_child(hidden_tuning)
 	_xr_tabs = TabContainer.new()
 	_xr_tabs.name = "FriendTabs"
 	_xr_tabs.custom_minimum_size.y = 455.0
@@ -399,11 +410,13 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	_xr_settings = _create_xr_tab("Graphics", settings_tabs)
 	var mix := _create_xr_tab("Audio", settings_tabs)
 	_xr_voice = _create_xr_tab("Voice", settings_tabs)
-	var mushi := _create_xr_tab("Advanced", settings_tabs)
 	for child in intro_nodes:
 		var is_tuning := child.name == "TuningSandboxScroll" or (child is Button and "tuning sandbox" in (child as Button).text.to_lower())
 		var is_skip := child is Button and "skip introduction" in (child as Button).text.to_lower()
-		child.reparent(mushi if is_tuning else session if is_skip else intro)
+		if is_tuning:
+			child.reparent(hidden_tuning)
+			continue
+		child.reparent(session if is_skip else intro)
 		if is_skip:
 			_xr_skip = child as Button
 	var title := Label.new()
@@ -422,6 +435,12 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	session.add_child(xr_elapsed)
 	_elapsed_labels.append(xr_elapsed)
 	session.add_child(HSeparator.new())
+	if _xr_skip == null:
+		_xr_skip = _add_xr_button(session, "Skip introduction · begin exploring", func() -> void: skip_requested.emit())
+		_xr_skip.visible = false
+	else:
+		_xr_skip.text = "Skip introduction · begin exploring"
+		session.move_child(_xr_skip, session.get_child_count() - 1)
 	var start := _add_xr_button(session, "Start / restart", _on_new_game)
 	start.name = "XRStartButton"
 	_xr_start = start
@@ -447,7 +466,10 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 			var bus_row := child is HBoxContainer and bus_rows < 5
 			if bus_row:
 				bus_rows += 1
-			child.reparent(mix if bus_rows < 5 or bus_row else mushi)
+			if bus_rows < 5 or bus_row:
+				child.reparent(mix)
+			else:
+				child.reparent(hidden_tuning)
 		_xr_audio.queue_free()
 		_xr_audio = null
 	_add_voice_settings(_xr_voice, true)
@@ -624,7 +646,6 @@ func _build_desktop_menu() -> void:
 	var settings := _create_desktop_tab("General", settings_tabs)
 	var comfort := _create_desktop_tab("VR & avatar", settings_tabs)
 	var voice := _create_desktop_tab("Voice", settings_tabs)
-	var advanced := _create_desktop_tab("Advanced", settings_tabs)
 	_desktop_status = Label.new()
 	_desktop_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_desktop_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -653,8 +674,6 @@ func _build_desktop_menu() -> void:
 	controls.text = "Move: WASD · Look: mouse · Aim lamp: hold left mouse\nHold right mouse: drag down/up for shutter, sideways for filter\nDrop / pick up staff: G · Recall: hold E"
 	controls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	guide.add_child(controls)
-	_desktop_tuning = _add_desktop_button(advanced, "Open tuning sandbox", func() -> void: tuning_requested.emit())
-	_desktop_tuning.visible = false
 	_add_comfort_controls(comfort)
 	_add_desktop_button(settings, "Visual quality", _on_settings)
 	_add_desktop_button(settings, "Audio mix", func() -> void: audio_settings_requested.emit())
@@ -686,6 +705,14 @@ func _build_desktop_menu() -> void:
 	close_hint.add_theme_color_override("font_color", Color("8b9b98"))
 	stack.add_child(close_hint)
 	_restart_confirm = ConfirmationDialog.new()
+	_restart_confirm.theme = _font_theme
+	_restart_confirm.unresizable = true
+	_restart_confirm.add_theme_font_size_override("font_size", 20)
+	var dialog_style := StyleBoxFlat.new()
+	dialog_style.bg_color = Color("101d24")
+	dialog_style.set_corner_radius_all(12)
+	dialog_style.set_content_margin_all(20.0)
+	_restart_confirm.add_theme_stylebox_override("panel", dialog_style)
 	_restart_confirm.title = "Start / restart game?"
 	_restart_confirm.dialog_text = "Reset the mushi and score?"
 	_restart_confirm.confirmed.connect(func() -> void:
@@ -793,18 +820,8 @@ func _add_comfort_controls(parent: VBoxContainer) -> void:
 	explanation.text = "VR comfort · one-controller move/turn fallback is automatic."
 	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	parent.add_child(explanation)
-	var turn := OptionButton.new()
-	turn.add_item("Smooth turn", 0)
-	turn.add_item("Snap turn", 1)
-	turn.item_selected.connect(func(index: int) -> void: _set_comfort_value("snap_turn", index == 1))
-	parent.add_child(turn)
-	_comfort_turns.append(turn)
-	var hand := OptionButton.new()
-	hand.add_item("Move: left hand · Turn: right hand", 0)
-	hand.add_item("Move: right hand · Turn: left hand", 1)
-	hand.item_selected.connect(func(index: int) -> void: _set_comfort_value("move_hand", "right" if index == 1 else "left"))
-	parent.add_child(hand)
-	_comfort_hands.append(hand)
+	_add_comfort_choices(parent, "Turning", "snap_turn", ["Smooth", "Snap"], [false, true], _comfort_turns)
+	_add_comfort_choices(parent, "Movement hand", "move_hand", ["Left", "Right"], ["left", "right"], _comfort_hands)
 	var vignette_row := HBoxContainer.new()
 	parent.add_child(vignette_row)
 	var vignette_title := Label.new()
@@ -829,6 +846,28 @@ func _add_comfort_controls(parent: VBoxContainer) -> void:
 	parent.add_child(haptics)
 	_comfort_haptics.append(haptics)
 	set_comfort_values(_comfort)
+
+
+func _add_comfort_choices(parent: VBoxContainer, title: String, key: String,
+		labels: Array, values: Array, controls: Array[Button]) -> void:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var label := Label.new()
+	label.text = title
+	label.custom_minimum_size.x = 160.0
+	row.add_child(label)
+	var group := ButtonGroup.new()
+	for i in labels.size():
+		var button := Button.new()
+		button.text = labels[i]
+		button.toggle_mode = true
+		button.button_group = group
+		button.custom_minimum_size = Vector2(120, 44)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.set_meta("value", values[i])
+		button.pressed.connect(_set_comfort_value.bind(key, values[i]))
+		row.add_child(button)
+		controls.append(button)
 
 
 func _add_desktop_button(parent: VBoxContainer, text: String, callback: Callable) -> Button:
@@ -910,7 +949,7 @@ func _on_settings() -> void:
 
 func _add_avatar_fit_sliders(parent: VBoxContainer) -> void:
 	_add_avatar_fit_slider(parent, "XR standing eye height (m)", "height", 1.1, 2.1, _avatar_fit_height)
-	_add_avatar_fit_slider(parent, "Arm reach", "reach", 0.9, 1.5, _avatar_fit_reach)
+	_add_desktop_button(parent, "Use current headset height as standing", func() -> void: avatar_calibrate_requested.emit())
 
 
 func _add_avatar_fit_slider(parent: VBoxContainer, title: String, key: String,

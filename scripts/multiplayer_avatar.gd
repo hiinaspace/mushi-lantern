@@ -236,7 +236,14 @@ func set_local_first_person(enabled: bool) -> void:
 		# Keep the basis invertible for VRM spring bones attached to the head.
 		skeleton.set_bone_pose_scale(head_bone, Vector3.ONE * (0.01 if enabled else 1.0))
 	for mesh in body.find_children("*", "MeshInstance3D", true, false):
-		(mesh as MeshInstance3D).visible = true
+		var instance := mesh as MeshInstance3D
+		instance.visible = true
+		for surface in instance.get_surface_override_material_count():
+			var material := instance.get_active_material(surface)
+			while material != null:
+				if material is ShaderMaterial:
+					(material as ShaderMaterial).set_shader_parameter("_MikoFirstPersonClip", 0.18 if enabled else 0.0)
+				material = material.next_pass
 
 
 func apply_pose(body_pose: Transform3D, view: Transform3D, left: Transform3D,
@@ -302,7 +309,9 @@ func _apply_display_pose(body_pose: Transform3D, view: Transform3D, left: Transf
 		return
 	# RenIK's hip placement is useful for tracked XR poses, but its idle
 	# desktop target can turn the whole pelvis sideways as foot planting fades in.
-	placement.enable_hip_placement = (tracked_hands & 4) != 0
+	# Use the calibrated rest spine length. RenIK's generic crouch ratio
+	# lowers this VRM's pelvis even at its exact standing eye height.
+	placement.enable_hip_placement = false
 	var view_position := view.origin
 	if _ready_pose and view_position.distance_to(_last_head) > 2.0:
 		_ready_pose = false
@@ -314,6 +323,17 @@ func _apply_display_pose(body_pose: Transform3D, view: Transform3D, left: Transf
 	var head_basis := view.basis.orthonormalized() * Basis(Vector3.UP, PI)
 	head_target.global_transform = Transform3D(head_basis.scaled(Vector3.ONE * model_scale),
 		view_position - head_basis * (VIEW_OFFSET * model_scale))
+	if (tracked_hands & 4) != 0:
+		var head_rest := skeleton.get_bone_global_rest(skeleton.find_bone("Head"))
+		var hip_rest := skeleton.get_bone_global_rest(skeleton.find_bone("Hips"))
+		var facing := -view.basis.z
+		facing.y = 0.0
+		if facing.length_squared() < 0.001:
+			facing = -global_basis.z
+		var hip_basis := Basis.looking_at(facing.normalized()) * Basis(Vector3.UP, PI)
+		var hip_target: Node3D = skeleton.get_node("HipsTarget")
+		hip_target.global_transform = Transform3D(hip_basis,
+			head_target.global_position + hip_basis * ((hip_rest.origin - head_rest.origin) * model_scale))
 	for i in range(2):
 		var is_tracked := (tracked_hands & (1 << i)) != 0
 		_set_arm_pose_length("Left" if i == 0 else "Right", arm_reach_scale if is_tracked else 1.0)
