@@ -18,6 +18,18 @@ func _run() -> void:
 	assert(tabs != null and tabs.get_tab_count() == 4)
 	assert(tabs.get_tab_title(0) == "Play")
 	assert(tabs.get_tab_title(1) == "Multiplayer")
+	var room := tabs.get_node("Multiplayer") as ScrollContainer
+	var room_page := room.get_node("Multiplayer") as VBoxContainer
+	assert((room_page.get_child(0) as Label).text.contains("EXPERIMENTAL"))
+	assert((room_page.get_child(1) as Label).text.contains("up to 8 players"))
+	assert(friend._xr_mode_buttons.size() == 2 and friend._xr_mode_buttons[0].button_pressed)
+	assert(friend._xr_mode_buttons[0].get_parent() == friend._xr_mode_buttons[1].get_parent())
+	friend._xr_mode_buttons[1].pressed.emit()
+	assert(friend._selected_mode == "two_shrines" and friend._xr_mode_buttons[1].button_pressed
+		and friend._mode_selectors[0].selected == 1, "XR mode buttons select and sync the hosting mode")
+	friend._mode_selectors[0].item_selected.emit(0)
+	assert(friend._selected_mode == "classic" and friend._xr_mode_buttons[0].button_pressed,
+		"desktop mode selection updates the XR buttons")
 	assert(tabs.get_tab_title(2) == "Settings")
 	assert(tabs.get_tab_title(3) == "Controls")
 	var settings := tabs.find_child("SettingsTabs", true, false) as TabContainer

@@ -86,6 +86,8 @@ var _room_host_buttons: Array[Button] = []
 var _room_join_buttons: Array[Button] = []
 var _room_leave_buttons: Array[Button] = []
 var _mode_selectors: Array[OptionButton] = []
+var _xr_mode_buttons: Array[Button] = []
+var _xr_mode_row: HBoxContainer
 var _selected_mode := "classic"
 var _elapsed_labels: Array[Label] = []
 var _comfort := {"snap_turn": false, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
@@ -187,6 +189,8 @@ func set_shared_role(role: String) -> void:
 		_xr_start.disabled = role == "client"
 	for selector in _mode_selectors:
 		selector.get_parent().visible = role != "client"
+	if _xr_mode_row != null:
+		_xr_mode_row.visible = role != "client"
 	_refresh_room_ui()
 
 
@@ -525,16 +529,16 @@ func _create_xr_tab(title: String, tabs: TabContainer = null) -> VBoxContainer:
 
 func _build_xr_room(room: VBoxContainer) -> void:
 	var heading := Label.new()
-	heading.text = "PLAY WITH A FRIEND"
+	heading.text = "MULTIPLAYER · EXPERIMENTAL"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 25)
 	room.add_child(heading)
 	var info := Label.new()
-	info.text = "Choose a code and host a game for two, or enter your friend’s code to join."
+	info.text = "Private room limit: up to 8 players. Choose a code to host, or enter one to join."
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	room.add_child(info)
-	_add_mode_selector(room)
+	_add_xr_mode_buttons(room)
 	_xr_room_status = Label.new()
 	_xr_room_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_xr_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -792,12 +796,12 @@ func _build_desktop_room(parent: VBoxContainer) -> void:
 	stack.add_theme_constant_override("separation", 8)
 	_desktop_room_panel.add_child(stack)
 	var heading := Label.new()
-	heading.text = "PLAY WITH A FRIEND"
+	heading.text = "MULTIPLAYER · EXPERIMENTAL"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 21)
 	stack.add_child(heading)
 	var info := Label.new()
-	info.text = "Choose a code and host a game for two, or enter your friend’s code to join."
+	info.text = "Private room limit: up to 8 players. Choose a code to host, or enter one to join."
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(info)
@@ -935,14 +939,43 @@ func _add_mode_selector(parent: VBoxContainer) -> void:
 	selector.add_item("Compete · Two shrines", 1)
 	selector.select(0)
 	selector.item_selected.connect(func(index: int) -> void:
-		_selected_mode = "two_shrines" if selector.get_item_id(index) == 1 else "classic"
-		for other in _mode_selectors:
-			if other != selector:
-				other.select(index))
+		_select_mode("two_shrines" if selector.get_item_id(index) == 1 else "classic"))
 	row.add_child(selector)
 	parent.add_child(row)
 	_mode_selectors.append(selector)
 	row.visible = _shared_role != "client"
+
+
+func _add_xr_mode_buttons(parent: VBoxContainer) -> void:
+	var label := Label.new()
+	label.text = "Hosting mode"
+	parent.add_child(label)
+	_xr_mode_row = HBoxContainer.new()
+	_xr_mode_row.name = "XRModeButtons"
+	_xr_mode_row.add_theme_constant_override("separation", 8)
+	parent.add_child(_xr_mode_row)
+	var group := ButtonGroup.new()
+	for mode in ["classic", "two_shrines"]:
+		var button := Button.new()
+		button.text = "Together · Classic" if mode == "classic" else "Compete · Two shrines"
+		button.toggle_mode = true
+		button.button_group = group
+		button.custom_minimum_size.y = 46
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_select_mode.bind(mode))
+		_xr_mode_row.add_child(button)
+		_xr_mode_buttons.append(button)
+	_select_mode(_selected_mode)
+	_xr_mode_row.visible = _shared_role != "client"
+
+
+func _select_mode(mode: String) -> void:
+	_selected_mode = mode
+	var index := 1 if mode == "two_shrines" else 0
+	for selector in _mode_selectors:
+		selector.select(index)
+	for button_index in _xr_mode_buttons.size():
+		_xr_mode_buttons[button_index].set_pressed_no_signal(button_index == index)
 
 
 func _on_new_game() -> void:
