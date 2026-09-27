@@ -15,6 +15,7 @@ const AVATAR_FIT_PATH := "user://mushi_avatar_fit.json"
 const VOICE_SETTINGS_PATH := "user://mushi_voice_settings.json"
 const XR_COMFORT_PATH := "user://mushi_xr_comfort.json"
 const BROOM_UNLOCK_PATH := "user://mushi_broom_unlock.json"
+const UI_FONT: Font = preload("res://assets/fonts/KleeOne-SemiBold.ttf")
 
 var environment_enabled: bool = true
 var terrain_size: int = 128
@@ -1362,6 +1363,7 @@ func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
 	hud_label = Label.new()
+	hud_label.add_theme_font_override("font", UI_FONT)
 	hud_label.position = Vector2(24.0, 18.0)
 	hud_label.add_theme_font_size_override("font_size", 22)
 	hud_label.add_theme_color_override("font_color", Color("eaf6f4"))
@@ -1372,6 +1374,7 @@ func _build_ui() -> void:
 	hud_label.visible = debug_visible
 
 	help_label = Label.new()
+	help_label.add_theme_font_override("font", UI_FONT)
 	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · K: skip intro · R: reset · F1: debug · F2: quality · F3: audio · F6: spectator · Esc: menu\nSpectator: mouse look · WASD/Q/E fly · Shift fast · Ctrl slow · F7 sweep · F8/F9 eye adaptation · F10 auto"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
@@ -1380,6 +1383,9 @@ func _build_ui() -> void:
 	help_label.visible = debug_visible
 
 	panel = PanelContainer.new()
+	var font_theme := Theme.new()
+	font_theme.default_font = UI_FONT
+	panel.theme = font_theme
 	panel.position = Vector2(1080.0, 18.0)
 	panel.size = Vector2(336.0, 782.0)
 	canvas.add_child(panel)
