@@ -46,6 +46,17 @@ func run_checks() -> void:
 	director.choose_tutorial(true)
 	ui.update_director(director, true)
 	assert(ui._world_hint.text.contains("Grip the staff shaft"), "pickup instruction appears before the shutter instruction")
+	director.stage = TutorialDirector.Stage.JAR_NEUTRAL
+	director._stage_elapsed = 0.0
+	ui.update_director(director, true)
+	assert(ui._world_hint.text.is_empty(), "neutral observation has no redundant wait prompt")
+	director.advance(TutorialDirector.NEUTRAL_OBSERVATION_SECONDS, LightField.Mode.CLEAR, 1.0, 1.0)
+	ui.update_director(director, true)
+	assert(ui._world_hint.text == "Trigger to continue", "neutral continue cue appears at three seconds")
+	director.stage = TutorialDirector.Stage.GUIDE
+	director._stage_elapsed = 0.0
+	ui.update_director(director, true)
+	assert(ui._world_hint.text.is_empty(), "guide pause has no redundant wait prompt")
 	director.stage = TutorialDirector.Stage.ADAPTATION
 	director.status_text = "Keep shutter closed to reveal the stream"
 	ui.update_director(director, true)

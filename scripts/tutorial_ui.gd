@@ -273,7 +273,7 @@ func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
 		return "Open the shutter when ready" if director.reveal_can_reopen() else ""
 	if director.stage == TutorialDirector.Stage.JAR_NEUTRAL:
 		if not director.can_continue():
-			return "Watch it wander for a moment"
+			return ""
 		return "Trigger to continue" if xr_active else "Enter / click to continue"
 	if director.stage == TutorialDirector.Stage.JAR_BLUE or director.stage == TutorialDirector.Stage.JAR_ORANGE:
 		if not director.can_continue():
@@ -281,7 +281,7 @@ func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
 		return "Trigger to continue" if xr_active else "Enter / click to continue"
 	if director.stage == TutorialDirector.Stage.GUIDE or director.stage == TutorialDirector.Stage.GROUPS:
 		if not director.can_continue():
-			return "Watch the mushi for a moment"
+			return ""
 	return "Trigger to continue · Y / B: menu" if xr_active else "Enter / click to continue · K: skip"
 
 

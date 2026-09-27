@@ -15,6 +15,7 @@ enum GuideState { JARRED, DORMANT, WAKING, RELEASED }
 
 const BLUE_MODE: int = LightField.Mode.BLUE
 const ORANGE_MODE: int = LightField.Mode.ORANGE
+const NEUTRAL_OBSERVATION_SECONDS := 3.0
 const JAR_OBSERVATION_SECONDS := 5.0
 const GUIDE_SECONDS := 5.0
 const GROUPS_SECONDS := 5.0
@@ -87,7 +88,7 @@ func request_continue() -> void:
 			elif _stage_elapsed >= ADAPTATION_SECONDS:
 				_change_stage(Stage.REVEAL_WAIT)
 		Stage.JAR_NEUTRAL:
-			if _stage_elapsed >= JAR_OBSERVATION_SECONDS:
+			if _stage_elapsed >= NEUTRAL_OBSERVATION_SECONDS:
 				_change_stage(Stage.JAR_BLUE)
 		Stage.JAR_BLUE:
 			if _blue_elapsed >= JAR_OBSERVATION_SECONDS:
@@ -110,7 +111,7 @@ func can_continue() -> bool:
 		Stage.ADAPTATION:
 			return _page_elapsed >= DIALOGUE_PAUSE_SECONDS and (_adaptation_page < 2 or _stage_elapsed >= ADAPTATION_SECONDS)
 		Stage.JAR_NEUTRAL:
-			return _stage_elapsed >= JAR_OBSERVATION_SECONDS
+			return _stage_elapsed >= NEUTRAL_OBSERVATION_SECONDS
 		Stage.JAR_BLUE:
 			return _blue_elapsed >= JAR_OBSERVATION_SECONDS
 		Stage.JAR_ORANGE:
