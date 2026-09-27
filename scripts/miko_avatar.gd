@@ -32,7 +32,18 @@ var _idle_left_arm := -1
 var _idle_right_arm := -1
 var _idle_left_rest := Quaternion.IDENTITY
 var _idle_right_rest := Quaternion.IDENTITY
+var _idle_head := -1
+var _idle_head_rest := Quaternion.IDENTITY
+var _idle_spine := -1
+var _idle_spine_rest := Quaternion.IDENTITY
+var _guide_rest_yaw := 0.0
+var _guide_look_engaged := false
+var _guide_body_yaw := 0.0
+var _guide_head_yaw := 0.0
+var _guide_head_pitch := 0.0
 const GUIDE_ARM_DROP := 1.16
+const GUIDE_LOOK_ENTER_DISTANCE := 4.2
+const GUIDE_LOOK_EXIT_DISTANCE := 5.6
 
 
 func _ready() -> void:
@@ -54,6 +65,7 @@ func _ready() -> void:
 	_update_materials()
 	_voice_expressions = VOICE_EXPRESSIONS.new()
 	_voice_expressions.call("configure", self)
+	_guide_rest_yaw = rotation.y
 	_idle_model = get_node_or_null("Model") as Node3D
 	if _idle_model != null:
 		_idle_origin = _idle_model.position
@@ -63,17 +75,32 @@ func _ready() -> void:
 			_idle_skeleton = skeletons[0] as Skeleton3D
 			_idle_left_arm = _idle_skeleton.find_bone("LeftUpperArm")
 			_idle_right_arm = _idle_skeleton.find_bone("RightUpperArm")
+			_idle_head = _idle_skeleton.find_bone("Head")
+			_idle_spine = _idle_skeleton.find_bone("Spine")
 			if _idle_left_arm >= 0:
 				_idle_left_rest = _idle_skeleton.get_bone_pose_rotation(_idle_left_arm)
 			if _idle_right_arm >= 0:
 				_idle_right_rest = _idle_skeleton.get_bone_pose_rotation(_idle_right_arm)
+			if _idle_head >= 0:
+				_idle_head_rest = _idle_skeleton.get_bone_pose_rotation(_idle_head)
+			if _idle_spine >= 0:
+				_idle_spine_rest = _idle_skeleton.get_bone_pose_rotation(_idle_spine)
 
 
 func set_guide_idle(enabled: bool) -> void:
 	_guide_idle = enabled
 	if enabled:
 		_apply_guide_arm_pose(0.0)
-	elif _idle_model != null:
+	else:
+		_guide_look_engaged = false
+		_guide_body_yaw = 0.0
+		_guide_head_yaw = 0.0
+		_guide_head_pitch = 0.0
+		if _idle_skeleton != null and _idle_spine >= 0:
+			_idle_skeleton.set_bone_pose_rotation(_idle_spine, _idle_spine_rest)
+		if _idle_skeleton != null and _idle_head >= 0:
+			_idle_skeleton.set_bone_pose_rotation(_idle_head, _idle_head_rest)
+	if not enabled and _idle_model != null:
 		_idle_model.position = _idle_origin
 		_idle_model.rotation = _idle_rotation
 		if _idle_skeleton != null:
@@ -92,6 +119,41 @@ func _process(delta: float) -> void:
 	_idle_model.position = _idle_origin + Vector3(0.003 * sin(_idle_seconds * 1.1), 0.004 * sin(_idle_seconds * 2.0), 0.0)
 	_idle_model.rotation = _idle_rotation + Vector3(0.0, 0.007 * sin(_idle_seconds * 0.6), 0.003 * sin(_idle_seconds * 1.1))
 	_apply_guide_arm_pose(_idle_seconds)
+
+
+## The guide turns only for someone near her. A wider exit radius prevents
+## repeated turn/settle changes while the player crosses the threshold.
+func set_guide_look_target(world_position: Vector3, active: bool, delta: float) -> void:
+	if not _guide_idle or _idle_model == null:
+		return
+	var distance := Vector2(world_position.x - global_position.x,
+		world_position.z - global_position.z).length()
+	if _guide_look_engaged:
+		_guide_look_engaged = active and distance < GUIDE_LOOK_EXIT_DISTANCE
+	else:
+		_guide_look_engaged = active and distance < GUIDE_LOOK_ENTER_DISTANCE
+	var desired_body := 0.0
+	var desired_head_yaw := 0.0
+	var desired_head_pitch := 0.0
+	if _guide_look_engaged:
+		var toward := world_position - (global_position + Vector3.UP * 1.45)
+		var horizontal := Vector2(toward.x, toward.z).length()
+		if horizontal > 0.1:
+			var target_yaw := atan2(toward.x, toward.z)
+			var relative_yaw := wrapf(target_yaw - _guide_rest_yaw, -PI, PI)
+			desired_body = clampf(relative_yaw, -0.4, 0.4)
+			desired_head_yaw = clampf(wrapf(relative_yaw - desired_body, -PI, PI), -0.55, 0.55)
+			desired_head_pitch = clampf(atan2(toward.y, horizontal), -0.23, 0.22)
+	var step := maxf(delta, 0.0)
+	_guide_body_yaw = move_toward(_guide_body_yaw, desired_body, step * 1.1)
+	_guide_head_yaw = move_toward(_guide_head_yaw, desired_head_yaw, step * 1.7)
+	_guide_head_pitch = move_toward(_guide_head_pitch, desired_head_pitch, step * 1.2)
+	if _idle_skeleton != null and _idle_spine >= 0:
+		_idle_skeleton.set_bone_pose_rotation(_idle_spine, _idle_spine_rest *
+			Quaternion(Vector3.UP, _guide_body_yaw))
+	if _idle_skeleton != null and _idle_head >= 0:
+		_idle_skeleton.set_bone_pose_rotation(_idle_head, _idle_head_rest *
+			Quaternion(Vector3.UP, _guide_head_yaw) * Quaternion(Vector3.RIGHT, -_guide_head_pitch))
 
 
 func _apply_guide_arm_pose(seconds: float) -> void:
