@@ -41,6 +41,8 @@ var _world_hint: Label3D
 var _mouth_seconds := 0.0
 var _panel_material: ShaderMaterial
 var _world_alpha := 1.0
+var _prompt_alpha := 0.0
+var _last_prompt := ""
 
 
 func _ready() -> void:
@@ -189,7 +191,11 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 		if _world_root.visible:
 			_world_line.text = "Tutorial complete — explore!" if completion_visible else _styled_dialogue(director.status_text)
 			_world_line.visible_characters = -1 if completion_visible else int(_spoken_characters)
-			_world_hint.text = _world_prompt(director, xr_active) if active else ""
+			var prompt := _world_prompt(director, xr_active) if active else ""
+			if prompt != _last_prompt:
+				_last_prompt = prompt
+				_prompt_alpha = 0.0
+			_world_hint.text = prompt
 	if _desktop_root != null:
 		_desktop_status.text = "Tutorial complete — explore!" if completion_visible else director.status_text
 		if director.stage == TutorialDirector.Stage.JAR_ORANGE or director.stage == TutorialDirector.Stage.JAR_BLUE:
@@ -202,8 +208,6 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 		if director.stage == TutorialDirector.Stage.WELCOME:
 			_desktop_status.text += "\nEnter: quick lesson · K: explore"
 		_desktop_root.visible = false
-		if director.stage == TutorialDirector.Stage.ADAPTATION:
-			_desktop_status.text += " · %d%%" % roundi(director.adaptation_progress * 100.0)
 		_desktop_status.visible_characters = -1 if completion_visible else int(_spoken_characters)
 	if _xr_skip != null:
 		_xr_skip.visible = active
@@ -256,14 +260,15 @@ func _styled_dialogue(line: String) -> String:
 
 func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
 	if director.stage == TutorialDirector.Stage.WELCOME:
-		return "Y / B: menu · Show me / Explore myself" if xr_active else "Enter: quick lesson · K: explore"
+		return "Trigger: begin · Y / B > Play > Skip introduction" if xr_active else "Enter: quick lesson · K: explore"
 	if director.stage == TutorialDirector.Stage.SHUTTER:
 		return "Close the lantern shutter" if xr_active else "Hold right mouse and drag down to close"
 	if director.stage == TutorialDirector.Stage.ADAPTATION:
-		var action := "trigger to continue" if xr_active else "Enter / click to continue"
-		return "Eyes adapting · %d%% · %s" % [roundi(director.adaptation_progress * 100.0), action if director.can_continue() else "look for a moment"]
+		if not director.can_continue():
+			return ""
+		return "Trigger / click to continue" if xr_active else "Click / Enter to continue"
 	if director.stage == TutorialDirector.Stage.REVEAL_WAIT:
-		return "Open the shutter when ready" if director.reveal_can_reopen() else "Keep the shutter closed for a moment"
+		return "Open the shutter when ready" if director.reveal_can_reopen() else ""
 	if director.stage == TutorialDirector.Stage.JAR_NEUTRAL:
 		if not director.can_continue():
 			return "Watch it wander for a moment"
@@ -361,7 +366,9 @@ func _process(delta: float) -> void:
 		var alpha := near_alpha * far_alpha * (1.0 if _tutorial_active or _completion_remaining > 0.0 else _world_alpha)
 		_panel_material.set_shader_parameter("opacity", alpha)
 		_world_line.modulate.a = alpha
-		_world_hint.modulate.a = alpha
+		_world_hint.modulate.a = alpha * _prompt_alpha
+	if not _last_prompt.is_empty():
+		_prompt_alpha = minf(1.0, _prompt_alpha + delta / 0.45)
 	if _world_root != null and _world_root.visible and _spoken_characters < float(_last_spoken_line.length()):
 		_spoken_characters += delta * 45.0
 		if _desktop_status != null:

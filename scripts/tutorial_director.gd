@@ -222,7 +222,7 @@ func ukon_nearby_line(tip_index: int = 0) -> String:
 	var opening_tips := [
 		"Take your time; the mushi won't hurt you. Blue draws them close, and red can guide them home.",
 		"A slow lantern sweep can reveal strays. The light vein is patient; there is no rush.",
-		"Some mushi have strayed among the trees. Help a few find either shrine when you like."
+		"Some mushi have strayed among the trees. Help a few find the shrine when you like."
 	]
 	return opening_tips[tip]
 
@@ -276,7 +276,7 @@ func _update_status() -> void:
 			if _adaptation_page == 0:
 				status_text = "This little light is a mushi. They belong to a hidden world of living things."
 			elif _adaptation_page == 1:
-				status_text = "A light vein runs beneath this grove: 光脈筋 (koumyakusuji). Some mushi stray from it and are left adrift."
+				status_text = "光脈筋 (koumyakusuji) is the light vein beneath this grove. Some mushi stray from it and are left adrift."
 			else:
 				status_text = "You can see it through the earth, but the ground is solid. We'll guide the strays back through the shrine."
 		Stage.REVEAL_WAIT:
@@ -290,6 +290,6 @@ func _update_status() -> void:
 		Stage.GUIDE:
 			status_text = "There it goes. The shrine leads it back into the light vein."
 		Stage.GROUPS:
-			status_text = "Blue gathers a group; red sends it drifting away. Guide a few toward either shrine. There is no rush."
+			status_text = "Blue gathers a group; red sends it drifting away. Guide a few toward the shrine. There is no rush."
 		Stage.FREE_PLAY:
 			status_text = "Free play · %d%% returned" % roundi(progress_ratio * 100.0)

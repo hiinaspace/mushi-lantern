@@ -55,6 +55,7 @@ func _run() -> void:
 	director.advance(TutorialDirector.GROUPS_SECONDS, LightField.Mode.ORANGE, 1.0, 1.0)
 	director.request_continue()
 	_check(director.stage == TutorialDirector.Stage.FREE_PLAY and director.goal_accepting, "lesson enters free play and opens goal", failures)
+	_check(not director.status_text.contains("either shrine"), "solo tutorial names one shrine", failures)
 	_check(gate_events == [false, true], "goal gate emits only transitions", failures)
 	_check(director.ukon_nearby_line().contains("hurt"), "free-play Ukon reassures", failures)
 	director.observe_score(24)

@@ -44,6 +44,7 @@ func run_checks() -> void:
 	director.stage = TutorialDirector.Stage.ADAPTATION
 	director.status_text = "Keep shutter closed to reveal the stream"
 	ui.update_director(director, true)
+	assert(ui._world_hint.text.is_empty(), "adaptation wait hides progress and waiting instructions")
 	var full_line := ui._world_line.text
 	ui._process(0.2)
 	assert(ui._world_line.text == full_line and ui._world_line.visible_characters > 0
@@ -52,6 +53,12 @@ func run_checks() -> void:
 	ui.finish_text()
 	assert(ui._world_root.visible and ui._world_line.text.contains("Keep shutter closed"), "dialogue must remain visible through scripted stream reveal")
 	assert(ui._world_line.visible_characters == -1, "world line can be fully revealed without changing its layout")
+	director.advance(TutorialDirector.DIALOGUE_PAUSE_SECONDS, LightField.Mode.CLEAR, 0.0, 0.0)
+	ui.update_director(director, true)
+	assert(ui._world_hint.text == "Trigger / click to continue", "advance cue appears after the pause without a percentage")
+	assert(ui._prompt_alpha == 0.0, "new advance cue begins transparent")
+	ui._process(0.5)
+	assert(ui._prompt_alpha == 1.0, "advance cue fades in")
 	director.stage = TutorialDirector.Stage.GROUPS
 	ui.update_director(director, true)
 	director.stage = TutorialDirector.Stage.FREE_PLAY
