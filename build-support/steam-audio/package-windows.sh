@@ -113,10 +113,10 @@ Run friend-desktop.bat for keyboard and mouse, or friend-vr.bat with a working
 Windows OpenXR runtime selected and a headset connected. Both launchers use
 the same saved game data and start a fresh session.
 
-For experimental peer-to-peer multiplayer, open Session, enter the same code
+For experimental peer-to-peer multiplayer, open Multiplayer, enter the same code
 (at least three characters) on each computer, then choose Host on one and Join
 on the others. Codes are case-insensitive. The XR menu has a pointer keyboard.
-Mics start muted; use the Voice tab to choose a mic, adjust levels, and unmute.
+Mics start muted; use Settings > Voice to choose a mic, adjust levels, and unmute.
 
 This package is exported on Linux. It has not been validated on a native
 Windows headset.

@@ -118,10 +118,10 @@ Both launchers use the same saved game data and start a fresh session. The
 archive includes its standalone game executable; no Godot installation is
 needed.
 
-For experimental peer-to-peer multiplayer, open Session, enter the same code
+For experimental peer-to-peer multiplayer, open Multiplayer, enter the same code
 (at least three characters) on each computer, then choose Host on one and Join
 on the others. Codes are case-insensitive. The XR menu has a pointer keyboard.
-Mics start muted; use the Voice tab to choose a mic, adjust levels, and unmute.
+Mics start muted; use Settings > Voice to choose a mic, adjust levels, and unmute.
 
 The game needs a Vulkan-capable graphics driver. Steam Audio's optional GPU
 utilities may need OpenCL from the graphics driver. Game libraries and a
