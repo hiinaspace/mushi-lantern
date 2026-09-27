@@ -73,7 +73,7 @@ func _run() -> void:
 	var uplight := shrine.get_node("ShrineWarmUplight") as SpotLight3D
 	check(uplight != null and not uplight.shadow_enabled and uplight.light_energy >= 0.75
 		and uplight.global_basis.z.dot(Vector3.DOWN) > 0.99
-		and uplight.position.y > 0.0 and uplight.position.y < 0.15 and uplight.spot_angle <= 80.0,
+		and uplight.position.y > 0.0 and uplight.position.y < 0.15 and uplight.spot_angle <= 115.0,
 		"shrine spot points up through a bounded cone")
 	var foundation := shrine.get_node("GateArchitecture/Foundation") as MeshInstance3D
 	check(absf(foundation.global_position.y - 0.08 - surface.get_height_at(Vector2(foundation.global_position.x, foundation.global_position.z))) < 0.02,

@@ -149,9 +149,9 @@ func _build() -> void:
 	_up_light = SpotLight3D.new()
 	_up_light.name = "ShrineWarmUplight"
 	_up_light.light_color = Color("ffc477")
-	_up_light.light_energy = 2.2
+	_up_light.light_energy = 3.0
 	_up_light.spot_range = 5.0
-	_up_light.spot_angle = 78.0
+	_up_light.spot_angle = 112.0
 	_up_light.spot_attenuation = 0.78
 	_up_light.shadow_enabled = false
 	_up_light.rotation.x = deg_to_rad(90.0)
@@ -205,7 +205,7 @@ func _add_goal_boundary() -> void:
 func _apply_night_vision() -> void:
 	# Keep the landmark legible at low adaptation without acting like another beacon.
 	if _up_light != null:
-		_up_light.light_energy = lerpf(1.65, 2.2, night_vision)
+		_up_light.light_energy = lerpf(2.1, 3.0, night_vision)
 
 
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
