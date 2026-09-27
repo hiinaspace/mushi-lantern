@@ -18,7 +18,7 @@ const XR_COMFORT_PATH := "user://mushi_xr_comfort.json"
 const UI_FONT: Font = preload("res://assets/fonts/KleeOne-SemiBold.ttf")
 ## Desktop palm contact corrections in staff-local metres. XR tracking has its
 ## own pose path and never uses these artist-tunable offsets.
-@export var desktop_right_grip_offset := Vector3(0.015, -0.01, -0.035)
+@export var desktop_right_grip_offset := Vector3(0.01, -0.01, 0.06)
 @export var desktop_left_control_offset := Vector3.ZERO
 
 var environment_enabled: bool = true
@@ -199,6 +199,7 @@ var _force_tutorial := false
 var _visual_tuning_override := false
 var _last_tutorial_score := -1
 var _stream_visibility := 0.0
+var _shrine_beam_visibility := 0.0
 var _visual_sliders: Dictionary = {}
 var _visual_tuning_defaults: Dictionary = {}
 var _visual_tuning := {
@@ -207,7 +208,8 @@ var _visual_tuning := {
 	"star_start": 0.14, "star_end": 0.89, "milky_start": 0.64, "milky_end": 0.96,
 	"foliage_start": 0.90, "foliage_end": 0.99,
 	"clear_start": 0.10, "clear_end": 0.65, "clear_distance_start": 17.0, "clear_distance_end": 52.0,
-	"river_width": 4.0, "river_depth": 1.8,
+	"river_width": 5.8, "river_depth": 1.8,
+	"desktop_grip_x": 0.01, "desktop_grip_z": 0.06,
 	"horizon_flare_strength": 0.15, "horizon_flare_spread": 0.5,
 	"far_scintillation_blend": 1.0,
 	"path_long": 2.5, "path_medium": 1.45, "path_long_speed": 1.4, "path_medium_speed": 1.0,
@@ -1327,7 +1329,9 @@ func _update_stream_visibility(delta: float) -> void:
 		return
 	if _game_mode == "two_shrines":
 		_stream_visibility = 0.0
+		_shrine_beam_visibility = 0.0
 		terrain_environment.set_stream_visibility(0.0)
+		terrain_environment.set_shrine_beam_visibility(0.0)
 		return
 	var tutorial_reveal_allowed := tutorial_director == null or not tutorial_director.tutorial_enabled
 	if tutorial_director != null and tutorial_director.tutorial_enabled:
@@ -1341,10 +1345,19 @@ func _update_stream_visibility(delta: float) -> void:
 	)
 	_stream_visibility = TerrainEnvironment.advance_stream_visibility(_stream_visibility, target, delta, float(_visual_tuning.stream_seconds))
 	terrain_environment.set_stream_visibility(_stream_visibility)
+	var beam_target := TerrainEnvironment.stream_visibility_target(
+		lantern.night_vision, lantern.shutter_openness, tutorial_reveal_allowed, 0.38, 0.72)
+	_shrine_beam_visibility = TerrainEnvironment.advance_stream_visibility(
+		_shrine_beam_visibility, beam_target, delta, 0.6)
+	terrain_environment.set_shrine_beam_visibility(_shrine_beam_visibility)
 
 
 func _set_visual_tuning(value: float, key: StringName) -> void:
 	_visual_tuning[key] = value
+	if key == &"desktop_grip_x":
+		desktop_right_grip_offset.x = value
+	elif key == &"desktop_grip_z":
+		desktop_right_grip_offset.z = value
 	for pair: Array in [
 		[&"stream_start", &"stream_end"], [&"star_start", &"star_end"],
 		[&"milky_start", &"milky_end"], [&"foliage_start", &"foliage_end"],
@@ -1523,7 +1536,7 @@ func _build_ui() -> void:
 	_add_visual_slider(stack, "Clear fade near (m)", 0.0, 60.0, 17.0, 1.0, &"clear_distance_start")
 	_add_visual_slider(stack, "Clear fade far (m)", 5.0, 100.0, 52.0, 1.0, &"clear_distance_end")
 	_add_visual_group_label(stack, "River mesh · path and surface")
-	_add_visual_slider(stack, "River width scale", 0.6, 8.0, 4.0, 0.05, &"river_width")
+	_add_visual_slider(stack, "River width scale", 0.6, 8.0, 5.8, 0.05, &"river_width")
 	_add_visual_slider(stack, "River depth scale", 0.6, 3.5, 1.8, 0.05, &"river_depth")
 	_add_visual_slider(stack, "Horizon gold flare", 0.0, 2.0, 0.15, 0.05, &"horizon_flare_strength")
 	_add_visual_slider(stack, "Horizon flare spread", 0.2, 2.5, 0.5, 0.05, &"horizon_flare_spread")
@@ -1537,6 +1550,9 @@ func _build_ui() -> void:
 	_add_visual_slider(stack, "Surface bump", 0.0, 5.0, 0.55, 0.05, &"surface_bump")
 	_add_visual_slider(stack, "Surface bump frequency", 0.2, 6.0, 0.95, 0.05, &"surface_bump_frequency")
 	_add_visual_slider(stack, "Bump motion speed", 0.0, 5.0, 1.6, 0.05, &"surface_bump_speed")
+	_add_visual_group_label(stack, "Desktop staff grip · visual fit")
+	_add_visual_slider(stack, "Grip sideways (m)", -0.05, 0.15, 0.01, 0.005, &"desktop_grip_x")
+	_add_visual_slider(stack, "Grip depth (m)", -0.12, 0.12, 0.06, 0.005, &"desktop_grip_z")
 	var energy_title := Label.new()
 	energy_title.text = "Energy experiment · 90% response times"
 	energy_title.add_theme_font_size_override("font_size", 13)
@@ -1989,8 +2005,10 @@ func _reset_run(record_previous: bool) -> void:
 		simulation.second_goal_position = PVP_RIGHT_GOAL
 	simulation.reset(fixture_count, current_seed, run_preset)
 	_stream_visibility = 0.0
+	_shrine_beam_visibility = 0.0
 	if terrain_environment != null:
 		terrain_environment.set_stream_visibility(0.0)
+		terrain_environment.set_shrine_beam_visibility(0.0)
 	if tutorial_director != null:
 		var enable_tutorial := _game_mode != "two_shrines" and (_force_tutorial or (environment_enabled and not _skip_tutorial_requested))
 		tutorial_director.begin_run(enable_tutorial, fixture_count)

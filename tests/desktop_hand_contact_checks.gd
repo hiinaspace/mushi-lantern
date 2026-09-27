@@ -3,7 +3,8 @@ extends Node3D
 var _avatar: MushiMultiplayerAvatar
 var _wrist := Vector3.ZERO
 var _left_wrist := Vector3.ZERO
-const RIGHT_GRIP_OFFSET := Vector3(0.015, -0.01, -0.035)
+var _knuckles := PackedVector3Array()
+const RIGHT_GRIP_OFFSET := Vector3(0.01, -0.01, 0.06)
 
 func _ready() -> void:
 	_run.call_deferred()
@@ -54,7 +55,12 @@ func _run() -> void:
 		await get_tree().physics_frame
 	var distance := _wrist.distance_to(target)
 	print("DESKTOP_HAND_CONTACT wrist_error=%.4f target=%s wrist=%s" % [distance, target, _wrist])
-	assert(distance < 0.045)
+	for index in range(_knuckles.size()):
+		print("DESKTOP_HAND_KNUCKLE %d distance=%.4f position=%s" % [index,
+			_knuckles[index].distance_to(target), _knuckles[index]])
+	# The wrist sits behind the palm; matching it to the shaft displaced the
+	# visible fingers in the first-person view. Check contact at the knuckles.
+	assert(_knuckles.size() == 3 and _knuckles[1].distance_to(target) < 0.05)
 	if not OS.get_environment("MUSHI_DESKTOP_CAPTURE").is_empty():
 		await _capture_pose(staff, player, camera, 0.5, false, "/tmp/mushi-desktop-reach-mid.png")
 		await _capture_pose(staff, player, camera, 1.0, true, "/tmp/mushi-desktop-reach-settled.png")
@@ -95,6 +101,11 @@ func _capture() -> void:
 	var bone := _avatar.skeleton.find_bone("RightHand")
 	if bone >= 0:
 		_wrist = (_avatar.skeleton.global_transform * _avatar.skeleton.get_bone_global_pose(bone)).origin
+	_knuckles.clear()
+	for bone_name in ["RightIndexProximal", "RightMiddleProximal", "RightRingProximal"]:
+		bone = _avatar.skeleton.find_bone(bone_name)
+		if bone >= 0:
+			_knuckles.append((_avatar.skeleton.global_transform * _avatar.skeleton.get_bone_global_pose(bone)).origin)
 	bone = _avatar.skeleton.find_bone("LeftHand")
 	if bone >= 0:
 		_left_wrist = (_avatar.skeleton.global_transform * _avatar.skeleton.get_bone_global_pose(bone)).origin

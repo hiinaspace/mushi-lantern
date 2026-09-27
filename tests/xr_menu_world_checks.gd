@@ -14,8 +14,14 @@ func _initialize() -> void:
 	failures += _expect(player_source.contains('if action == "by_button":') and player_source.contains("set_menu_open(not _menu_open)"), "either controller Y/B toggles the friend menu surface")
 	failures += _expect(player_source.contains("_left_pointer.enabled = open") and player_source.contains("_right_pointer.enabled = open"), "menu toggling routes both laser pointers")
 	failures += _expect(scene_source.count("laser_length = 1") == 2, "both pointers use collision-limited laser length")
-	failures += _expect(tutorial_source.contains("_xr_cue.no_depth_test = true"), "tutorial cue draws in front of geometry")
-	failures += _expect(friend_source.contains("AudioScroll/Contents") and friend_source.contains("FriendSession"), "friend menu attaches after XR audio scroll and presents session actions")
+	failures += _expect(tutorial_source.contains("text_material.no_depth_test = false")
+		and tutorial_source.contains("_world_root.global_rotation.y"),
+		"Ukon dialogue is depth tested and faces the viewer in world space")
+	failures += _expect(friend_source.contains("AudioScroll/Contents")
+		and friend_source.contains('_create_xr_tab("Play")')
+		and friend_source.contains('_create_xr_tab("Multiplayer")')
+		and friend_source.contains('child.reparent(mushi if is_tuning else session if is_skip else intro)'),
+		"friend menu attaches after XR audio and groups session, rooms, and tutorial actions")
 	quit(1 if failures > 0 else 0)
 
 func _expect(condition: bool, description: String) -> int:
