@@ -22,7 +22,7 @@ signal tutorial_trigger_pressed
 signal fall_recovered(body_position: Vector3)
 
 @export var recall_hold_seconds: float = 0.5
-@export var snap_turn: bool = false
+@export var snap_turn: bool = true
 @export_range(0.0, 0.5, 0.01) var locomotion_deadzone: float = 0.22
 @export var move_hand_left: bool = true
 

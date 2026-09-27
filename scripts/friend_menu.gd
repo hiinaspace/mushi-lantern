@@ -90,7 +90,7 @@ var _xr_mode_buttons: Array[Button] = []
 var _xr_mode_row: HBoxContainer
 var _selected_mode := "classic"
 var _elapsed_labels: Array[Label] = []
-var _comfort := {"snap_turn": false, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
+var _comfort := {"snap_turn": true, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
 var _comfort_turns: Array[Button] = []
 var _comfort_hands: Array[Button] = []
 var _comfort_vignettes: Array[HSlider] = []

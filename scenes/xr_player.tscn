@@ -25,7 +25,7 @@ max_speed = 2.8
 strafe = true
 
 [node name="MovementTurn" parent="LeftController" instance=ExtResource("4")]
-turn_mode = 2
+turn_mode = 1
 smooth_turn_speed = 2.0
 step_turn_angle = 30.0
 
@@ -50,7 +50,7 @@ max_speed = 2.8
 strafe = true
 
 [node name="MovementTurn" parent="RightController" instance=ExtResource("4")]
-turn_mode = 2
+turn_mode = 1
 smooth_turn_speed = 2.0
 step_turn_angle = 30.0
 

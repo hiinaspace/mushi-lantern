@@ -53,8 +53,23 @@ func _run() -> void:
 		assert(button_style != null and button_style.bg_color.a > 0.9
 			and button_style.border_width_left >= 2 and button_style.border_color != style.border_color,
 			"XR actions have a distinct filled button surface and border")
+	assert(friend._comfort.snap_turn and friend._comfort_turns[-1].button_pressed,
+		"a fresh menu defaults to snap turning")
+	friend._comfort_turns[0].pressed.emit()
+	assert(not friend._comfort.snap_turn, "smooth turning remains selectable")
 	friend._comfort_turns[-1].pressed.emit()
-	assert(friend._comfort.snap_turn)
+	assert(friend._comfort.snap_turn, "snap turning can be reselected")
+	var game: Variant = (load("res://scripts/main.gd") as GDScript).new()
+	assert(game._xr_comfort["snap_turn"] and game._validated_xr_comfort({})["snap_turn"],
+		"new and missing-key comfort settings use snap turning")
+	assert(not game._validated_xr_comfort({"snap_turn": false})["snap_turn"],
+		"an existing smooth-turn preference remains smooth")
+	game.free()
+	var rig_source := FileAccess.get_file_as_string("res://scripts/xr_player.gd")
+	var rig_scene := FileAccess.get_file_as_string("res://scenes/xr_player.tscn")
+	assert(rig_source.contains("@export var snap_turn: bool = true")
+		and rig_scene.count("turn_mode = 1") == 2,
+		"standalone XR rig and both turn providers default to snap")
 	friend._comfort_hands[-1].pressed.emit()
 	assert(friend._comfort.move_hand == "right")
 	assert((surface.theme.default_font as FontFile).oversampling >= 2.0)

@@ -74,7 +74,7 @@ var _avatar_arm_reach: float = 1.3
 var _xr_avatar_scale_ready := false
 var _xr_avatar_calibration_seconds := 0.0
 var _xr_avatar_raw_eye_height := 0.0
-var _xr_comfort := {"snap_turn": false, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
+var _xr_comfort := {"snap_turn": true, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
 var _joined_peers: Dictionary = {}
 var _network_status := "Offline"
 var _last_sent_score: int = -1
@@ -746,7 +746,7 @@ func _load_xr_comfort() -> void:
 
 func _validated_xr_comfort(value: Dictionary) -> Dictionary:
 	return {
-		"snap_turn": bool(value.get("snap_turn", false)),
+		"snap_turn": bool(value.get("snap_turn", true)),
 		"move_hand": "right" if str(value.get("move_hand", "left")) == "right" else "left",
 		"vignette_strength": clampf(float(value.get("vignette_strength", 0.0)), 0.0, 1.0),
 		"haptics": bool(value.get("haptics", true)),
