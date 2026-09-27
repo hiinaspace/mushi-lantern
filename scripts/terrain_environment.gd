@@ -224,7 +224,7 @@ func _attach_river_mesh_blockers() -> void:
 	mask.shader = RIVER_MESH_MASK_SHADER
 	mask.render_priority = -20
 	var count := 0
-	for property_name in ["goal_shrine", "staff_tool", "xr_player"]:
+	for property_name in ["goal_shrine", "staff_tool", "xr_player", "_local_avatar"]:
 		var blocker: Variant = lab.get(property_name)
 		if blocker is Node:
 			count += _attach_river_mesh_mask(blocker, mask)

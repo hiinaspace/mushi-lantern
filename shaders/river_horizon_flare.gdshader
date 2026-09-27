@@ -3,8 +3,8 @@ render_mode blend_add, depth_draw_never, depth_test_disabled, cull_disabled, uns
 stencil_mode read, compare_not_equal, 1;
 
 uniform float river_night_vision = 1.0;
-uniform float horizon_flare_strength = 0.25;
-uniform float horizon_flare_spread = 1.0;
+uniform float horizon_flare_strength = 0.15;
+uniform float horizon_flare_spread = 0.5;
 uniform float flare_height = 500.0;
 varying float below_horizon;
 
@@ -20,12 +20,17 @@ void fragment() {
 	float lower_falloff = exp(-pow(max(below - 0.13, 0.0) / 0.50, 2.0));
 	float horizontal = exp(-pow((UV.x - 0.5) / (0.28 * max(horizon_flare_spread, 0.2)), 2.0));
 	float side_fade = smoothstep(0.0, 0.12, UV.x) * (1.0 - smoothstep(0.88, 1.0, UV.x));
-	float reveal = smoothstep(0.64, 0.98, river_night_vision);
+	float reveal = smoothstep(0.72, 1.0, river_night_vision);
 	float haze = rise * lower_falloff * horizontal * side_fade;
-	ALBEDO = vec3(0.34, 0.26, 0.065) * horizon_flare_strength;
+	// A compact bright center continues the vein as its geometry dissolves.
+	// Its height follows the -30 * depth centerline of the distant tube.
+	float core = exp(-pow((below - 0.06) / 0.075, 2.0))
+		* exp(-pow((UV.x - 0.5) / (0.075 * max(horizon_flare_spread, 0.2)), 2.0))
+		* smoothstep(0.0, 0.024, below);
+	ALBEDO = vec3(0.949, 0.800, 0.196) * horizon_flare_strength;
 	// This is a feature of the submerged world, not an eye-locked glare effect.
 	// Gaze gating made it vanish when players glanced above or below the horizon.
-	float alpha = haze * reveal * 0.34;
+	float alpha = (haze * 0.1133 + core * 0.5667) * reveal;
 	// The dark gold occupies only a few LDR code values; stable interleaved
 	// gradient noise trades broad concentric quantization bands for fine grain.
 	float dither = fract(52.9829189 * fract(0.06711056 * FRAGCOORD.x

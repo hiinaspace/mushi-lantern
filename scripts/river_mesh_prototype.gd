@@ -83,8 +83,8 @@ func apply_tuning(values: Dictionary) -> void:
 		(flare.mesh as QuadMesh).size.y = height
 		var material := flare.material_override as ShaderMaterial
 		material.set_shader_parameter("flare_height", height)
-		material.set_shader_parameter("horizon_flare_strength", float(values.get(&"horizon_flare_strength", 0.25)))
-		material.set_shader_parameter("horizon_flare_spread", float(values.get(&"horizon_flare_spread", 1.0)))
+		material.set_shader_parameter("horizon_flare_strength", float(values.get(&"horizon_flare_strength", 0.15)))
+		material.set_shader_parameter("horizon_flare_spread", float(values.get(&"horizon_flare_spread", 0.5)))
 
 
 func _build_mesh() -> ArrayMesh:
