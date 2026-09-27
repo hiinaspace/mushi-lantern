@@ -1239,8 +1239,6 @@ func _recenter_xr_tutorial_if_needed(delta: float) -> void:
 
 func _tutorial_locks_shutter() -> bool:
 	return tutorial_director != null and tutorial_director.tutorial_enabled and tutorial_director.stage in [
-		TutorialDirector.Stage.JAR_ORANGE,
-		TutorialDirector.Stage.JAR_BLUE,
 		TutorialDirector.Stage.GUIDE,
 		TutorialDirector.Stage.GROUPS,
 	]
