@@ -32,6 +32,9 @@ func configure(surface: EnvironmentSurface, map: ImageTexture, length_m: float) 
 func set_night_vision(value: float) -> void:
 	_material.set_shader_parameter("river_night_vision", clampf(value, 0.0, 1.0))
 
+func set_shrine_beam_visibility(value: float) -> void:
+	_material.set_shader_parameter("shrine_beam_visibility", clampf(value, 0.0, 1.0))
+
 func set_tube_enabled(enabled: bool) -> void:
 	_material.set_shader_parameter("river_tube_enabled", 1.0 if enabled else 0.0)
 

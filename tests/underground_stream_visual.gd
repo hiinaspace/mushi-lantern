@@ -68,21 +68,26 @@ func _run() -> void:
 	lab.set_process(false)
 	for state: Dictionary in [
 		{"name": "clear", "vision": 0.0},
+		{"name": "beam-first", "vision": 0.75},
 		{"name": "adapted", "vision": 1.0},
 	]:
 		var vision: float = state.vision
 		lab.lantern.reset_adaptation(vision)
 		NightEnvironment.set_night_vision(lab.night_environment, vision)
 		lab.terrain_environment.set_night_vision(vision)
-		lab.terrain_environment.set_stream_visibility(vision)
+		var expected_beam := TerrainEnvironment.stream_visibility_target(vision, 0.0, true, 0.38, 0.72)
+		lab.terrain_environment.set_shrine_beam_visibility(expected_beam)
+		lab.terrain_environment.set_stream_visibility(0.0 if state.name == "beam-first" else vision)
 		_expect(is_equal_approx(float(sky_material.get_shader_parameter("night_vision")), vision), "sky forced to %s endpoint" % state.name)
 		_expect(is_equal_approx(lab.terrain_environment._night_vision, vision), "terrain forced to %s endpoint" % state.name)
+		_expect(is_equal_approx(float(lab.terrain_environment.terrain.material.get_shader_param("shrine_beam_visibility")), expected_beam), "shrine beam has independent adaptation envelope")
+		var expected_stream := 0.0 if state.name == "beam-first" else vision
 		var receiver_vision: float = float(lab.terrain_environment.terrain.material.get_shader_param("river_night_vision"))
 		if lab.terrain_environment._river_mesh_active:
 			var mesh_material := lab.terrain_environment._river_mesh.material_override as ShaderMaterial
-			_expect(is_equal_approx(receiver_vision, vision) and is_zero_approx(float(lab.terrain_environment.terrain.material.get_shader_param("river_tube_enabled"))) and is_equal_approx(float(mesh_material.get_shader_parameter("river_night_vision")), vision), "mesh stream forced to %s endpoint" % state.name)
+			_expect(is_equal_approx(receiver_vision, expected_stream) and is_zero_approx(float(lab.terrain_environment.terrain.material.get_shader_param("river_tube_enabled"))) and is_equal_approx(float(mesh_material.get_shader_parameter("river_night_vision")), expected_stream), "mesh stream forced to %s endpoint" % state.name)
 		else:
-			_expect(is_equal_approx(receiver_vision, vision), "stream forced to %s endpoint" % state.name)
+			_expect(is_equal_approx(receiver_vision, expected_stream), "stream forced to %s endpoint" % state.name)
 		await _capture("stream-%d-%s.png" % [expected_size, state.name])
 		if state.name == "adapted":
 			_expect(lab.tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY

@@ -62,7 +62,7 @@ func set_tuning(values: Dictionary) -> void:
 func apply_tuning(values: Dictionary) -> void:
 	var names := ["river_width", "river_depth", "path_long_scale", "path_medium_scale", "path_long_frequency", "path_medium_frequency", "path_long_speed", "path_medium_speed", "surface_bump_scale", "surface_bump_frequency", "surface_bump_speed", "far_scintillation_blend"]
 	var keys := [&"river_width", &"river_depth", &"path_long", &"path_medium", &"path_long_frequency", &"path_medium_frequency", &"path_long_speed", &"path_medium_speed", &"surface_bump", &"surface_bump_frequency", &"surface_bump_speed", &"far_scintillation_blend"]
-	var defaults := [2.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+	var defaults := [5.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 	var targets: Array[Node] = [self]
 	for child: Node in get_children():
 		if child is MeshInstance3D and child.name.begins_with("ParticleShell"):

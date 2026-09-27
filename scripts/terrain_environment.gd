@@ -23,6 +23,7 @@ var _leaf_foliage_mask: ImageTexture
 var _grass_foliage_mask: ImageTexture
 var _night_vision: float = 0.0
 var _stream_visibility: float = 0.0
+var _shrine_beam_visibility: float = 0.0
 var terrain_reveal_active: bool = false
 var _river_far_receiver: RiverFarReceiver
 var _river_mesh: MeshInstance3D
@@ -170,6 +171,16 @@ func set_stream_visibility(value: float) -> void:
 			_set_mesh_night_vision(_river_mesh, _stream_visibility)
 	for material in _foliage_materials:
 		material.set_shader_parameter("river_night_vision", _stream_visibility if terrain_reveal_active else 0.0)
+
+
+func set_shrine_beam_visibility(value: float) -> void:
+	_shrine_beam_visibility = clampf(value, 0.0, 1.0)
+	if terrain_reveal_active:
+		terrain.material.set_shader_param("shrine_beam_visibility", _shrine_beam_visibility)
+		if _river_far_receiver != null:
+			_river_far_receiver.set_shrine_beam_visibility(_shrine_beam_visibility)
+	for material in _foliage_materials:
+		material.set_shader_parameter("shrine_beam_visibility", _shrine_beam_visibility if terrain_reveal_active else 0.0)
 
 
 static func stream_visibility_target(night_vision: float, shutter_openness: float, tutorial_reveal_allowed: bool = true, reveal_start: float = 0.18, reveal_end: float = 0.68) -> float:
@@ -747,6 +758,7 @@ func _foliage_material(color: Color, cutout: bool = false, grass_blades: bool = 
 	material.set_shader_parameter("night_vision", _night_vision)
 	material.set_shader_parameter("fleck_strength", 0.34 if grass_blades else 0.82)
 	material.set_shader_parameter("river_night_vision", _stream_visibility if terrain_reveal_active else 0.0)
+	material.set_shader_parameter("shrine_beam_visibility", _shrine_beam_visibility if terrain_reveal_active else 0.0)
 	material.set_shader_parameter("fleck_frequency", 6.0 if grass_blades else 3.0)
 	material.set_shader_parameter("grove_size", float(surface.size_m))
 	if cutout:

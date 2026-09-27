@@ -5,7 +5,7 @@ stencil_mode read, compare_not_equal, 1;
 uniform int shell_index = 0;
 uniform float river_animation_rate = 1.0;
 uniform float river_night_vision = 1.0;
-uniform float river_width = 2.5;
+uniform float river_width = 5.8;
 // Scales the entire submerged centerline: both the arms and crest move deeper.
 uniform float river_depth = 1.0;
 uniform float path_long_scale = 1.0;
@@ -48,6 +48,12 @@ vec3 centerline(float x) {
 	float drift_z = (0.92 * path_long_scale * noise1(x * path_long_frequency / 122.0 - (TIME * river_animation_rate) * 0.034 * path_long_speed + 17.0)
 		+ 0.43 * path_medium_scale * noise1(x * path_medium_frequency / 47.0 - (TIME * river_animation_rate) * 0.075 * path_medium_speed + 31.0)
 		+ 0.24 * noise1(x * path_medium_frequency / 26.0 - (TIME * river_animation_rate) * 0.120 * path_medium_speed + 53.0)) * anchor * horizon_straight;
+	// Broad smooth bends carry the medium-field silhouette. Short noise bends
+	// make repeated folds when looking axially down the widened additive tube.
+	float medium_envelope = smoothstep(35.0, 130.0, abs(x))
+		* (1.0 - smoothstep(480.0, 950.0, abs(x)));
+	drift_y += 3.0 * path_long_scale * sin(x / 105.0 - TIME * river_animation_rate * 0.025 * path_long_speed) * medium_envelope;
+	drift_z += 4.5 * path_long_scale * sin(x / 125.0 - TIME * river_animation_rate * 0.020 * path_long_speed + 1.3) * medium_envelope;
 	return vec3(x, center_y(x) + drift_y, -2.0 + drift_z);
 }
 
@@ -121,12 +127,12 @@ void fragment() {
 	vec3 tangent = normalize(view_tangent);
 	float transverse = length(sight - tangent * dot(sight, tangent));
 	float facing = clamp(abs(dot(normalize(NORMAL), sight)) / max(transverse, 0.0001), 0.0, 1.0);
-	float soft_profile = pow(facing, 4.0);
+	float soft_profile = pow(facing, 3.0);
 	// All shells retain a small diffuse contribution as individual sparks become
 	// subpixel. The medium-field haze is already present before sparks retire.
 	float unresolved = (fine.y + 0.48 * finer.y) / 1.48;
-	float diffuse = shell_index == 0 ? mix(0.050, 0.100, merge) : 0.0;
-	diffuse += 0.014 * unresolved * (1.0 - merge);
+	float diffuse = shell_index == 0 ? mix(0.030, 0.060, merge) : 0.0;
+	diffuse += 0.009 * unresolved * (1.0 - merge);
 	float far_fade = 1.0 - smoothstep(450.0, 1800.0, distance_along);
 	// This input is the late adaptation envelope. Reveal the crest, then arms,
 	// then horizon flares; each front remains broad enough to avoid a wipe line.
@@ -134,6 +140,6 @@ void fragment() {
 	float reveal = smoothstep(0.04 + 0.50 * distance_delay,
 		0.48 + 0.40 * distance_delay, river_night_vision);
 	ALBEDO = vec3(0.949, 0.800, 0.196)
-		* (diffuse * soft_profile + dots * (0.43 - layer * 0.09) * soft_profile);
+		* (diffuse * soft_profile + dots * (0.34 - layer * 0.07) * soft_profile);
 	ALPHA = reveal * far_fade;
 }

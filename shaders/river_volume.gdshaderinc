@@ -6,6 +6,8 @@ uniform float river_plane_y = -30.0;
 uniform float river_depth = 1.0;
 uniform vec2 river_goal_xz = vec2(0.0);
 uniform float river_night_vision = 0.0;
+// Independent, already eased adaptation envelope for the vertical shrine rise.
+uniform float shrine_beam_visibility = 0.0;
 uniform float river_mote_motion = 1.0;
 uniform float river_tube_enabled = 1.0;
 
@@ -198,8 +200,8 @@ float river_goal_beam(vec3 eye, vec3 ray, float receiver_t) {
 
 vec4 river_evaluate(vec3 eye, vec3 ray, float receiver_t) {
     float vision = smoothstep(0.56, 0.94, river_night_vision);
-    float beam_vision = smoothstep(0.08, 0.52, river_night_vision);
-    if (beam_vision < 0.001 || ray.y >= -0.0005) { return vec4(0.0); }
+    float beam_vision = shrine_beam_visibility;
+    if (max(vision, beam_vision) < 0.001 || ray.y >= -0.0005) { return vec4(0.0); }
     if (river_tube_enabled < 0.5) {
         float beam_only = river_goal_beam(eye, ray, receiver_t);
         return vec4(vec3(0.949, 0.800, 0.196) * beam_vision * 0.44 * beam_only,
