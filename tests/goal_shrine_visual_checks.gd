@@ -86,9 +86,11 @@ func _run() -> void:
 		"paper charm stays matte and non-emissive")
 	check(bronze_material.metallic > 0.65 and bronze_material.roughness < 0.5,
 		"metal fittings read as aged bronze")
-	check(shrine.find_children("*", "OmniLight3D", true, false).is_empty()
+	var fills := shrine.find_children("*", "OmniLight3D", true, false)
+	check(fills.size() == 1 and fills[0].name == "ShrineSoftFill"
+		and not (fills[0] as OmniLight3D).shadow_enabled
 		and shrine.find_children("Brazier*", "MeshInstance3D", true, false).is_empty(),
-		"shrine has no visible point pools or brazier models")
+		"shrine has one soft face fill and no brazier models")
 	var visual_meshes: Array[MeshInstance3D] = []
 	_collect_meshes(shrine, visual_meshes)
 	var architecture_meshes := 0

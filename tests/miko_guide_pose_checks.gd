@@ -41,6 +41,10 @@ func _run() -> void:
 		avatar.set_guide_look_target(Vector3(1.5, 1.4, 2.0), true, 1.0 / 60.0)
 	assert(absf(avatar.rotation.y) < 0.01 and avatar._guide_head_yaw > 0.3,
 		"Guide follows a nearby angle with her head before moving her feet")
+	for frame in 60:
+		avatar.set_guide_look_target(Vector3(2.0, 1.4, 0.4), true, 1.0 / 60.0)
+	assert(absf(avatar.rotation.y) < 0.01 and avatar._guide_head_yaw > 0.7,
+		"Guide tolerates a broad side angle without turning her body")
 	for frame in 200:
 		avatar.set_guide_look_target(Vector3(0.0, 1.4, -2.0), true, 1.0 / 60.0)
 		await physics_frame

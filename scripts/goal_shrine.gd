@@ -16,6 +16,7 @@ var _last_score: int = -1
 var _progress_ticks: Array[MeshInstance3D] = []
 var _progress_materials: Array[StandardMaterial3D] = []
 var _up_light: SpotLight3D
+var _soft_fill: OmniLight3D
 var _architecture_root: Node3D
 
 
@@ -81,6 +82,7 @@ func _rebuild() -> void:
 	_progress_ticks.clear()
 	_progress_materials.clear()
 	_up_light = null
+	_soft_fill = null
 	_boundary_material = null
 	_build()
 	_apply_night_vision()
@@ -144,8 +146,7 @@ func _build() -> void:
 		_progress_ticks.append(tick)
 		_progress_materials.append(material)
 
-	# A single buried upward cone gives broad, even fill across the gate and
-	# guide, without four visible point-light pools on the ground.
+	# A single upward cone shapes the return from below the gate.
 	_up_light = SpotLight3D.new()
 	_up_light.name = "ShrineWarmUplight"
 	_up_light.light_color = Color("ffc477")
@@ -157,6 +158,17 @@ func _build() -> void:
 	_up_light.rotation.x = deg_to_rad(90.0)
 	_up_light.position = Vector3(0.0, 0.07, 0.0)
 	add_child(_up_light)
+	# This restrained, shadowless fill sits at face height. It lifts the guide's
+	# expression and the altar front without making another pool on the floor.
+	_soft_fill = OmniLight3D.new()
+	_soft_fill.name = "ShrineSoftFill"
+	_soft_fill.light_color = Color("f3cfaa")
+	_soft_fill.light_energy = 0.65
+	_soft_fill.omni_range = 3.3
+	_soft_fill.omni_attenuation = 1.7
+	_soft_fill.shadow_enabled = false
+	_soft_fill.position = Vector3(0.0, 1.42, 1.15)
+	add_child(_soft_fill)
 
 
 func _add_goal_boundary() -> void:
@@ -206,6 +218,8 @@ func _apply_night_vision() -> void:
 	# Keep the landmark legible at low adaptation without acting like another beacon.
 	if _up_light != null:
 		_up_light.light_energy = lerpf(2.1, 3.0, night_vision)
+	if _soft_fill != null:
+		_soft_fill.light_energy = lerpf(0.44, 0.65, night_vision)
 
 
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
