@@ -92,7 +92,7 @@ func begin_desktop_adjust() -> void:
 	lantern.begin_dial_preview()
 	lantern.set_dial_preview(float(_desktop_adjust_detent) * FILTER_STEP_YAW)
 
-func update_desktop_adjust(relative: Vector2, allow_shutter: bool = true) -> void:
+func update_desktop_adjust(relative: Vector2, allow_shutter: bool = true, allow_filter: bool = true) -> void:
 	if not _desktop_adjusting or not desktop_can_control_lantern():
 		return
 	_desktop_adjust_drag += relative
@@ -100,7 +100,7 @@ func update_desktop_adjust(relative: Vector2, allow_shutter: bool = true) -> voi
 	var travel := signf(vertical) * maxf(absf(vertical) - 6.0, 0.0)
 	if allow_shutter:
 		lantern.set_shutter(clampf(_desktop_adjust_open - travel / 150.0, 0.0, 1.0))
-	var dial := clampf(float(_desktop_adjust_detent) * FILTER_STEP_YAW + _desktop_adjust_drag.x * FILTER_STEP_YAW / 110.0,
+	var dial := clampf(float(_desktop_adjust_detent) * FILTER_STEP_YAW + (_desktop_adjust_drag.x if allow_filter else 0.0) * FILTER_STEP_YAW / 110.0,
 		-FILTER_STEP_YAW, FILTER_STEP_YAW)
 	lantern.set_dial_preview(dial)
 	var detent := -1 if dial < -FILTER_ENTER_YAW else 1 if dial > FILTER_ENTER_YAW else 0

@@ -80,7 +80,7 @@ func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
 	_world_line.add_theme_constant_override("outline_size", 7)
 	_world_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_world_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_world_line.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_world_line.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	text_viewport.add_child(_world_line)
 	_world_line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var text_quad := MeshInstance3D.new()
@@ -94,7 +94,7 @@ func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
 	text_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	text_material.albedo_texture = text_viewport.get_texture()
 	text_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	text_material.no_depth_test = true
+	text_material.no_depth_test = false
 	text_material.render_priority = -19
 	text_quad.material_override = text_material
 	_world_root.add_child(text_quad)
@@ -107,7 +107,7 @@ func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
 	_world_hint.width = 1450.0
 	_world_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_world_hint.modulate = Color("c3dfd6")
-	_world_hint.no_depth_test = true
+	_world_hint.no_depth_test = false
 	_world_root.add_child(_world_hint)
 	_world_root.visible = false
 
@@ -211,9 +211,9 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 	if _desktop_root != null:
 		_desktop_status.text = "Tutorial complete — explore!" if completion_visible else director.status_text
 		if director.stage == TutorialDirector.Stage.JAR_ORANGE or director.stage == TutorialDirector.Stage.JAR_BLUE:
-			_desktop_status.text += "\n2: blue · 3: orange · or hold right mouse and drag sideways"
+			_desktop_status.text += "\nHold right mouse and drag sideways to twist the rope"
 		elif director.stage == TutorialDirector.Stage.ADAPTATION or director.stage == TutorialDirector.Stage.SHUTTER:
-			_desktop_status.text += "\nF: shutter · wheel or hold right mouse and drag vertically"
+			_desktop_status.text += "\nHold right mouse and drag down to close the shutter"
 		_desktop_skip.visible = active and not xr_active
 		_desktop_skip.text = "Explore myself · K" if director.stage == TutorialDirector.Stage.WELCOME else "Skip introduction · K"
 		_desktop_begin.visible = director.stage == TutorialDirector.Stage.WELCOME and not xr_active
@@ -248,7 +248,7 @@ func update_ukon_proximity(distance: float, director: TutorialDirector, xr_activ
 	if _world_root != null and not _tutorial_active and _completion_remaining <= 0.0:
 		_world_root.visible = nearby
 		if nearby:
-			var full_line := "Ukon: " + line
+			var full_line := line
 			if full_line != _last_spoken_line:
 				_last_spoken_line = full_line
 				_spoken_characters = 0.0
@@ -266,7 +266,7 @@ func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
 	if director.stage == TutorialDirector.Stage.WELCOME:
 		return "Y / B: menu · Show me / Explore myself" if xr_active else "Enter: quick lesson · K: explore"
 	if director.stage == TutorialDirector.Stage.SHUTTER:
-		return "Close the lantern shutter" if xr_active else "F / wheel / right-drag: close shutter"
+		return "Close the lantern shutter" if xr_active else "Hold right mouse and drag down to close"
 	if director.stage == TutorialDirector.Stage.ADAPTATION:
 		var action := "trigger to continue" if xr_active else "Enter / click to continue"
 		return "Eyes adapting · %d%% · %s" % [roundi(director.adaptation_progress * 100.0), action if director.can_continue() else "look for a moment"]
@@ -320,10 +320,10 @@ func show_reward_unlocked() -> void:
 func show_broom_unlocked() -> void:
 	_reward_remaining = 9.0
 	if _reward_toast != null:
-		_reward_toast.text = "Ukon: Wonderful work! Broom flight unlocked."
+		_reward_toast.text = "Wonderful work! Broom flight unlocked."
 		_reward_toast.visible = true
 	if _xr_reward != null:
-		_xr_reward.text = "Ukon: Wonderful work! Broom flight unlocked."
+		_xr_reward.text = "Wonderful work! Broom flight unlocked."
 
 
 func update_reveal(amount: float) -> void:

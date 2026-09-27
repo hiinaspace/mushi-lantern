@@ -14,6 +14,7 @@ var movement_enabled: bool = true
 var camera: Camera3D
 var look_enabled: bool = true
 var lamp_adjusting: bool = false
+var staff_adjust_blend := 0.0
 var _pitch: float = -0.12
 
 # Desktop holds the lantern staff like a low, off-side FPS tool. Keeping the
@@ -100,7 +101,7 @@ func reset_look() -> void:
 func staff_hold_transform(aim: Vector2, adjusting: bool = false) -> Transform3D:
 	if camera == null:
 		return global_transform
-	var rest_offset := STAFF_HOLD_OFFSET.lerp(Vector3(0.19, -0.17, -0.39), 1.0 if adjusting else 0.0)
+	var rest_offset := STAFF_HOLD_OFFSET.lerp(Vector3(0.19, -0.17, -0.39), staff_adjust_blend)
 	var offset := rest_offset + Vector3(aim.x * 0.38, aim.y * 0.24, 0.0)
 	var staff_basis := camera.global_basis * Basis.from_euler(Vector3(-0.10 + aim.y * 0.52, aim.x * 0.58, 0.0))
 	return Transform3D(staff_basis.orthonormalized(), camera.global_transform * offset)

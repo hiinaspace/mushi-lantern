@@ -249,27 +249,27 @@ func _set_adaptation_progress(value: float, force_signal: bool = false) -> void:
 func _update_status() -> void:
 	match stage:
 		Stage.WELCOME:
-			status_text = "Ukon: Thanks for helping at the grove. Would you like a quick lesson, or explore on your own?"
+			status_text = "Thanks for helping at the grove. Would you like a quick lesson, or explore on your own?"
 		Stage.SHUTTER:
-			status_text = "Ukon: First, close the lantern's shutter. Let your eyes settle into the dark."
+			status_text = "First, hold the control rope and pull down to close the shutter. Let your eyes settle into the dark."
 		Stage.ADAPTATION:
 			if _adaptation_page == 0:
-				status_text = "Ukon: This grove follows a 光脈筋 (koumyakusuji), a light vein the mushi navigate."
+				status_text = "This is a mushi. They barely touch our world, and travel in great migrations."
 			elif _adaptation_page == 1:
-				status_text = "Ukon: Some mushi are left adrift from the golden stream below. See it beneath the stars?"
+				status_text = "This grove lies over a 光脈筋 (koumyakusuji), a light vein. Its pull leaves some mushi adrift."
 			else:
-				status_text = "Ukon: It's dark here, but you're safe. No jumpscares; the mushi and other creatures won't hurt you."
+				status_text = "The golden stream shows through the ground, but the earth is solid. We guide the lost mushi back with lantern and shrine."
 		Stage.REVEAL_WAIT:
-			status_text = "Ukon: There is the light vein. Take a moment to look; open the shutter when you are ready."
+			status_text = "There is the light vein. Take a moment to look; open the shutter when ready. There are no jumpscares or dangerous creatures here."
 		Stage.JAR_NEUTRAL:
-			status_text = "Ukon: Watch this mushi wander in the jar first. It has no reason to settle yet."
+			status_text = "Watch this mushi wander first. Its green glow means it is awake and drifting."
 		Stage.JAR_BLUE:
-			status_text = "Ukon: Shine blue light into this jar. Watch the green mushi settle and draw toward it."
+			status_text = "Shine blue light into the glass. Blue quiets its energy and draws it close."
 		Stage.JAR_ORANGE:
-			status_text = "Ukon: Now orange. I'll lift the lid; watch how the light nudges it to the shrine."
+			status_text = "Now orange. It stirs the mushi's energy and nudges it away. I'll lift the glass; guide it toward the shrine."
 		Stage.GUIDE:
-			status_text = "Ukon: There it goes. The shrine leads it back into the stream."
+			status_text = "There it goes. The shrine leads it back into the stream."
 		Stage.GROUPS:
-			status_text = "Ukon: Groups gather with blue and stretch away from orange. Try guiding a few home."
+			status_text = "Groups gather with blue and stretch away from orange. Try guiding a few home."
 		Stage.FREE_PLAY:
 			status_text = "Free play · %d%% returned" % roundi(progress_ratio * 100.0)

@@ -12,6 +12,7 @@ uniform float glow_strength : hint_range(0.0, 3.0) = 0.72;
 uniform float bloom_hdr_gain : hint_range(1.0, 4.0) = 1.0;
 uniform float halo_strength : hint_range(0.0, 1.5) = 0.0;
 uniform float clear_light_fade : hint_range(0.0, 0.5) = 0.0;
+uniform float scene_opacity : hint_range(0.0, 1.0) = 1.0;
 uniform float clear_fade_distance_start = 17.0;
 uniform float clear_fade_distance_end = 52.0;
 
@@ -177,6 +178,6 @@ void fragment() {
 	// restrained near-white ring lifts all energy hues over Mobile's low HDR
 	// glow threshold while the broad interior retains its original color.
 	float hot_ring = clamp((bloom_hdr_gain - 1.0) * 0.625, 0.0, 0.25) * ring;
-	EMISSION = mix(color, vec3(1.0), hot_ring) * glow_strength * (0.35 + ring * 0.95) * bloom_hdr_gain;
-	ALPHA = alpha * glyph_color.a * glyph_visibility;
+	EMISSION = mix(color, vec3(1.0), hot_ring) * glow_strength * (0.35 + ring * 0.95) * bloom_hdr_gain * scene_opacity;
+	ALPHA = alpha * glyph_color.a * glyph_visibility * scene_opacity;
 }

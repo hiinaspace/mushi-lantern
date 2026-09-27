@@ -220,6 +220,10 @@ func set_halo_strength(value: float) -> void:
 	_material.set_shader_parameter("halo_strength", halo_strength)
 
 
+func set_scene_opacity(value: float) -> void:
+	_material.set_shader_parameter("scene_opacity", clampf(value, 0.0, 1.0))
+
+
 func set_world_bounds(bounds: AABB) -> void:
 	world_bounds = bounds
 	_multimesh.custom_aabb = bounds

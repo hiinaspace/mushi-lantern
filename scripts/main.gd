@@ -112,6 +112,7 @@ var fixture_count: int = 1024
 var accumulator: float = 0.0
 var active_step: float = FIXED_STEP
 var simulation_paused: bool = false
+var _tutorial_swarm_alpha := 1.0
 var top_down: bool = false
 var debug_visible: bool = true
 var elapsed: float = 0.0
@@ -183,6 +184,8 @@ var _screenshot_delay: float = 1.0
 var _screenshot_elapsed: float = 0.0
 var _want_xr: bool = false
 var _desktop_aim: Vector2 = Vector2.ZERO
+var _desktop_left_hand_pose := Transform3D.IDENTITY
+var _desktop_left_hand_blend := 0.0
 var _desktop_recall_held: bool = false
 var _xr_recall_owner: XRController3D
 var _skip_tutorial_requested := false
@@ -199,6 +202,8 @@ var _visual_tuning := {
 	"foliage_start": 0.90, "foliage_end": 0.99,
 	"clear_start": 0.10, "clear_end": 0.65, "clear_distance_start": 17.0, "clear_distance_end": 52.0,
 	"river_width": 2.5, "river_depth": 1.0,
+	"horizon_flare_strength": 0.25, "horizon_flare_spread": 1.0,
+	"far_scintillation_blend": 1.0,
 	"path_long": 1.0, "path_medium": 1.0, "path_long_speed": 1.0, "path_medium_speed": 1.0,
 	"path_long_frequency": 1.0, "path_medium_frequency": 1.0,
 	"surface_bump": 1.0, "surface_bump_speed": 1.0, "surface_bump_frequency": 1.0,
@@ -241,6 +246,8 @@ func _ready() -> void:
 	_build_player()
 	if _want_xr:
 		_build_xr_player()
+	_ensure_local_avatar()
+	_local_avatar.set_local_first_person(true)
 	tutorial_director = TutorialDirector.new()
 	tutorial_director.goal_acceptance_changed.connect(_on_tutorial_goal_acceptance_changed)
 	tutorial_director.reveal_changed.connect(_on_tutorial_reveal_changed)
@@ -266,10 +273,10 @@ func _ready() -> void:
 			controller.button_pressed.connect(func(action: String) -> void:
 				if action == "trigger_click" and not xr_player.is_menu_open():
 					tutorial_ui.request_advance())
-		_build_xr_tutorial_chain_cue()
 		var tutorial_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
 		if tutorial_surface.scene_node is Control:
 			tutorial_ui.attach_xr_menu(tutorial_surface.scene_node as Control)
+	_build_xr_tutorial_chain_cue()
 	_build_audio()
 	audio_mix_menu = load("res://scripts/audio_mix_panel.gd").new()
 	add_child(audio_mix_menu)
@@ -385,11 +392,6 @@ func _process(delta: float) -> void:
 			return
 	if _tutorial_locks_shutter() and lantern.shutter_openness < 0.999:
 		lantern.set_shutter(1.0, false)
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter() \
-			and staff_tool != null and staff_tool.desktop_can_control_lantern():
-		var shutter_delta := Input.get_axis("shutter_close", "shutter_open")
-		if shutter_delta != 0.0:
-			lantern.adjust_shutter(shutter_delta * delta * 0.6)
 	if not simulation_paused:
 		elapsed += delta
 		mode_times[int(lantern.mode)] += delta
@@ -451,7 +453,12 @@ func _process(delta: float) -> void:
 		light_field.range_m = lantern.spot.spot_range
 	light_field.mode_strength = strength_slider.value if strength_slider != null else 1.0
 	_update_multiplayer(delta)
-	if not simulation_paused and _multiplayer_role != "client":
+	var tutorial_playing := tutorial_director != null and tutorial_director.tutorial_enabled \
+		and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY
+	_tutorial_swarm_alpha = move_toward(_tutorial_swarm_alpha, 0.0 if tutorial_playing else 1.0, delta * 0.8)
+	if glyph_swarm != null:
+		glyph_swarm.set_scene_opacity(_tutorial_swarm_alpha)
+	if not simulation_paused and not tutorial_playing and _multiplayer_role != "client":
 		accumulator = minf(accumulator + delta, active_step * (4.0 if fixture_count >= 256 else 8.0))
 		while accumulator >= active_step:
 			var step_start := Time.get_ticks_usec()
@@ -569,14 +576,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			player.lamp_adjusting = true
 			get_viewport().set_input_as_handled()
 			return
-		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_UP:
-			if not _tutorial_locks_shutter() and not player.lamp_adjusting:
-				lantern.adjust_shutter(0.08)
-			get_viewport().set_input_as_handled()
-			return
-		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			if not _tutorial_locks_shutter() and not player.lamp_adjusting:
-				lantern.adjust_shutter(-0.08)
+		if mouse.pressed and mouse.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 			get_viewport().set_input_as_handled()
 			return
 	if xr_player == null or not xr_player.xr_active:
@@ -612,26 +612,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			staff_tool.end_recall()
 			get_viewport().set_input_as_handled()
 			return
-	var lamp_controls_enabled: bool = xr_player != null and xr_player.xr_active or \
-		(staff_tool != null and staff_tool.desktop_can_control_lantern())
-	if player.lamp_adjusting and (event.is_action_pressed("mode_clear") or event.is_action_pressed("mode_blue") or event.is_action_pressed("mode_orange") or event.is_action_pressed("shutter_toggle")):
-		get_viewport().set_input_as_handled()
-		return
-	if event.is_action_pressed("mode_clear") and lamp_controls_enabled:
-		lantern.request_mode(LightField.Mode.CLEAR)
-	elif event.is_action_pressed("mode_blue") and lamp_controls_enabled:
-		lantern.request_mode(LightField.Mode.BLUE)
-	elif event.is_action_pressed("mode_orange") and lamp_controls_enabled:
-		lantern.request_mode(LightField.Mode.ORANGE)
-	elif event.is_action_pressed("shutter_toggle"):
-		if _tutorial_locks_shutter() or not lamp_controls_enabled:
-			get_viewport().set_input_as_handled()
-			return
-		if xr_player == null or not xr_player.xr_active:
-			lantern.toggle_shutter_animated()
-		else:
-			lantern.toggle_shutter()
-	elif event.is_action_pressed("reset_run"):
+	if event.is_action_pressed("reset_run"):
 		_reset_run(true)
 	elif event.is_action_pressed("toggle_pause"):
 		simulation_paused = not simulation_paused
@@ -1113,7 +1094,10 @@ func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
 
 func _on_desktop_lamp_adjust_motion(relative: Vector2) -> void:
 	if staff_tool != null and staff_tool.desktop_is_adjusting():
-		staff_tool.update_desktop_adjust(relative, not _tutorial_locks_shutter())
+		staff_tool.update_desktop_adjust(relative, not _tutorial_locks_shutter(),
+			tutorial_director == null or not tutorial_director.tutorial_enabled or tutorial_director.stage in [
+				TutorialDirector.Stage.JAR_BLUE, TutorialDirector.Stage.JAR_ORANGE,
+				TutorialDirector.Stage.GUIDE, TutorialDirector.Stage.GROUPS, TutorialDirector.Stage.FREE_PLAY])
 
 
 func _end_desktop_lamp_adjust() -> void:
@@ -1136,6 +1120,8 @@ func _update_staff_pose(delta: float) -> void:
 	else:
 		if player.lamp_adjusting and (not staff_tool.desktop_can_control_lantern() or not player.look_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
 			_end_desktop_lamp_adjust()
+		player.staff_adjust_blend = move_toward(player.staff_adjust_blend,
+			1.0 if player.lamp_adjusting else 0.0, delta * 5.0)
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_desktop_aim = _desktop_aim.lerp(Vector2.ZERO, 1.0 - exp(-delta * 3.5))
 		if _desktop_recall_held:
@@ -1270,7 +1256,7 @@ func _build_xr_tutorial_chain_cue() -> void:
 	_tutorial_chain_label.modulate = Color("ffdfa4")
 	_tutorial_chain_label.outline_size = 10
 	_tutorial_chain_label.outline_modulate = Color(0.015, 0.012, 0.01, 0.94)
-	_tutorial_chain_label.no_depth_test = true
+	_tutorial_chain_label.no_depth_test = false
 	_tutorial_chain_label.visible = false
 	add_child(_tutorial_chain_label)
 
@@ -1278,16 +1264,16 @@ func _build_xr_tutorial_chain_cue() -> void:
 func _update_xr_tutorial_chain_cue() -> void:
 	if _tutorial_chain_label == null or _tutorial_chain_marker == null:
 		return
-	var show: bool = xr_player != null and xr_player.xr_active and tutorial_director != null and tutorial_director.tutorial_enabled
+	var show: bool = tutorial_director != null and tutorial_director.tutorial_enabled
 	var caption := ""
 	if show:
 		match tutorial_director.stage:
 			TutorialDirector.Stage.JAR_ORANGE:
-				caption = "Grip chain · twist to orange"
+				caption = "Grip chain · twist to orange" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag right to orange"
 			TutorialDirector.Stage.JAR_BLUE:
-				caption = "Grip chain · twist to blue"
+				caption = "Grip chain · twist to blue" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag left to blue"
 			TutorialDirector.Stage.SHUTTER:
-				caption = "Grip chain · pull down to close"
+				caption = "Grip chain · pull down to close" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag down to close"
 	show = show and not caption.is_empty()
 	_tutorial_chain_label.visible = show
 	_tutorial_chain_marker.visible = show
@@ -1429,7 +1415,7 @@ func _build_ui() -> void:
 
 	help_label = Label.new()
 	help_label.add_theme_font_override("font", UI_FONT)
-	help_label.text = "WASD move · Space jump · mouse look · hold left mouse: wave staff · hold right mouse: drag filter/shutter\nScroll: shutter · 1/2/3: filter · F: shutter · G: drop/pick up · hold E: recall · K: skip intro · R: reset\nF1: debug · F2: quality · F3: audio · F6: spectator · Esc: menu\nSpectator: mouse look · WASD/Q/E fly · Shift fast · Ctrl slow · F7 sweep · F8/F9 eye adaptation · F10 auto"
+	help_label.text = "WASD move · Space jump · mouse look · hold left mouse: wave staff · hold right mouse: drag filter/shutter\nG: drop/pick up · hold E: recall · K: skip intro · R: reset\nF1: debug · F2: quality · F3: audio · F6: spectator · Esc: menu\nSpectator: mouse look · WASD/Q/E fly · Shift fast · Ctrl slow · F7 sweep · F8/F9 eye adaptation · F10 auto"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
 	help_label.add_theme_color_override("font_color", Color("dceae8"))
@@ -1525,6 +1511,9 @@ func _build_ui() -> void:
 	_add_visual_group_label(stack, "River mesh · path and surface")
 	_add_visual_slider(stack, "River width scale", 0.6, 8.0, 2.5, 0.05, &"river_width")
 	_add_visual_slider(stack, "River depth scale", 0.6, 3.5, 1.0, 0.05, &"river_depth")
+	_add_visual_slider(stack, "Horizon gold flare", 0.0, 2.0, 0.25, 0.05, &"horizon_flare_strength")
+	_add_visual_slider(stack, "Horizon flare spread", 0.2, 2.5, 1.0, 0.05, &"horizon_flare_spread")
+	_add_visual_slider(stack, "Far stream diffuse blend", 0.0, 1.0, 1.0, 0.05, &"far_scintillation_blend")
 	_add_visual_slider(stack, "Path long wobble", 0.0, 5.0, 1.0, 0.05, &"path_long")
 	_add_visual_slider(stack, "Path long frequency", 0.2, 6.0, 1.0, 0.05, &"path_long_frequency")
 	_add_visual_slider(stack, "Path medium wobble", 0.0, 5.0, 1.0, 0.05, &"path_medium")
@@ -2002,6 +1991,9 @@ func _reset_run(record_previous: bool) -> void:
 		grove_audio.bind_simulation(simulation)
 	_refresh_preset_visuals()
 	_rebuild_agents()
+	_tutorial_swarm_alpha = 0.0 if tutorial_director != null and tutorial_director.tutorial_enabled else 1.0
+	if glyph_swarm != null:
+		glyph_swarm.set_scene_opacity(_tutorial_swarm_alpha)
 	accumulator = 0.0
 	sim_step_ms = 0.0
 	visual_update_ms = 0.0
@@ -2424,12 +2416,6 @@ func _setup_input() -> void:
 	_add_key_action("move_left", KEY_A)
 	_add_key_action("move_right", KEY_D)
 	_add_key_action("jump", KEY_SPACE)
-	_add_key_action("mode_clear", KEY_1)
-	_add_key_action("mode_blue", KEY_2)
-	_add_key_action("mode_orange", KEY_3)
-	_add_key_action("shutter_toggle", KEY_F)
-	_add_key_action("shutter_close", KEY_BRACKETLEFT)
-	_add_key_action("shutter_open", KEY_BRACKETRIGHT)
 	_add_key_action("staff_drop_pickup", KEY_G)
 	_add_key_action("staff_recall", KEY_E)
 	_add_key_action("reset_run", KEY_R)
@@ -2773,6 +2759,21 @@ func _update_local_avatar(delta: float) -> void:
 	if _local_avatar == null:
 		return
 	var local_pose := _sample_local_avatar_pose()
+	if xr_player == null or not xr_player.xr_active:
+		var rest_pose := player.camera.global_transform * Transform3D(Basis.IDENTITY,
+			Vector3(-0.28, -0.58, -0.34))
+		var holding_rope: bool = player.lamp_adjusting and staff_tool != null \
+			and staff_tool.placement == StaffTool.Placement.HELD
+		var target_pose: Transform3D = local_pose.left if holding_rope else rest_pose
+		if _desktop_left_hand_pose == Transform3D.IDENTITY:
+			_desktop_left_hand_pose = rest_pose
+		_desktop_left_hand_pose = _desktop_left_hand_pose.interpolate_with(target_pose,
+			1.0 - exp(-delta * 6.0))
+		_desktop_left_hand_blend = move_toward(_desktop_left_hand_blend,
+			1.0 if holding_rope else 0.0, delta * 4.0)
+		if _desktop_left_hand_blend > 0.01:
+			local_pose.left = _desktop_left_hand_pose
+			local_pose.tracking |= 1
 	if xr_player != null and xr_player.xr_active:
 		_local_avatar.set_player_eye_height(local_pose.eye_height)
 	else:
@@ -2839,9 +2840,8 @@ func _leave_multiplayer() -> void:
 	for avatar: MushiMultiplayerAvatar in _peer_avatars.values():
 		avatar.queue_free()
 	_peer_avatars.clear()
-	if _local_avatar != null and (xr_player == null or not xr_player.xr_active):
-		_local_avatar.queue_free()
-		_local_avatar = null
+	if _local_avatar != null:
+		_local_avatar.set_local_first_person(spectator_camera == null or not spectator_camera.active)
 	var presentation := get_node_or_null("MikoPresentation") as Node3D
 	if presentation != null:
 		presentation.visible = true
