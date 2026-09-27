@@ -59,7 +59,8 @@ float radius_at(float x, float theta) {
 	// The tight upwelling bend cannot carry the same radius as the straight arms
 	// without the additive shells folding across each other.
 	float width_here = mix(min(river_width, 1.6), river_width, smoothstep(12.0, 70.0, abs(x)));
-	return max(1.0, 4.05 - 1.65 * crest + medium + fine + turning_bump - float(shell_index) * 0.54) * width_here;
+	float distant_stillness = 1.0 - smoothstep(120.0, 700.0, abs(x));
+	return max(1.0, 4.05 - 1.65 * crest + (medium + fine + turning_bump) * distant_stillness - float(shell_index) * 0.54) * width_here;
 }
 
 float hash21(vec2 p) {
@@ -109,7 +110,7 @@ void fragment() {
 	float dots = spark(uv1, 0.78) + 0.48 * spark(uv2, 0.88);
 	float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
 	float edge_softness = smoothstep(0.02, 0.78, facing);
-	float far_merge = smoothstep(300.0, 1900.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
+	float far_merge = smoothstep(120.0, 900.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
 	// Sparks fall below a pixel in the far arms. Merge their energy into one
 	// outer-shell haze instead of leaving three concentric, additive rings.
 	dots *= 1.0 - far_merge;
@@ -121,6 +122,6 @@ void fragment() {
 	float reveal = smoothstep(0.30 + 0.48 * distance_delay,
 		0.72 + 0.24 * distance_delay, river_night_vision);
 	ALBEDO = vec3(0.949, 0.800, 0.196)
-		* (diffuse + dots * (0.43 - layer * 0.09)) * view_softness;
+		* (diffuse + dots * (0.43 - layer * 0.09) * view_softness);
 	ALPHA = reveal * far_fade;
 }
