@@ -321,6 +321,7 @@ func _ready() -> void:
 	friend_menu = FriendMenu.new()
 	add_child(friend_menu)
 	friend_menu.avatar_fit_changed.connect(_on_avatar_fit_changed)
+	friend_menu.avatar_calibrate_requested.connect(_on_avatar_calibrate_requested)
 	friend_menu.voice_mute_changed.connect(_on_voice_mute_changed)
 	friend_menu.voice_input_device_changed.connect(_on_voice_input_device_changed)
 	friend_menu.voice_gain_changed.connect(_on_voice_gain_changed)
@@ -352,8 +353,6 @@ func _ready() -> void:
 		var friend_xr_surface := xr_player.get_node("Camera/MenuSurface") as XRToolsViewport2DIn3D
 		if friend_xr_surface.scene_node is Control:
 			friend_menu.attach_xr_menu(friend_xr_surface.scene_node as Control)
-	elif environment_enabled and _screenshot_path.is_empty() and OS.get_environment("MUSHI_TEST_DATA_ROOT").is_empty():
-		friend_menu.set_open(true)
 	if _initial_mode >= 0:
 		lantern.set_mode(_initial_mode as LightField.Mode)
 	if start_top_down:
@@ -671,7 +670,7 @@ func _calibrate_xr_avatar_scale(delta: float) -> void:
 		return
 	var player_height := _avatar_eye_height_override if _avatar_eye_height_override > 0.0 else _xr_avatar_raw_eye_height
 	var authored_height: float = MushiMultiplayerAvatar.XR_EYE_HEIGHT
-	xr_player.world_scale = clampf(authored_height / player_height, 0.6, 1.25)
+	xr_player.world_scale = clampf(authored_height / player_height, 0.6, 1.5)
 	_xr_avatar_scale_ready = true
 	if friend_menu != null and _avatar_eye_height_override <= 0.0:
 		friend_menu.set_avatar_fit_values(player_height, _avatar_arm_reach)
@@ -693,6 +692,18 @@ func _load_avatar_fit() -> void:
 		_avatar_arm_reach = clampf(float(saved.get("arm_reach", 1.3)), 0.9, 1.5)
 
 
+func _on_avatar_calibrate_requested() -> void:
+	if xr_player == null or not xr_player.xr_active:
+		return
+	# OpenXR applies world_scale to the camera pose; recover physical metres.
+	var standing_height: float = xr_player.camera.position.y / maxf(xr_player.world_scale, 0.001)
+	if not is_finite(standing_height) or standing_height < 1.1 or standing_height > 2.1:
+		return
+	_xr_avatar_scale_ready = true
+	_on_avatar_fit_changed(standing_height, _avatar_arm_reach)
+	friend_menu.set_avatar_fit_values(standing_height, _avatar_arm_reach)
+
+
 func _on_avatar_fit_changed(standing_height: float, arm_reach: float) -> void:
 	_avatar_eye_height_override = clampf(standing_height, 1.1, 2.1)
 	_avatar_arm_reach = clampf(arm_reach, 0.9, 1.5)
@@ -700,7 +711,7 @@ func _on_avatar_fit_changed(standing_height: float, arm_reach: float) -> void:
 		_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
 	if _xr_avatar_scale_ready and xr_player != null and xr_player.xr_active and _local_avatar != null:
 		xr_player.world_scale = clampf(MushiMultiplayerAvatar.XR_EYE_HEIGHT /
-			_avatar_eye_height_override, 0.6, 1.25)
+			_avatar_eye_height_override, 0.6, 1.5)
 	var file := FileAccess.open(AVATAR_FIT_PATH, FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify({"standing_height": _avatar_eye_height_override,
@@ -1133,7 +1144,7 @@ func _update_staff_pose(delta: float) -> void:
 		staff_tool.clear_desktop_yaw_reference()
 		if xr_staff_interaction != null:
 			var tutorial_stage: int = tutorial_director.stage if tutorial_director != null and tutorial_director.tutorial_enabled else TutorialDirector.Stage.FREE_PLAY
-			xr_staff_interaction.tutorial_allow_shutter = tutorial_stage in [TutorialDirector.Stage.SHUTTER, TutorialDirector.Stage.REVEAL_WAIT, TutorialDirector.Stage.FREE_PLAY]
+			xr_staff_interaction.tutorial_allow_shutter = tutorial_stage in [TutorialDirector.Stage.SHUTTER, TutorialDirector.Stage.REVEAL_WAIT, TutorialDirector.Stage.JAR_NEUTRAL, TutorialDirector.Stage.JAR_BLUE, TutorialDirector.Stage.JAR_ORANGE, TutorialDirector.Stage.FREE_PLAY]
 			xr_staff_interaction.tutorial_allow_filter = tutorial_stage in [TutorialDirector.Stage.JAR_BLUE, TutorialDirector.Stage.JAR_ORANGE, TutorialDirector.Stage.FREE_PLAY]
 			xr_staff_interaction.update(delta)
 		staff_tool.set_flight_aim(xr_player.is_broom_flying(), -xr_player.camera.global_basis.z)
