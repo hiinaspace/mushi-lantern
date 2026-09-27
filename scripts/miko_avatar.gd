@@ -1,6 +1,8 @@
 extends Node3D
 
 const VOICE_EXPRESSIONS = preload("res://scripts/miko_voice_expressions.gd")
+const RENIK_LIMB = preload("res://addons/renik/renik_limb.gd")
+const RENIK_PLACEMENT = preload("res://addons/renik/renik_placement.gd")
 
 ## Per-instance atlas hue offset, measured in turns. Zero keeps the authored red.
 @export_range(0.0, 1.0, 0.001) var hue_shift: float = 0.0:
@@ -39,9 +41,13 @@ var _idle_spine_rest := Quaternion.IDENTITY
 var _guide_look_engaged := false
 var _guide_head_yaw := 0.0
 var _guide_head_pitch := 0.0
+var _guide_placement: RenIKPlacement3D
+var _guide_leg_modifiers: Array[SkeletonModifier3D] = []
+var _guide_foot_weight := 0.0
 const GUIDE_ARM_DROP := 1.16
 const GUIDE_LOOK_ENTER_DISTANCE := 4.2
 const GUIDE_LOOK_EXIT_DISTANCE := 5.6
+const GUIDE_STEP_ANGLE := PI / 6.0
 
 
 func _ready() -> void:
@@ -82,6 +88,53 @@ func _ready() -> void:
 				_idle_head_rest = _idle_skeleton.get_bone_pose_rotation(_idle_head)
 			if _idle_spine >= 0:
 				_idle_spine_rest = _idle_skeleton.get_bone_pose_rotation(_idle_spine)
+			_setup_guide_feet()
+
+
+func _guide_marker(label: String, bone: String) -> Node3D:
+	var marker := Node3D.new()
+	marker.name = label
+	_idle_skeleton.add_child(marker)
+	var index := _idle_skeleton.find_bone(bone)
+	if index >= 0:
+		marker.transform = _idle_skeleton.get_bone_global_rest(index)
+	return marker
+
+
+func _setup_guide_feet() -> void:
+	# The placement head target follows the guide's root, not the expressive
+	# head look bone. RenIK can therefore plant steps during a full body turn.
+	_guide_marker("GuideHeadTarget", "Head")
+	_guide_marker("GuideHipsTarget", "Hips")
+	for side in ["Left", "Right"]:
+		var foot := _guide_marker("Guide%sFootTarget" % side, side + "Foot")
+		var leg: SkeletonModifier3D = RENIK_LIMB.new()
+		leg.name = "Guide%sLeg" % side
+		leg.preset = 2 if side == "Left" else 3
+		leg.leaf_bone = side + "Foot"
+		leg.lower_bone = side + "LowerLeg"
+		leg.upper_bone = side + "UpperLeg"
+		leg.mirror = side == "Right"
+		leg.target = foot
+		leg.assign_leg_defaults.call()
+		leg.has_shoulder = false
+		leg.active = false
+		_idle_skeleton.add_child(leg)
+		_guide_leg_modifiers.append(leg)
+	_guide_placement = RENIK_PLACEMENT.new()
+	_guide_placement.name = "GuideFootPlacement"
+	_guide_placement.armature_skeleton_path = NodePath("..")
+	_guide_placement.armature_head_target = NodePath("../GuideHeadTarget")
+	_guide_placement.armature_hip_target = NodePath("../GuideHipsTarget")
+	_guide_placement.armature_left_foot_target = NodePath("../GuideLeftFootTarget")
+	_guide_placement.armature_right_foot_target = NodePath("../GuideRightFootTarget")
+	_guide_placement.enable_hip_placement = false
+	_guide_placement.collision_mask = 1
+	# A turn of about 30 degrees warrants a small planted step.
+	_guide_placement.rotation_threshold = GUIDE_STEP_ANGLE
+	_idle_skeleton.add_child(_guide_placement)
+	_guide_placement.set_process_internal(false)
+	_guide_placement.set_physics_process_internal(false)
 
 
 func set_guide_idle(enabled: bool) -> void:
@@ -90,6 +143,9 @@ func set_guide_idle(enabled: bool) -> void:
 		_apply_guide_arm_pose(0.0)
 	else:
 		_guide_look_engaged = false
+		_guide_foot_weight = 0.0
+		for leg in _guide_leg_modifiers:
+			leg.active = false
 		_guide_head_yaw = 0.0
 		_guide_head_pitch = 0.0
 		if _idle_skeleton != null and _idle_spine >= 0:
@@ -115,6 +171,20 @@ func _process(delta: float) -> void:
 	_idle_model.position = _idle_origin + Vector3(0.003 * sin(_idle_seconds * 1.1), 0.004 * sin(_idle_seconds * 2.0), 0.0)
 	_idle_model.rotation = _idle_rotation + Vector3(0.0, 0.007 * sin(_idle_seconds * 0.6), 0.003 * sin(_idle_seconds * 1.1))
 	_apply_guide_arm_pose(_idle_seconds)
+	var has_floor := _guide_placement != null and _guide_placement.target_foot_is_valid and \
+		(_guide_placement.left_ground != null or _guide_placement.right_ground != null)
+	_guide_foot_weight = move_toward(_guide_foot_weight, 1.0 if has_floor else 0.0,
+		minf(delta, 0.05) * 5.0)
+	for leg in _guide_leg_modifiers:
+		leg.influence = _guide_foot_weight
+		leg.active = _guide_foot_weight > 0.001
+
+
+func _physics_process(delta: float) -> void:
+	if not _guide_idle or _guide_placement == null:
+		return
+	_guide_placement.update_placement(minf(delta, 0.05))
+	_guide_placement.interpolate_transforms(1.0)
 
 
 ## The guide turns toward a nearby visitor. A wider exit radius prevents

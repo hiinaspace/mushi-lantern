@@ -4,6 +4,15 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	var ground := StaticBody3D.new()
+	ground.collision_layer = 1
+	var ground_shape := CollisionShape3D.new()
+	var ground_box := BoxShape3D.new()
+	ground_box.size = Vector3(10.0, 0.2, 10.0)
+	ground_shape.shape = ground_box
+	ground.add_child(ground_shape)
+	ground.position.y = -0.1
+	root.add_child(ground)
 	var avatar := (load("res://scenes/miko_avatar.tscn") as PackedScene).instantiate()
 	root.add_child(avatar)
 	var skeletons := avatar.find_children("*", "Skeleton3D", true, false)
@@ -24,10 +33,17 @@ func _run() -> void:
 		"Guide arms must hang below imported T-pose")
 	assert(left_relaxed.x > 0.0 and right_relaxed.x < 0.0,
 		"Guide hands must remain clear of the torso")
+	for frame in 5:
+		await physics_frame
+	assert(avatar._guide_placement.target_foot_is_valid,
+		"Guide foot placement must find the terrain below her")
 	for frame in 200:
 		avatar.set_guide_look_target(Vector3(0.0, 1.4, -2.0), true, 1.0 / 60.0)
+		await physics_frame
 	assert(absf(wrapf(avatar.rotation.y - PI, -PI, PI)) < 0.08,
 		"Guide should turn her whole body toward a visitor behind her")
+	assert(avatar._guide_foot_weight > 0.95 and avatar._guide_leg_modifiers[0].active,
+		"Guide should keep grounded leg placement active during a full turn")
 	var visited_yaw: float = avatar.rotation.y
 	for frame in 60:
 		avatar.set_guide_look_target(Vector3(0.0, 1.4, -8.0), true, 1.0 / 60.0)
