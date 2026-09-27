@@ -51,6 +51,9 @@ func _run() -> void:
 		lab._local_avatar.visible = false
 	if lab.goal_shrine != null:
 		lab.goal_shrine.visible = false
+	var intro_model := lab.get_node_or_null("MikoPresentation") as Node3D
+	if intro_model != null:
+		intro_model.visible = false
 	lab.lantern.set_shutter(0.0)
 	lab.lantern.reset_adaptation(0.86)
 	NightEnvironment.set_night_vision(lab.night_environment, 0.86)
