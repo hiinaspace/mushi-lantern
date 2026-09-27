@@ -26,6 +26,7 @@ signal comfort_changed(settings: Dictionary)
 
 var _desktop_root: Control
 var _desktop_panel: PanelContainer
+var _desktop_tabs: TabContainer
 var _desktop_visible: bool = false
 var _desktop_status: Label
 var _desktop_skip: Button
@@ -182,7 +183,7 @@ func _on_desktop_room_text_changed(value: String) -> void:
 func _submit_room(hosting: bool) -> void:
 	if _shared_role != "offline":
 		return
-	if _desktop_room_edit != null and _desktop_room_panel.visible:
+	if _desktop_room_edit != null and _desktop_tabs != null and _desktop_tabs.current_tab == 1:
 		set_room_code(_desktop_room_edit.text)
 	if _room_code.length() < 3:
 		_room_note = "Code needs at least 3 letters or numbers."
@@ -556,7 +557,6 @@ func _build_desktop_menu() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_desktop_root.add_child(center)
 	_desktop_panel = PanelContainer.new()
-	_desktop_panel.custom_minimum_size = Vector2(520.0, 0.0)
 	_desktop_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	center.add_child(_desktop_panel)
 	var panel_style := StyleBoxFlat.new()
@@ -567,85 +567,91 @@ func _build_desktop_menu() -> void:
 	_desktop_panel.add_theme_stylebox_override("panel", panel_style)
 	var margin := MarginContainer.new()
 	for side in ["margin_left", "margin_right"]:
-		margin.add_theme_constant_override(side, 34)
+		margin.add_theme_constant_override(side, 24)
 	for side in ["margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 28)
+		margin.add_theme_constant_override(side, 18)
 	_desktop_panel.add_child(margin)
 	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 12)
+	stack.add_theme_constant_override("separation", 7)
 	margin.add_child(stack)
 	var title := Label.new()
 	title.text = "MUSHI LANTERN"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 34)
+	title.add_theme_font_size_override("font_size", 31)
 	title.add_theme_color_override("font_color", Color("e2d8f1"))
 	stack.add_child(title)
 	var subtitle := Label.new()
 	subtitle.text = "A quiet night walk through the grove"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 17)
+	subtitle.add_theme_font_size_override("font_size", 15)
 	subtitle.add_theme_color_override("font_color", Color("bdc9c5"))
 	stack.add_child(subtitle)
-	stack.add_child(HSeparator.new())
-	_add_section_label(stack, "PLAY")
-	_desktop_start = _add_desktop_button(stack, "Start / restart", _on_new_game)
+	_desktop_tabs = TabContainer.new()
+	_desktop_tabs.name = "DesktopTabs"
+	_desktop_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_desktop_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stack.add_child(_desktop_tabs)
+	var play := _create_desktop_tab("Play")
+	var session := _create_desktop_tab("Session")
+	var guide := _create_desktop_tab("Guide")
+	var comfort := _create_desktop_tab("Comfort")
+	var settings := _create_desktop_tab("Settings")
+	var voice := _create_desktop_tab("Voice")
+	_desktop_status = Label.new()
+	_desktop_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_desktop_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_desktop_status.add_theme_font_size_override("font_size", 16)
+	play.add_child(_desktop_status)
+	var desktop_elapsed := Label.new()
+	desktop_elapsed.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	play.add_child(desktop_elapsed)
+	_elapsed_labels.append(desktop_elapsed)
+	play.add_child(HSeparator.new())
+	_desktop_start = _add_desktop_button(play, "Start / restart", _on_new_game)
 	_desktop_start.disabled = _shared_role == "client"
-	_add_mode_selector(stack)
-	_add_section_label(stack, "SESSION")
-	_add_desktop_button(stack, "Private room · Experimental", func() -> void: _show_desktop_room(true))
-	_add_section_label(stack, "SETTINGS")
-	_add_desktop_button(stack, "Settings", _on_settings)
-	_add_desktop_button(stack, "Avatar fit", func() -> void:
-		_desktop_avatar_fit.visible = not _desktop_avatar_fit.visible)
+	_add_mode_selector(play)
+	var play_hint := Label.new()
+	play_hint.text = "Play solo here, or use Session for a private game."
+	play_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	play.add_child(play_hint)
+	_add_desktop_button(play, "Quit", _on_quit)
+	_build_desktop_room(session)
+	var guide_intro := Label.new()
+	guide_intro.text = "Controls"
+	guide_intro.add_theme_font_size_override("font_size", 21)
+	guide.add_child(guide_intro)
+	var controls := Label.new()
+	controls.text = "Move: WASD · Look: mouse · Aim lamp: hold left mouse\nShutter: mouse wheel · Drop / pick up staff: G · Recall: hold E"
+	controls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	guide.add_child(controls)
+	_desktop_skip = _add_desktop_button(guide, "Skip introduction", func() -> void: skip_requested.emit())
+	_desktop_skip.visible = false
+	_desktop_tuning = _add_desktop_button(guide, "Open tuning sandbox", func() -> void: tuning_requested.emit())
+	_desktop_tuning.visible = false
+	_add_comfort_controls(comfort)
+	_add_desktop_button(settings, "Visual quality", _on_settings)
+	_add_desktop_button(settings, "Audio mix", func() -> void: audio_settings_requested.emit())
+	var fit_heading := Label.new()
+	fit_heading.text = "Avatar fit"
+	settings.add_child(fit_heading)
 	_desktop_avatar_fit = VBoxContainer.new()
-	_desktop_avatar_fit.visible = false
-	stack.add_child(_desktop_avatar_fit)
+	settings.add_child(_desktop_avatar_fit)
 	_add_avatar_fit_sliders(_desktop_avatar_fit)
-	_add_desktop_button(stack, "VR comfort", func() -> void:
-		_desktop_comfort.visible = not _desktop_comfort.visible)
-	_desktop_comfort = VBoxContainer.new()
-	_desktop_comfort.visible = false
-	stack.add_child(_desktop_comfort)
-	_add_comfort_controls(_desktop_comfort)
-	_add_desktop_button(stack, "Audio", func() -> void: audio_settings_requested.emit())
-	_add_voice_mute_button(stack)
-	_desktop_voice_button = _add_desktop_button(stack, "Microphone", func() -> void:
+	_desktop_comfort = comfort
+	var voice_note := Label.new()
+	voice_note.text = "Voice chat is experimental in private sessions."
+	voice_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	voice.add_child(voice_note)
+	_add_voice_mute_button(voice)
+	_desktop_voice_button = _add_desktop_button(voice, "Microphone settings", func() -> void:
 		_desktop_voice_settings.visible = not _desktop_voice_settings.visible
 		if _desktop_voice_settings.visible:
 			voice_devices_requested.emit())
 	_desktop_voice_button.visible = _voice_available
 	_desktop_voice_settings = VBoxContainer.new()
 	_desktop_voice_settings.visible = false
-	stack.add_child(_desktop_voice_settings)
+	voice.add_child(_desktop_voice_settings)
 	_add_voice_settings(_desktop_voice_settings)
-	_add_desktop_button(stack, "Quit", _on_quit)
-	stack.add_child(HSeparator.new())
-	_desktop_status = Label.new()
-	_desktop_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_desktop_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_desktop_status.add_theme_font_size_override("font_size", 16)
-	stack.add_child(_desktop_status)
-	var desktop_elapsed := Label.new()
-	desktop_elapsed.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stack.add_child(desktop_elapsed)
-	_elapsed_labels.append(desktop_elapsed)
-	_desktop_skip = Button.new()
-	_desktop_skip.text = "Skip introduction"
-	_desktop_skip.pressed.connect(func() -> void: skip_requested.emit())
-	_desktop_skip.visible = false
-	stack.add_child(_desktop_skip)
-	_desktop_tuning = Button.new()
-	_desktop_tuning.text = "Open tuning sandbox"
-	_desktop_tuning.pressed.connect(func() -> void: tuning_requested.emit())
-	_desktop_tuning.visible = false
-	stack.add_child(_desktop_tuning)
-	var controls := Label.new()
-	controls.text = "Move: WASD · Look: mouse · Aim lamp: hold left mouse\nShutter: mouse wheel · Drop / pick up staff: G · Recall: hold E"
-	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	controls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	controls.add_theme_font_size_override("font_size", 14)
-	controls.add_theme_color_override("font_color", Color("a7b5b2"))
-	stack.add_child(controls)
 	var close_hint := Label.new()
 	close_hint.text = "Esc closes this menu"
 	close_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -661,16 +667,39 @@ func _build_desktop_menu() -> void:
 		set_open(false)
 	)
 	add_child(_restart_confirm)
-	_build_desktop_room(center)
+	get_viewport().size_changed.connect(_fit_desktop_panel)
+	_fit_desktop_panel()
+	_desktop_tabs.current_tab = 0
 	_refresh_room_ui()
 
 
-func _build_desktop_room(center: CenterContainer) -> void:
+func _fit_desktop_panel() -> void:
+	if _desktop_panel == null:
+		return
+	var available := get_viewport().get_visible_rect().size
+	_desktop_panel.custom_minimum_size = Vector2(maxf(280.0, minf(660.0, available.x - 28.0)),
+		maxf(260.0, minf(630.0, available.y - 28.0)))
+
+
+func _create_desktop_tab(title: String) -> VBoxContainer:
+	var scroll := ScrollContainer.new()
+	scroll.name = title
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_desktop_tabs.add_child(scroll)
+	var page := VBoxContainer.new()
+	page.name = "Contents"
+	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page.add_theme_constant_override("separation", 12)
+	scroll.add_child(page)
+	return page
+
+func _build_desktop_room(parent: VBoxContainer) -> void:
 	_desktop_room_panel = PanelContainer.new()
 	_desktop_room_panel.name = "PrivateRoom"
-	_desktop_room_panel.custom_minimum_size.x = 520
-	_desktop_room_panel.visible = false
-	center.add_child(_desktop_room_panel)
+	_desktop_room_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(_desktop_room_panel)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.035, 0.055, 0.064, 0.98)
 	style.border_color = Color(0.48, 0.39, 0.62, 0.9)
@@ -678,18 +707,18 @@ func _build_desktop_room(center: CenterContainer) -> void:
 	style.set_corner_radius_all(16)
 	_desktop_room_panel.add_theme_stylebox_override("panel", style)
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 32)
-	margin.add_theme_constant_override("margin_right", 32)
-	margin.add_theme_constant_override("margin_top", 26)
-	margin.add_theme_constant_override("margin_bottom", 26)
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
 	_desktop_room_panel.add_child(margin)
 	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 12)
+	stack.add_theme_constant_override("separation", 8)
 	margin.add_child(stack)
 	var heading := Label.new()
 	heading.text = "PRIVATE SESSION · EXPERIMENTAL"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	heading.add_theme_font_size_override("font_size", 28)
+	heading.add_theme_font_size_override("font_size", 21)
 	stack.add_child(heading)
 	var info := Label.new()
 	info.text = "Private peer-to-peer game for two. Host shares a code; friend joins with the same code. The host runs the grove."
@@ -703,7 +732,7 @@ func _build_desktop_room(center: CenterContainer) -> void:
 	_desktop_room_edit = LineEdit.new()
 	_desktop_room_edit.placeholder_text = "Room code (3–24 characters)"
 	_desktop_room_edit.max_length = 24
-	_desktop_room_edit.custom_minimum_size.y = 48
+	_desktop_room_edit.custom_minimum_size.y = 42
 	_desktop_room_edit.text_changed.connect(_on_desktop_room_text_changed)
 	_desktop_room_edit.text_submitted.connect(func(_value: String) -> void: _submit_room(false))
 	stack.add_child(_desktop_room_edit)
@@ -711,26 +740,24 @@ func _build_desktop_room(center: CenterContainer) -> void:
 	stack.add_child(actions)
 	var host := Button.new()
 	host.text = "Host"
-	host.custom_minimum_size.y = 48
+	host.custom_minimum_size.y = 42
 	host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	host.pressed.connect(func() -> void: _submit_room(true))
 	actions.add_child(host)
 	_room_host_buttons.append(host)
 	var join := Button.new()
 	join.text = "Join"
-	join.custom_minimum_size.y = 48
+	join.custom_minimum_size.y = 42
 	join.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	join.pressed.connect(func() -> void: _submit_room(false))
 	actions.add_child(join)
 	_room_join_buttons.append(join)
 	var leave := _add_desktop_button(stack, "Leave private room", func() -> void: multiplayer_leave_requested.emit())
 	_room_leave_buttons.append(leave)
-	_add_desktop_button(stack, "Back", func() -> void: _show_desktop_room(false))
 
 
 func _show_desktop_room(show: bool) -> void:
-	_desktop_panel.visible = not show
-	_desktop_room_panel.visible = show
+	_desktop_tabs.current_tab = 1 if show else 0
 	if show and _shared_role == "offline":
 		_desktop_room_edit.grab_focus()
 
