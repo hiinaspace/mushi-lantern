@@ -39,6 +39,7 @@ var _idle_head_rest := Quaternion.IDENTITY
 var _idle_spine := -1
 var _idle_spine_rest := Quaternion.IDENTITY
 var _guide_look_engaged := false
+var _guide_body_turning := false
 var _guide_head_yaw := 0.0
 var _guide_head_pitch := 0.0
 var _guide_placement: RenIKPlacement3D
@@ -47,6 +48,8 @@ var _guide_foot_weight := 0.0
 const GUIDE_ARM_DROP := 1.16
 const GUIDE_LOOK_ENTER_DISTANCE := 4.2
 const GUIDE_LOOK_EXIT_DISTANCE := 5.6
+const GUIDE_BODY_TURN_START := 1.12
+const GUIDE_BODY_TURN_STOP := 0.30
 const GUIDE_STEP_ANGLE := PI / 6.0
 
 
@@ -143,6 +146,7 @@ func set_guide_idle(enabled: bool) -> void:
 		_apply_guide_arm_pose(0.0)
 	else:
 		_guide_look_engaged = false
+		_guide_body_turning = false
 		_guide_foot_weight = 0.0
 		for leg in _guide_leg_modifiers:
 			leg.active = false
@@ -208,12 +212,22 @@ func set_guide_look_target(world_position: Vector3, active: bool, delta: float) 
 			desired_yaw = target_yaw
 			desired_head_pitch = clampf(atan2(toward.y, horizontal), -0.23, 0.22)
 	var step := maxf(delta, 0.0)
-	# Turn the whole rooted character, including her feet, through the full
-	# circle. Keep the last heading when the visitor leaves her conversation
-	# range so she does not swivel back to the shrine between visits.
-	rotation.y = rotate_toward(rotation.y, desired_yaw, step * 1.1) if _guide_look_engaged else rotation.y
+	var remaining_yaw := wrapf(desired_yaw - rotation.y, -PI, PI)
+	if not _guide_look_engaged:
+		_guide_body_turning = false
+	elif _guide_body_turning:
+		if absf(remaining_yaw) < GUIDE_BODY_TURN_STOP:
+			_guide_body_turning = false
+	elif absf(remaining_yaw) > GUIDE_BODY_TURN_START:
+		_guide_body_turning = true
+	# Small shifts stay in her head. A visitor behind her triggers a grounded
+	# body turn that settles inside the head's comfortable look range; the root
+	# keeps that heading after the visitor leaves.
+	if _guide_body_turning:
+		rotation.y = rotate_toward(rotation.y, desired_yaw, step * 1.1)
 	if _guide_look_engaged:
-		_guide_head_yaw = clampf(wrapf(desired_yaw - rotation.y, -PI, PI), -0.48, 0.48)
+		_guide_head_yaw = move_toward(_guide_head_yaw,
+			clampf(wrapf(desired_yaw - rotation.y, -PI, PI), -0.52, 0.52), step * 2.2)
 	else:
 		_guide_head_yaw = move_toward(_guide_head_yaw, 0.0, step * 1.7)
 	_guide_head_pitch = move_toward(_guide_head_pitch, desired_head_pitch, step * 1.2)

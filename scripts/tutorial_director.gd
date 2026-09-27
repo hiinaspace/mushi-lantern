@@ -203,7 +203,7 @@ func ukon_nearby_line() -> String:
 	if reward_is_unlocked:
 		return "You brought so many home. Thank you. You can keep exploring, or invite a friend through Session."
 	if score > 0:
-		return "That one found the light vein. Blue draws mushi close; orange can nudge them toward a shrine."
+		return "That one found the light vein. Blue draws mushi close; red can nudge them toward a shrine."
 	return "Take your time. The mushi won't hurt you. If you'd like help, open Session for a private peer-to-peer room."
 
 
@@ -266,10 +266,10 @@ func _update_status() -> void:
 		Stage.JAR_BLUE:
 			status_text = "Shine blue light into the glass. Blue quiets its energy and draws it close."
 		Stage.JAR_ORANGE:
-			status_text = "Now shine orange light. It stirs the mushi's energy and nudges it away. I'll lift the glass; guide it toward the shrine."
+			status_text = "Now shine red light. It stirs the mushi's energy and nudges it away. I'll lift the glass; guide it toward the shrine."
 		Stage.GUIDE:
 			status_text = "There it goes. The shrine leads it back into the light vein."
 		Stage.GROUPS:
-			status_text = "Groups gather with blue light and stretch away from orange light. Try guiding a few home."
+			status_text = "Groups gather with blue light and stretch away from red light. Try guiding a few home."
 		Stage.FREE_PLAY:
 			status_text = "Free play · %d%% returned" % roundi(progress_ratio * 100.0)

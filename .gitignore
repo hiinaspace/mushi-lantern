@@ -13,3 +13,5 @@ __pycache__/
 /assets/audio/placeholders/*.wav
 /assets/audio/auditions/
 /assets/forest/ez-tree/*-lod[0-2]_[0-3].png
+/assets/forest/polyhaven/groundcover_audition/*/*_audition_*_1k.jpg
+/assets/forest/polyhaven/groundcover_audition/*/*_audition_*_1k.png

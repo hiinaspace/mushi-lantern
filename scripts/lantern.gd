@@ -526,7 +526,7 @@ func mode_label() -> String:
 		LightField.Mode.BLUE:
 			return "BLUE · ATTRACT / CALM"
 		LightField.Mode.ORANGE:
-			return "ORANGE · REPEL / ENERGIZE"
+			return "RED · REPEL / ENERGIZE"
 		_:
 			return "CLEAR · NAVIGATION / NEUTRAL"
 

@@ -15,9 +15,6 @@ var _score_pulse: float = 0.0
 var _last_score: int = -1
 var _progress_ticks: Array[MeshInstance3D] = []
 var _progress_materials: Array[StandardMaterial3D] = []
-var _ember_material: StandardMaterial3D
-var _ember_lights: Array[OmniLight3D] = []
-var _ring_underlights: Array[OmniLight3D] = []
 var _up_light: SpotLight3D
 var _architecture_root: Node3D
 
@@ -83,8 +80,6 @@ func _rebuild() -> void:
 		child.queue_free()
 	_progress_ticks.clear()
 	_progress_materials.clear()
-	_ember_lights.clear()
-	_ring_underlights.clear()
 	_up_light = null
 	_boundary_material = null
 	_build()
@@ -103,9 +98,8 @@ func _build() -> void:
 	# the tutorial player's position southwest of the goal sees their front.
 	_architecture_root.rotation.y = -PI * 0.5
 	add_child(_architecture_root)
-	var dark_wood := _material(Color("38251d"), Color("160b07"), 0.02)
-	var warm_wood := _material(Color("65452f"), Color("1c1009"), 0.025)
-	var lacquer := _material(Color("713c2b"), Color("210b06"), 0.035)
+	var warm_wood := _lacquered_wood(Color(1.0, 0.80, 0.70), 0.56)
+	var lacquer := _lacquered_wood(Color(1.0, 0.55, 0.48), 0.45)
 	var stone := _material(Color("41413b"), Color("000000"), 0.0)
 	var altar_top := _material(Color("887255"), Color("170d08"), 0.02)
 	var paper := _material(Color("b4a17f"), Color("000000"), 0.0)
@@ -113,7 +107,6 @@ func _build() -> void:
 	var bronze := _material(Color("786348"), Color("000000"), 0.0)
 	bronze.metallic = 0.72
 	bronze.roughness = 0.4
-	_ember_material = _material(Color("cf7139"), Color("ff6b28"), 0.48)
 
 	# Keep the center clear for descending returns; place the altar and tally at the far rim.
 	var altar_z := -maxf(0.35, goal_radius * 0.66)
@@ -151,55 +144,18 @@ func _build() -> void:
 		_progress_ticks.append(tick)
 		_progress_materials.append(material)
 
-	var brazier_distance := goal_radius + 0.42
-	for side in [-1.0, 1.0]:
-		var x: float = float(side) * brazier_distance
-		_add_cylinder("BrazierFoot", 0.22, 0.12, Vector3(x, 0.06, 0.0), stone)
-		_add_cylinder("BrazierCup", 0.14, 0.32, Vector3(x, 0.27, 0.0), warm_wood)
-		_add_cylinder("BrazierRim", 0.2, 0.065, Vector3(x, 0.46, 0.0), altar_top)
-		var ember := MeshInstance3D.new()
-		ember.name = "Ember"
-		var ember_mesh := SphereMesh.new()
-		ember_mesh.radius = 0.07
-		ember_mesh.height = 0.14
-		ember.mesh = ember_mesh
-		ember.position = Vector3(x, 0.56 + _terrain_delta(Vector3(x, 0.0, 0.0)), 0.0)
-		ember.material_override = _ember_material
-		_architecture_root.add_child(ember)
-		var light := OmniLight3D.new()
-		light.name = "BrazierGlow"
-		light.light_color = Color("ff8d4c")
-		light.light_energy = 0.12
-		light.omni_range = 1.7
-		light.shadow_enabled = false
-		light.position = Vector3(x, 0.6 + _terrain_delta(Vector3(x, 0.0, 0.0)), 0.0)
-		_architecture_root.add_child(light)
-		_ember_lights.append(light)
-	# Four low, shadowless sources spread the warm fill around the return ring,
-	# avoiding a bright center point while lifting nearby faces and altar details.
-	for index in 4:
-		var angle := TAU * float(index) / 4.0 + PI * 0.25
-		var local_position := Vector3(cos(angle) * 1.12, 0.055, sin(angle) * 1.12)
-		var fill := OmniLight3D.new()
-		fill.name = "ShrineRingUnderlight"
-		fill.light_color = Color("ffb25f")
-		fill.light_energy = 0.11
-		fill.omni_range = 6.4
-		fill.omni_attenuation = 0.42
-		fill.shadow_enabled = false
-		fill.position = local_position + Vector3.UP * _terrain_delta(local_position)
-		_architecture_root.add_child(fill)
-		_ring_underlights.append(fill)
+	# A single buried upward cone gives broad, even fill across the gate and
+	# guide, without four visible point-light pools on the ground.
 	_up_light = SpotLight3D.new()
 	_up_light.name = "ShrineWarmUplight"
 	_up_light.light_color = Color("ffc477")
-	_up_light.light_energy = 0.84
-	_up_light.spot_range = 6.5
-	_up_light.spot_angle = 112.0
-	_up_light.spot_attenuation = 1.15
+	_up_light.light_energy = 2.2
+	_up_light.spot_range = 5.0
+	_up_light.spot_angle = 78.0
+	_up_light.spot_attenuation = 0.78
 	_up_light.shadow_enabled = false
 	_up_light.rotation.x = deg_to_rad(90.0)
-	_up_light.position = Vector3(0.0, 0.18, 0.58)
+	_up_light.position = Vector3(0.0, 0.07, 0.0)
 	add_child(_up_light)
 
 
@@ -248,14 +204,8 @@ func _add_goal_boundary() -> void:
 
 func _apply_night_vision() -> void:
 	# Keep the landmark legible at low adaptation without acting like another beacon.
-	if _ember_material != null:
-		_ember_material.emission_energy_multiplier = lerpf(0.32, 0.72, night_vision)
-	for light in _ember_lights:
-		light.light_energy = lerpf(0.07, 0.14, night_vision)
-	for light in _ring_underlights:
-		light.light_energy = lerpf(0.09, 0.15, night_vision)
 	if _up_light != null:
-		_up_light.light_energy = lerpf(0.62, 0.84, night_vision)
+		_up_light.light_energy = lerpf(1.65, 2.2, night_vision)
 
 
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
@@ -303,4 +253,14 @@ func _material(color: Color, emission: Color, energy: float) -> StandardMaterial
 		material.emission_enabled = true
 		material.emission = emission
 		material.emission_energy_multiplier = energy
+	return material
+
+
+func _lacquered_wood(tint: Color, roughness_value: float) -> StandardMaterial3D:
+	var material := _material(tint, Color("2e110b"), 0.018)
+	material.albedo_texture = load("res://assets/forest/polyhaven/material_pass/lacquered_cherry_wood_diff_2k.jpg")
+	material.normal_enabled = true
+	material.normal_texture = load("res://assets/forest/polyhaven/material_pass/lacquered_cherry_wood_nor_gl_2k.jpg")
+	material.normal_scale = 0.25
+	material.roughness = roughness_value
 	return material

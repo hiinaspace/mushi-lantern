@@ -327,20 +327,15 @@ func _material(color: Color, roughness: float, emission: float) -> StandardMater
 		mat.emission_energy_multiplier = emission
 	return mat
 
-func _wood_material() -> ShaderMaterial:
-	var shader := Shader.new()
-	shader.code = """
-shader_type spatial;
-void fragment() {
-	float grain = sin(UV.x * 74.0 + sin(UV.y * 17.0) * 1.2 + sin(UV.x * 13.0 + UV.y * 31.0));
-	float fine = sin(UV.x * 173.0 + UV.y * 8.0);
-	float stain = 0.83 + 0.11 * grain + 0.035 * fine;
-	ALBEDO = vec3(0.31, 0.21, 0.12) * stain;
-	ROUGHNESS = 0.79;
-}
-"""
-	var material := ShaderMaterial.new()
-	material.shader = shader
+func _wood_material() -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_texture = load("res://assets/forest/polyhaven/material_pass/lacquered_cherry_wood_diff_2k.jpg")
+	material.albedo_color = Color(0.92, 0.58, 0.53)
+	material.normal_enabled = true
+	material.normal_texture = load("res://assets/forest/polyhaven/material_pass/lacquered_cherry_wood_nor_gl_2k.jpg")
+	material.normal_scale = 0.24
+	material.roughness = 0.48
+	material.metallic = 0.0
 	return material
 
 func _woven_grip_material() -> ShaderMaterial:

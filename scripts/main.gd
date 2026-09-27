@@ -1262,7 +1262,7 @@ func _update_xr_tutorial_chain_cue() -> void:
 	if show:
 		match tutorial_director.stage:
 			TutorialDirector.Stage.JAR_ORANGE:
-				caption = "Grip chain · twist to orange" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag right to orange"
+				caption = "Grip chain · twist to red" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag right to red"
 			TutorialDirector.Stage.JAR_BLUE:
 				caption = "Grip chain · twist to blue" if xr_player != null and xr_player.xr_active else "Hold right mouse · drag left to blue"
 			TutorialDirector.Stage.SHUTTER:
@@ -1522,7 +1522,7 @@ func _build_ui() -> void:
 	energy_rows.append(energy_title)
 	recovery_slider = _add_slider(stack, "Recover (s)", 3.0, 180.0, 30.0, 0.1)
 	blue_sleep_slider = _add_slider(stack, "Blue sleep (s)", 1.0, 40.0, 10.0, 0.1)
-	wake_slider = _add_slider(stack, "Orange wake (s)", 0.1, 8.0, 1.0, 0.01)
+	wake_slider = _add_slider(stack, "Red wake (s)", 0.1, 8.0, 1.0, 0.01)
 	mushroom_pull_slider = _add_slider(stack, "Mushroom pull", 0.0, 4.0, 1.0, 0.1)
 	scatter_slider = _add_slider(stack, "Arousal scatter", 0.0, 1.0, 1.0, 0.05)
 	for slider: HSlider in [recovery_slider, blue_sleep_slider, wake_slider, mushroom_pull_slider, scatter_slider]:

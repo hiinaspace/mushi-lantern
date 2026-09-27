@@ -270,7 +270,7 @@ func _styled_dialogue(line: String) -> String:
 		styled = styled.replace(word, "[color=#91dda3]%s[/color]" % word)
 	for word in ["blue", "Blue"]:
 		styled = styled.replace(word, "[color=#91baff]%s[/color]" % word)
-	for word in ["orange", "Orange"]:
+	for word in ["red", "Red"]:
 		styled = styled.replace(word, "[color=#ffb477]%s[/color]" % word)
 	for word in ["光脈筋", "koumyakusuji", "light vein"]:
 		styled = styled.replace(word, "[color=#e9cc80]%s[/color]" % word)
@@ -293,7 +293,7 @@ func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
 		return "Trigger to continue" if xr_active else "Enter / click to continue"
 	if director.stage == TutorialDirector.Stage.JAR_BLUE or director.stage == TutorialDirector.Stage.JAR_ORANGE:
 		if not director.can_continue():
-			return "Shine blue and watch" if director.stage == TutorialDirector.Stage.JAR_BLUE else "Shine orange and watch"
+			return "Shine blue and watch" if director.stage == TutorialDirector.Stage.JAR_BLUE else "Shine red and watch"
 		return "Trigger to continue" if xr_active else "Enter / click to continue"
 	if director.stage == TutorialDirector.Stage.GUIDE or director.stage == TutorialDirector.Stage.GROUPS:
 		if not director.can_continue():

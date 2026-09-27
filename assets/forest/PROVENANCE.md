@@ -11,7 +11,7 @@ The Oak / Pine audition uses the same deterministic prop placement records, coar
 | `ez-tree/source-textures/{oak-leaves,pine-leaves}.png` | Leaf alpha maps used by edge emission shader | EZ-Tree MIT license |
 | `ez-tree/edge-masks/{oak,pine}_leaf_alpha_edges_3px.png` | Three-pixel silhouette masks generated from the leaf alpha; oak threshold 128/255, pine threshold 77/255, matching the alpha scissor cutoff | Derived from the included MIT-licensed leaf textures |
 | `polyhaven/forrest_ground_01_{diff,nor_gl}_1k.jpg` | Oak leaf-litter albedo and OpenGL normal | [Poly Haven](https://polyhaven.com/a/forrest_ground_01), CC0 1.0 |
-| `polyhaven/pine_bark_{diff,nor_gl}_1k.jpg` | Pine trunk albedo and OpenGL normal used by the bark material | [Poly Haven Pine Bark](https://polyhaven.com/a/pine_bark), CC0 1.0 |
+| `polyhaven/pine_bark_{diff,nor_gl}_1k.jpg`, `polyhaven/material_pass/pine_bark_{diff,nor_gl}_2k.jpg` | Pine trunk albedo and OpenGL normal; the 2K maps are used in the current bark material | [Poly Haven Pine Bark](https://polyhaven.com/a/pine_bark), CC0 1.0 |
 | `polyhaven/forrest_ground_03_{diff,nor_gl}_1k.jpg` | Pine-needle floor base albedo and OpenGL normal | [Poly Haven Forest Ground 03](https://polyhaven.com/a/forrest_ground_03), CC0 1.0 |
 | `polyhaven/forest_leaves_02_{diffuse,nor_gl}_1k.jpg` | Earlier mossy leaf-litter overlay audition, retained as a source reference | [Poly Haven Forest Leaves 02](https://polyhaven.com/a/forest_leaves_02), CC0 1.0 |
 | `polyhaven/forest_ground_04_{diff,nor_gl}_1k.jpg` | Earlier rocky-soil audition textures, retained for comparison | [Poly Haven](https://polyhaven.com/a/forest_ground_04), CC0 1.0 |

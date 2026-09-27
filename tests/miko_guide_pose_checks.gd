@@ -37,10 +37,14 @@ func _run() -> void:
 		await physics_frame
 	assert(avatar._guide_placement.target_foot_is_valid,
 		"Guide foot placement must find the terrain below her")
+	for frame in 60:
+		avatar.set_guide_look_target(Vector3(1.5, 1.4, 2.0), true, 1.0 / 60.0)
+	assert(absf(avatar.rotation.y) < 0.01 and avatar._guide_head_yaw > 0.3,
+		"Guide follows a nearby angle with her head before moving her feet")
 	for frame in 200:
 		avatar.set_guide_look_target(Vector3(0.0, 1.4, -2.0), true, 1.0 / 60.0)
 		await physics_frame
-	assert(absf(wrapf(avatar.rotation.y - PI, -PI, PI)) < 0.08,
+	assert(absf(wrapf(avatar.rotation.y - PI, -PI, PI)) < 0.34,
 		"Guide should turn her whole body toward a visitor behind her")
 	assert(avatar._guide_foot_weight > 0.95 and avatar._guide_leg_modifiers[0].active,
 		"Guide should keep grounded leg placement active during a full turn")

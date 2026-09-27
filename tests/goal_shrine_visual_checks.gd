@@ -72,8 +72,9 @@ func _run() -> void:
 		"tutorial-facing gate and progress front face southwest toward the intro player")
 	var uplight := shrine.get_node("ShrineWarmUplight") as SpotLight3D
 	check(uplight != null and not uplight.shadow_enabled and uplight.light_energy >= 0.75
-		and uplight.global_basis.z.dot(Vector3.DOWN) > 0.99,
-		"warm shrine spot points up without adding a shadow light")
+		and uplight.global_basis.z.dot(Vector3.DOWN) > 0.99
+		and uplight.position.y > 0.0 and uplight.position.y < 0.15 and uplight.spot_angle <= 80.0,
+		"shrine spot points up through a bounded cone")
 	var foundation := shrine.get_node("GateArchitecture/Foundation") as MeshInstance3D
 	check(absf(foundation.global_position.y - 0.08 - surface.get_height_at(Vector2(foundation.global_position.x, foundation.global_position.z))) < 0.02,
 		"foundation follows sampled terrain rather than hovering on the shrine center height")
@@ -85,8 +86,9 @@ func _run() -> void:
 		"paper charm stays matte and non-emissive")
 	check(bronze_material.metallic > 0.65 and bronze_material.roughness < 0.5,
 		"metal fittings read as aged bronze")
-	check(shrine._ember_material.emission_energy_multiplier <= 0.72,
-		"ember glow remains restrained at adapted view")
+	check(shrine.find_children("*", "OmniLight3D", true, false).is_empty()
+		and shrine.find_children("Brazier*", "MeshInstance3D", true, false).is_empty(),
+		"shrine has no visible point pools or brazier models")
 	var visual_meshes: Array[MeshInstance3D] = []
 	_collect_meshes(shrine, visual_meshes)
 	var architecture_meshes := 0
