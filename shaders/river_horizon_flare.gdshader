@@ -25,5 +25,10 @@ void fragment() {
 	float horizon_gaze = 1.0 - smoothstep(0.07, 0.20, view_pitch);
 	float haze = rise * lower_falloff * horizontal * side_fade;
 	ALBEDO = vec3(0.34, 0.26, 0.065) * horizon_flare_strength;
-	ALPHA = haze * reveal * horizon_gaze * 0.34;
+	float alpha = haze * reveal * horizon_gaze * 0.34;
+	// The dark gold occupies only a few LDR code values; stable interleaved
+	// gradient noise trades broad concentric quantization bands for fine grain.
+	float dither = fract(52.9829189 * fract(0.06711056 * FRAGCOORD.x
+		+ 0.00583715 * FRAGCOORD.y)) - 0.5;
+	ALPHA = clamp(alpha + dither * 0.046 * smoothstep(0.004, 0.025, alpha), 0.0, 1.0);
 }

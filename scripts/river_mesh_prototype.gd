@@ -20,7 +20,7 @@ func _init() -> void:
 	material_override = material
 	mesh = _build_mesh()
 	# Shader deformation can widen and deepen the tube beyond its base vertices.
-	custom_aabb = AABB(Vector3(-3020.0, -135.0, -70.0), Vector3(6040.0, 150.0, 140.0))
+	custom_aabb = AABB(Vector3(-3820.0, -135.0, -70.0), Vector3(7640.0, 150.0, 140.0))
 
 
 func _ready() -> void:
@@ -96,15 +96,15 @@ func _build_mesh() -> ArrayMesh:
 	var previous_center := Vector3.ZERO
 	var arc_length := 0.0
 	var x_positions: Array[float] = []
-	for far_ring in 45:
-		x_positions.append(-3000.0 + float(far_ring) * 40.0)
+	for far_ring in 65:
+		x_positions.append(-3800.0 + float(far_ring) * 40.0)
 	for middle_ring in 135:
 		x_positions.append(-1200.0 + float(middle_ring) * 8.0)
 	for local_ring in 241:
 		x_positions.append(-120.0 + float(local_ring))
 	for middle_ring in 135:
 		x_positions.append(128.0 + float(middle_ring) * 8.0)
-	for far_ring in 45:
+	for far_ring in 65:
 		x_positions.append(1240.0 + float(far_ring) * 40.0)
 	for ring in x_positions.size():
 		var x := x_positions[ring]
