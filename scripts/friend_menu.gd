@@ -22,6 +22,7 @@ signal multiplayer_host_requested(secret: String)
 signal multiplayer_join_requested(secret: String)
 signal multiplayer_leave_requested
 signal mode_requested(mode: String)
+signal comfort_changed(settings: Dictionary)
 
 var _desktop_root: Control
 var _desktop_panel: PanelContainer
@@ -82,11 +83,18 @@ var _room_leave_buttons: Array[Button] = []
 var _mode_selectors: Array[OptionButton] = []
 var _selected_mode := "classic"
 var _elapsed_labels: Array[Label] = []
+var _comfort := {"snap_turn": false, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
+var _comfort_turns: Array[OptionButton] = []
+var _comfort_hands: Array[OptionButton] = []
+var _comfort_vignettes: Array[HSlider] = []
+var _comfort_vignette_labels: Array[Label] = []
+var _comfort_haptics: Array[CheckButton] = []
+var _desktop_comfort: VBoxContainer
 
 
 func _ready() -> void:
 	_font_theme = Theme.new()
-	_font_theme.default_font = load("res://assets/fonts/DejaVuSans.ttf") as Font
+	_font_theme.default_font = load("res://assets/fonts/KleeOne-SemiBold.ttf") as Font
 	_build_desktop_menu()
 	_desktop_root.theme = _font_theme
 	_desktop_root.visible = _desktop_visible
@@ -281,6 +289,30 @@ func set_voice_available(available: bool) -> void:
 		section.visible = available
 
 
+func set_comfort_values(settings: Dictionary) -> void:
+	_comfort["snap_turn"] = bool(settings.get("snap_turn", _comfort["snap_turn"]))
+	_comfort["move_hand"] = "right" if settings.get("move_hand", _comfort["move_hand"]) == "right" else "left"
+	_comfort["vignette_strength"] = clampf(float(settings.get("vignette_strength", _comfort["vignette_strength"])), 0.0, 1.0)
+	_comfort["haptics"] = bool(settings.get("haptics", _comfort["haptics"]))
+	for selector in _comfort_turns:
+		selector.select(1 if _comfort["snap_turn"] else 0)
+	for selector in _comfort_hands:
+		selector.select(1 if _comfort["move_hand"] == "right" else 0)
+	for slider in _comfort_vignettes:
+		slider.set_value_no_signal(_comfort["vignette_strength"])
+	for label in _comfort_vignette_labels:
+		label.text = "%d%%" % roundi(float(_comfort["vignette_strength"]) * 100.0)
+	for button in _comfort_haptics:
+		button.set_pressed_no_signal(_comfort["haptics"])
+
+
+func _set_comfort_value(key: String, value: Variant) -> void:
+	var next := _comfort.duplicate()
+	next[key] = value
+	set_comfort_values(next)
+	comfort_changed.emit(_comfort.duplicate())
+
+
 ## Adds the same actions to the existing world-anchored XR Tools menu.
 ## The XR rig owns menu placement, pointer visibility, and close behavior.
 func attach_xr_menu(menu_root: Control) -> void:
@@ -343,12 +375,13 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	contents.add_child(_xr_tabs)
 	if _xr_audio_scroll != null:
 		_xr_audio_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	var session := _create_xr_tab("Session")
-	var room := _create_xr_tab("Room")
-	var intro := _create_xr_tab("Intro")
+	var session := _create_xr_tab("Play")
+	var room := _create_xr_tab("Session")
+	var intro := _create_xr_tab("Guide")
 	for child in intro_nodes:
 		child.reparent(intro)
-	_xr_settings = _create_xr_tab("Avatar")
+	var comfort := _create_xr_tab("Comfort")
+	_xr_settings = _create_xr_tab("Settings")
 	_xr_voice = _create_xr_tab("Voice")
 	var mix := _create_xr_tab("Mix")
 	var mushi := _create_xr_tab("Mushi")
@@ -373,10 +406,15 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	_xr_start = start
 	_xr_start.disabled = _shared_role == "client"
 	_add_mode_selector(session)
+	var session_hint := Label.new()
+	session_hint.text = "Play solo here, or use Session for a private game."
+	session_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	session.add_child(session_hint)
 	var quit := _add_xr_button(session, "Quit", _on_quit)
 	quit.name = "XRQuitButton"
 	_build_xr_room(room)
 	_add_voice_mute_button(room)
+	_add_comfort_controls(comfort)
 	_add_xr_button(_xr_settings, "Quality: Default", func() -> void: quality_profile_requested.emit("default"))
 	_add_xr_button(_xr_settings, "Quality: Performance", func() -> void: quality_profile_requested.emit("performance"))
 	_add_avatar_fit_sliders(_xr_settings)
@@ -406,10 +444,15 @@ func _create_xr_tab(title: String) -> VBoxContainer:
 
 func _build_xr_room(room: VBoxContainer) -> void:
 	var heading := Label.new()
-	heading.text = "PRIVATE ROOM"
+	heading.text = "SESSION · EXPERIMENTAL"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 25)
 	room.add_child(heading)
+	var info := Label.new()
+	info.text = "Private peer-to-peer game for two. Host shares a code; friend joins with the same code. The host runs the grove."
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	room.add_child(info)
 	_xr_room_status = Label.new()
 	_xr_room_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_xr_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -544,10 +587,13 @@ func _build_desktop_menu() -> void:
 	subtitle.add_theme_color_override("font_color", Color("bdc9c5"))
 	stack.add_child(subtitle)
 	stack.add_child(HSeparator.new())
+	_add_section_label(stack, "PLAY")
 	_desktop_start = _add_desktop_button(stack, "Start / restart", _on_new_game)
 	_desktop_start.disabled = _shared_role == "client"
 	_add_mode_selector(stack)
-	_add_desktop_button(stack, "Private room", func() -> void: _show_desktop_room(true))
+	_add_section_label(stack, "SESSION")
+	_add_desktop_button(stack, "Private room · Experimental", func() -> void: _show_desktop_room(true))
+	_add_section_label(stack, "SETTINGS")
 	_add_desktop_button(stack, "Settings", _on_settings)
 	_add_desktop_button(stack, "Avatar fit", func() -> void:
 		_desktop_avatar_fit.visible = not _desktop_avatar_fit.visible)
@@ -555,6 +601,12 @@ func _build_desktop_menu() -> void:
 	_desktop_avatar_fit.visible = false
 	stack.add_child(_desktop_avatar_fit)
 	_add_avatar_fit_sliders(_desktop_avatar_fit)
+	_add_desktop_button(stack, "VR comfort", func() -> void:
+		_desktop_comfort.visible = not _desktop_comfort.visible)
+	_desktop_comfort = VBoxContainer.new()
+	_desktop_comfort.visible = false
+	stack.add_child(_desktop_comfort)
+	_add_comfort_controls(_desktop_comfort)
 	_add_desktop_button(stack, "Audio", func() -> void: audio_settings_requested.emit())
 	_add_voice_mute_button(stack)
 	_desktop_voice_button = _add_desktop_button(stack, "Microphone", func() -> void:
@@ -635,10 +687,15 @@ func _build_desktop_room(center: CenterContainer) -> void:
 	stack.add_theme_constant_override("separation", 12)
 	margin.add_child(stack)
 	var heading := Label.new()
-	heading.text = "PRIVATE ROOM"
+	heading.text = "PRIVATE SESSION · EXPERIMENTAL"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 28)
 	stack.add_child(heading)
+	var info := Label.new()
+	info.text = "Private peer-to-peer game for two. Host shares a code; friend joins with the same code. The host runs the grove."
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(info)
 	_desktop_room_status = Label.new()
 	_desktop_room_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_desktop_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -676,6 +733,57 @@ func _show_desktop_room(show: bool) -> void:
 	_desktop_room_panel.visible = show
 	if show and _shared_role == "offline":
 		_desktop_room_edit.grab_focus()
+
+
+func _add_section_label(parent: VBoxContainer, title: String) -> void:
+	var label := Label.new()
+	label.text = title
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color("b0cfc4"))
+	parent.add_child(label)
+
+
+func _add_comfort_controls(parent: VBoxContainer) -> void:
+	var explanation := Label.new()
+	explanation.text = "VR comfort · one-controller move/turn fallback is automatic."
+	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(explanation)
+	var turn := OptionButton.new()
+	turn.add_item("Smooth turn", 0)
+	turn.add_item("Snap turn", 1)
+	turn.item_selected.connect(func(index: int) -> void: _set_comfort_value("snap_turn", index == 1))
+	parent.add_child(turn)
+	_comfort_turns.append(turn)
+	var hand := OptionButton.new()
+	hand.add_item("Move: left hand · Turn: right hand", 0)
+	hand.add_item("Move: right hand · Turn: left hand", 1)
+	hand.item_selected.connect(func(index: int) -> void: _set_comfort_value("move_hand", "right" if index == 1 else "left"))
+	parent.add_child(hand)
+	_comfort_hands.append(hand)
+	var vignette_row := HBoxContainer.new()
+	parent.add_child(vignette_row)
+	var vignette_title := Label.new()
+	vignette_title.text = "Move vignette"
+	vignette_row.add_child(vignette_title)
+	var vignette := HSlider.new()
+	vignette.min_value = 0.0
+	vignette.max_value = 1.0
+	vignette.step = 0.05
+	vignette.custom_minimum_size.x = 130.0
+	vignette.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vignette.value_changed.connect(func(value: float) -> void: _set_comfort_value("vignette_strength", value))
+	vignette_row.add_child(vignette)
+	_comfort_vignettes.append(vignette)
+	var value_label := Label.new()
+	value_label.custom_minimum_size.x = 45.0
+	vignette_row.add_child(value_label)
+	_comfort_vignette_labels.append(value_label)
+	var haptics := CheckButton.new()
+	haptics.text = "Controller vibration"
+	haptics.toggled.connect(func(enabled: bool) -> void: _set_comfort_value("haptics", enabled))
+	parent.add_child(haptics)
+	_comfort_haptics.append(haptics)
+	set_comfort_values(_comfort)
 
 
 func _add_desktop_button(parent: VBoxContainer, text: String, callback: Callable) -> Button:

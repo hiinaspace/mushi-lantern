@@ -57,7 +57,7 @@ func reset_guide(world_position: Vector3) -> void:
 	visible = true
 	_jar.visible = true
 	_jar_top.visible = true
-	_jar_top.position.y = 0.77
+	_jar_top.position.y = 0.91
 	_jar_bottom.visible = true
 	_set_state(TutorialDirector.GuideState.JARRED)
 	_update_glyph()
@@ -108,10 +108,10 @@ func _build() -> void:
 	add_child(_creature)
 	_jar = _mesh_instance(CylinderMesh.new(), "GuideJar")
 	var jar_mesh := _jar.mesh as CylinderMesh
-	jar_mesh.top_radius = 0.24
-	jar_mesh.bottom_radius = 0.27
-	jar_mesh.height = 0.68
-	_jar.position.y = 0.42
+	jar_mesh.top_radius = 0.34
+	jar_mesh.bottom_radius = 0.38
+	jar_mesh.height = 0.84
+	_jar.position.y = 0.49
 	var glass := StandardMaterial3D.new()
 	glass.albedo_color = Color(0.72, 0.78, 0.75, 0.10)
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -122,14 +122,14 @@ func _build() -> void:
 	_jar.material_override = glass
 
 	_jar_top = _mesh_instance(CylinderMesh.new(), "JarLid")
-	(_jar_top.mesh as CylinderMesh).top_radius = 0.24
-	(_jar_top.mesh as CylinderMesh).bottom_radius = 0.24
+	(_jar_top.mesh as CylinderMesh).top_radius = 0.34
+	(_jar_top.mesh as CylinderMesh).bottom_radius = 0.34
 	(_jar_top.mesh as CylinderMesh).height = 0.045
-	_jar_top.position.y = 0.77
+	_jar_top.position.y = 0.91
 	_jar_top.material_override = _material(Color(0.39, 0.72, 0.77), 0.3)
 	_jar_bottom = _mesh_instance(CylinderMesh.new(), "JarBase")
-	(_jar_bottom.mesh as CylinderMesh).top_radius = 0.27
-	(_jar_bottom.mesh as CylinderMesh).bottom_radius = 0.27
+	(_jar_bottom.mesh as CylinderMesh).top_radius = 0.38
+	(_jar_bottom.mesh as CylinderMesh).bottom_radius = 0.38
 	(_jar_bottom.mesh as CylinderMesh).height = 0.055
 	_jar_bottom.position.y = 0.075
 	_jar_bottom.material_override = _material(Color(0.23, 0.48, 0.52), 0.22)

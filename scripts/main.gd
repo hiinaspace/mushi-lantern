@@ -3,8 +3,8 @@ extends Node3D
 const FIXED_STEP := 1.0 / 60.0
 const DEFAULT_SEED := 40721
 const GROVE_GOAL_RADIUS := 2.65
-const PVP_LEFT_GOAL := Vector2(-27.0, 0.0)
-const PVP_RIGHT_GOAL := Vector2(27.0, 0.0)
+const PVP_LEFT_GOAL := Vector2(-38.0, 6.0)
+const PVP_RIGHT_GOAL := Vector2(38.0, 6.0)
 const PVP_CENTER_SPAWNS := [Vector2(0.0, -3.0), Vector2(0.0, 0.0), Vector2(0.0, 3.0)]
 const TUTORIAL_XZ := Vector2(-8.0, -2.0)
 const PATCH_CENTERS := [Vector2(-14.4, -13.2), Vector2(14.6, -12.0), Vector2(15.4, 13.6)]
@@ -13,6 +13,8 @@ const SAVED_PRESETS_PATH := "user://m0_saved_presets.json"
 const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
 const AVATAR_FIT_PATH := "user://mushi_avatar_fit.json"
 const VOICE_SETTINGS_PATH := "user://mushi_voice_settings.json"
+const XR_COMFORT_PATH := "user://mushi_xr_comfort.json"
+const BROOM_UNLOCK_PATH := "user://mushi_broom_unlock.json"
 
 var environment_enabled: bool = true
 var terrain_size: int = 128
@@ -68,6 +70,8 @@ var _avatar_arm_reach: float = 1.3
 var _xr_avatar_scale_ready := false
 var _xr_avatar_calibration_seconds := 0.0
 var _xr_avatar_raw_eye_height := 0.0
+var _xr_comfort := {"snap_turn": false, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
+var _broom_permanently_unlocked := false
 var _joined_peers: Dictionary = {}
 var _network_status := "Offline"
 var _last_sent_score: int = -1
@@ -205,6 +209,8 @@ func _ready() -> void:
 	_parse_arguments()
 	_load_avatar_fit()
 	_load_voice_settings()
+	_load_xr_comfort()
+	_load_broom_unlock()
 	_voice_start_unmuted = _voice_start_unmuted or OS.get_environment("MUSHI_VOICE_UNMUTED") == "1" or OS.get_environment("MUSHI_VOICE_TRANSMIT") == "1"
 	_impair_rng.seed = 40721
 	_impair_jitter_ms = maxi(0, int(OS.get_environment("MUSHI_NET_JITTER_MS")))
@@ -235,6 +241,7 @@ func _ready() -> void:
 	tutorial_director.reveal_changed.connect(_on_tutorial_reveal_changed)
 	tutorial_director.adaptation_started.connect(_on_tutorial_adaptation_started)
 	tutorial_director.reward_unlocked.connect(_on_tutorial_reward_unlocked)
+	tutorial_director.broom_reward_unlocked.connect(_on_tutorial_broom_reward_unlocked)
 	tutorial_director.guide_released.connect(_on_tutorial_guide_released)
 	tutorial_guide = TutorialGuideVisual.new()
 	tutorial_guide.name = "TutorialGuide"
@@ -242,6 +249,7 @@ func _ready() -> void:
 	tutorial_ui = TutorialUI.new()
 	add_child(tutorial_ui)
 	tutorial_ui.skip_requested.connect(_skip_tutorial)
+	tutorial_ui.begin_requested.connect(tutorial_director.choose_tutorial)
 	tutorial_ui.sandbox_visibility_changed.connect(_on_tutorial_sandbox_visibility_changed)
 	if xr_player != null and xr_player.xr_active:
 		tutorial_ui.attach_xr_camera(xr_player.camera)
@@ -295,6 +303,8 @@ func _ready() -> void:
 	friend_menu.voice_gate_changed.connect(_on_voice_gate_changed)
 	friend_menu.voice_receive_gain_changed.connect(_on_voice_receive_gain_changed)
 	friend_menu.voice_devices_requested.connect(_refresh_voice_controls)
+	friend_menu.comfort_changed.connect(_on_xr_comfort_changed)
+	friend_menu.set_comfort_values(_xr_comfort)
 	friend_menu.set_avatar_fit_values(
 		_avatar_eye_height_override if _avatar_eye_height_override > 0.0 else 1.6,
 		_avatar_arm_reach)
@@ -441,6 +451,10 @@ func _process(delta: float) -> void:
 		tutorial_director.observe_score(simulation.score)
 	if tutorial_ui != null and tutorial_director != null:
 		tutorial_ui.update_director(tutorial_director, xr_player != null and xr_player.xr_active)
+		var guide := get_node_or_null("MikoPresentation/Miko") as Node3D
+		if guide != null:
+			tutorial_ui.update_ukon_proximity(_viewer_eye_position().distance_to(guide.global_position),
+				tutorial_director, xr_player != null and xr_player.xr_active)
 	_update_xr_tutorial_chain_cue()
 	if friend_menu != null and tutorial_director != null:
 		var session_status: String = tutorial_director.status_text + " · " + _network_status
@@ -676,6 +690,53 @@ func _load_voice_settings() -> void:
 		_voice_receive_gain_db = clampf(float(saved.get("receive_gain_db", 0.0)), -30.0, 12.0)
 
 
+func _load_xr_comfort() -> void:
+	if not FileAccess.file_exists(XR_COMFORT_PATH):
+		return
+	var file := FileAccess.open(XR_COMFORT_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var saved: Variant = JSON.parse_string(file.get_as_text())
+	if saved is Dictionary:
+		_xr_comfort = _validated_xr_comfort(saved)
+
+
+func _load_broom_unlock() -> void:
+	if not FileAccess.file_exists(BROOM_UNLOCK_PATH):
+		return
+	var file := FileAccess.open(BROOM_UNLOCK_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var saved: Variant = JSON.parse_string(file.get_as_text())
+	_broom_permanently_unlocked = saved is Dictionary and bool(saved.get("unlocked", false))
+
+
+func _validated_xr_comfort(value: Dictionary) -> Dictionary:
+	return {
+		"snap_turn": bool(value.get("snap_turn", false)),
+		"move_hand": "right" if str(value.get("move_hand", "left")) == "right" else "left",
+		"vignette_strength": clampf(float(value.get("vignette_strength", 0.0)), 0.0, 1.0),
+		"haptics": bool(value.get("haptics", true)),
+	}
+
+
+func _on_xr_comfort_changed(settings: Dictionary) -> void:
+	_xr_comfort = _validated_xr_comfort(settings)
+	_apply_xr_comfort()
+	var file := FileAccess.open(XR_COMFORT_PATH, FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify(_xr_comfort))
+
+
+func _apply_xr_comfort() -> void:
+	if xr_player == null:
+		return
+	xr_player.set_snap_turn(bool(_xr_comfort["snap_turn"]))
+	xr_player.set_move_hand_left(_xr_comfort["move_hand"] == "left")
+	xr_player.set_vignette_strength(float(_xr_comfort["vignette_strength"]))
+	xr_player.set_haptics_enabled(bool(_xr_comfort["haptics"]))
+
+
 func _save_voice_settings() -> void:
 	var file := FileAccess.open(VOICE_SETTINGS_PATH, FileAccess.WRITE)
 	if file != null:
@@ -893,17 +954,19 @@ func _add_miko_presentation() -> void:
 
 	var presentation := Node3D.new()
 	presentation.name = "MikoPresentation"
-	var xz := Vector2(-2.0, 6.4)
+	var xz := Vector2(-2.5, -1.0)
 	presentation.position = Vector3(xz.x, _ground_height(xz), xz.y)
-	# The imported VRM faces +Z. The starting player at z=9.2 sees its face.
+	# The imported VRM faces +Z. Turn Ukon toward the authored introduction.
 	var avatar := avatar_scene.instantiate() as Node3D
 	if avatar == null:
 		push_warning("Miko avatar scene has no Node3D root")
 		presentation.free()
 		return
 	avatar.name = "Miko"
+	avatar.rotation.y = atan2(TUTORIAL_XZ.x - xz.x, TUTORIAL_XZ.y - xz.y)
 	presentation.add_child(avatar)
 	add_child(presentation)
+	avatar.set_guide_idle(true)
 
 func _build_player() -> void:
 	player = DesktopPlayer.new()
@@ -946,6 +1009,7 @@ func _build_xr_player() -> void:
 	var xr_scene: PackedScene = load("res://scenes/xr_player.tscn")
 	xr_player = xr_scene.instantiate()
 	xr_viewport.add_child(xr_player)
+	_apply_xr_comfort()
 	xr_player.set_world_surface(world_surface)
 	xr_player.reset_pose(player.global_position)
 	if not xr_player.xr_active:
@@ -974,7 +1038,7 @@ func _build_xr_player() -> void:
 	xr_staff_interaction = load("res://scripts/xr_staff_interaction.gd").new()
 	xr_staff_interaction.configure(staff_tool, xr_player)
 	xr_staff_interaction.broom_test_override = _broom_test_enabled
-	xr_staff_interaction.broom_unlocked = _broom_test_enabled
+	xr_staff_interaction.broom_unlocked = _broom_test_enabled or _broom_permanently_unlocked
 
 
 func _build_audio() -> void:
@@ -1206,7 +1270,7 @@ func _update_stream_visibility(delta: float) -> void:
 		return
 	var tutorial_reveal_allowed := tutorial_director == null or not tutorial_director.tutorial_enabled
 	if tutorial_director != null and tutorial_director.tutorial_enabled:
-		tutorial_reveal_allowed = tutorial_director.stage in [TutorialDirector.Stage.ADAPTATION, TutorialDirector.Stage.FREE_PLAY]
+		tutorial_reveal_allowed = tutorial_director.reveal_amount > 0.0
 	var target := TerrainEnvironment.stream_visibility_target(
 		lantern.night_vision,
 		lantern.shutter_openness,
@@ -1271,6 +1335,18 @@ func _on_tutorial_reward_unlocked() -> void:
 	if tutorial_ui != null:
 		tutorial_ui.show_reward_unlocked()
 		tutorial_ui.set_sandbox_unlocked(true)
+
+
+func _on_tutorial_broom_reward_unlocked() -> void:
+	if tutorial_director == null or not tutorial_director.tutorial_enabled:
+		return
+	_broom_permanently_unlocked = true
+	var file := FileAccess.open(BROOM_UNLOCK_PATH, FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify({"unlocked": true}))
+	_update_broom_access()
+	if tutorial_ui != null:
+		tutorial_ui.show_broom_unlocked()
 
 
 func _on_tutorial_sandbox_visibility_changed(open: bool) -> void:
@@ -1891,6 +1967,7 @@ func _reset_run(record_previous: bool) -> void:
 	if xr_player != null and xr_player.xr_active:
 		if xr_staff_interaction != null:
 			xr_staff_interaction.reset_for_run()
+			_update_broom_access()
 		_xr_recall_owner = null
 		xr_player.rotation.y = -PI * 0.5 if authored_intro else 0.0
 		xr_player.reset_pose(player.global_position)
@@ -2603,7 +2680,7 @@ func _on_multiplayer_join_requested(secret: String) -> void:
 func _update_broom_access() -> void:
 	if xr_staff_interaction == null:
 		return
-	var enabled := _broom_test_enabled or _multiplayer_role != "offline"
+	var enabled := _broom_test_enabled or _broom_permanently_unlocked or _multiplayer_role != "offline"
 	xr_staff_interaction.broom_test_override = enabled
 	xr_staff_interaction.broom_unlocked = enabled
 

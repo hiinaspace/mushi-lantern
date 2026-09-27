@@ -21,8 +21,30 @@ func _run() -> void:
 	print("PATCH_COUNTS world=%d sim=%d visuals=%d" % [game.world_surface.patch_centers.size(), game.simulation.mushroom_centers.size(), game.mushroom_nodes.size()])
 	check(game.simulation.mushroom_centers.size() == game.world_surface.patch_centers.size() + 3, "central mushroom zones added")
 	check(not game.simulation.preset.spontaneous_waking_enabled, "periodic waking disabled")
-	check(game.goal_shrine.position.x < -20.0 and game.second_goal_shrine.position.x > 20.0, "shrines at opposite ends")
+	check(game.goal_shrine.position.x < -35.0 and game.second_goal_shrine.position.x > 35.0, "shrines beyond opposite ridge ends")
 	check(game.second_goal_shrine.visible, "second shrine visible")
+	var shrine_goals: Array[Vector2] = [game.simulation.goal_position, game.simulation.second_goal_position]
+	for index in shrine_goals.size():
+		var goal: Vector2 = shrine_goals[index]
+		var ground_height: float = game.world_surface.get_height_at(goal)
+		var ring_min_height := INF
+		var ring_max_height := -INF
+		for sample in 64:
+			var ring_point: Vector2 = goal + Vector2.from_angle(TAU * float(sample) / 64.0) * game.simulation.goal_radius
+			var ring_height: float = game.world_surface.get_height_at(ring_point)
+			ring_min_height = minf(ring_min_height, ring_height)
+			ring_max_height = maxf(ring_max_height, ring_height)
+		check(absf(ground_height) < 2.0 and game.world_surface._terrain_grade(goal) < 0.12,
+			"shrine %d stands on level floor behind ridge" % index)
+		check(game.world_surface.basin_margin(goal) > game.simulation.goal_radius + 2.0,
+			"shrine %d remains clear of basin rim" % index)
+		check(ring_max_height - ring_min_height < 1.0,
+			"shrine %d return ring stays close to level" % index)
+		check(absf((game.goal_shrine if index == 0 else game.second_goal_shrine).position.y - ground_height) < 0.001,
+			"shrine %d base matches sampled ground" % index)
+	check(game.simulation.spawn_centers[0].distance_to(shrine_goals[0]) > 30.0
+		and game.simulation.spawn_centers[2].distance_to(shrine_goals[1]) > 30.0,
+		"central player starts remain separated from goal shrines")
 	check(game.mushroom_nodes.size() == game.simulation.mushroom_centers.size(), "mushroom visuals match simulation")
 	for frame: int in 180:
 		await process_frame

@@ -23,6 +23,7 @@ signal fall_recovered(body_position: Vector3)
 @export var recall_hold_seconds: float = 0.5
 @export var snap_turn: bool = false
 @export_range(0.0, 0.5, 0.01) var locomotion_deadzone: float = 0.22
+@export var move_hand_left: bool = true
 
 @onready var camera: XRCamera3D = $Camera
 @onready var left_controller: XRController3D = $LeftController
@@ -59,6 +60,8 @@ var _broom_hand_heading_local: Vector3 = Vector3.ZERO
 var _broom_horizontal_velocity: Vector3 = Vector3.ZERO
 var _broom_vertical_speed: float = 0.0
 var _broom_provider: BroomFlightProvider
+var _comfort_vignette: XRToolsVignette
+var _vignette_strength: float = 0.0
 
 const MIN_TRACKED_HEAD_HEIGHT: float = 0.55
 const GROUND_START_CLEARANCE: float = 0.25
@@ -109,6 +112,10 @@ func _ready() -> void:
 	_update_locomotion_deadzone()
 	_turn.turn_mode = XRToolsMovementTurn.TurnMode.SNAP if snap_turn else XRToolsMovementTurn.TurnMode.SMOOTH
 	_left_turn.turn_mode = _turn.turn_mode
+	_comfort_vignette = preload("res://addons/godot-xr-tools/effects/vignette.tscn").instantiate() as XRToolsVignette
+	_comfort_vignette.name = "ComfortVignette"
+	camera.add_child(_comfort_vignette)
+	set_vignette_strength(_vignette_strength)
 	left_controller.button_pressed.connect(_on_button_pressed.bind(left_controller))
 	left_controller.button_released.connect(_on_button_released.bind(left_controller))
 	right_controller.button_pressed.connect(_on_button_pressed.bind(right_controller))
@@ -472,10 +479,14 @@ func _update_movement() -> void:
 	var active: bool = xr_active and not _menu_open and not _interaction_lock and not _movement_neutral_required and not _broom_flying
 	var left_active: bool = left_controller.get_is_active()
 	var right_active: bool = right_controller.get_is_active()
-	var left_moves: bool = left_active and (right_active or _single_controller_side == 0)
-	var right_moves: bool = right_active and not left_active
-	var left_turns: bool = left_active and not right_active
-	var right_turns: bool = right_active
+	var both: bool = left_active and right_active
+	var left_moves: bool = left_active and (not both or move_hand_left)
+	var right_moves: bool = right_active and (not both or not move_hand_left)
+	var left_turns: bool = left_active and (not both or not move_hand_left)
+	var right_turns: bool = right_active and (not both or move_hand_left)
+	# With one tracked controller the same X axis turns, so it must not strafe.
+	_move.strafe = both
+	_right_move.strafe = both
 	_move.enabled = active and left_moves
 	_right_move.enabled = active and right_moves
 	_left_turn.enabled = active and left_turns
@@ -506,7 +517,9 @@ func _locomotion_is_neutral() -> bool:
 	if _single_controller_side == 1:
 		var stick := right_controller.get_vector2("primary")
 		return stick.length() <= maxf(_active_move_deadzone, _active_turn_deadzone)
-	return left_controller.get_vector2("primary").length() <= _active_move_deadzone and absf(right_controller.get_vector2("primary").x) <= _active_turn_deadzone
+	var move_stick := left_controller.get_vector2("primary") if move_hand_left else right_controller.get_vector2("primary")
+	var turn_stick := right_controller.get_vector2("primary") if move_hand_left else left_controller.get_vector2("primary")
+	return move_stick.length() <= _active_move_deadzone and absf(turn_stick.x) <= _active_turn_deadzone
 
 func set_world_surface(surface: Variant) -> void:
 	world_surface = surface
@@ -569,6 +582,25 @@ func set_snap_turn(enabled: bool) -> void:
 		_update_locomotion_deadzone()
 		_turn.turn_mode = XRToolsMovementTurn.TurnMode.SNAP if enabled else XRToolsMovementTurn.TurnMode.SMOOTH
 		_left_turn.turn_mode = _turn.turn_mode
+
+func set_move_hand_left(enabled: bool) -> void:
+	move_hand_left = enabled
+	if is_node_ready():
+		_update_movement()
+
+func set_vignette_strength(strength: float) -> void:
+	_vignette_strength = clampf(strength, 0.0, 1.0)
+	if _comfort_vignette == null:
+		return
+	_comfort_vignette.auto_adjust = _vignette_strength > 0.0
+	_comfort_vignette.auto_inner_radius = 1.0 - 0.65 * _vignette_strength
+	_comfort_vignette.auto_velocity_limit = 2.8
+	_comfort_vignette.auto_rotation_limit = 80.0
+	if is_zero_approx(_vignette_strength):
+		_comfort_vignette.radius = 1.0
+
+func set_haptics_enabled(enabled: bool) -> void:
+	XRToolsUserSettings.haptics_scale = 1.0 if enabled else 0.0
 
 func _update_locomotion_deadzone() -> void:
 	_active_move_deadzone = maxf(

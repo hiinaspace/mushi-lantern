@@ -25,6 +25,10 @@ func run_checks() -> void:
 	var director := TutorialDirector.new()
 	director.begin_run(true, 1024)
 	ui.update_director(director, true)
+	assert(ui._xr_begin.visible and ui._xr_skip.visible, "XR menu offers tutorial or explore choice")
+	assert(ui._xr_status.visible_characters == 0, "XR menu dialogue starts unrevealed")
+	ui.finish_text()
+	assert(ui._xr_status.visible_characters == -1 and not ui._xr_continue.visible, "XR menu can fast-forward dialogue")
 	assert(ui._xr_cue.visible, "3D XR tutorial cue should be visible while tutorial is active")
 	assert(ui._xr_cue.get_parent().get_parent() == camera, "XR cue must be attached under the tracked camera")
 	assert(ui._xr_cue.no_depth_test, "XR cue should draw in front of geometry")
@@ -35,6 +39,8 @@ func run_checks() -> void:
 	ui.update_director(director, true)
 	assert(ui._xr_cue.visible and ui._xr_cue.text.contains("Keep shutter closed"), "cue must remain visible through scripted stream reveal")
 	assert(not ui._xr_cue.text.contains("Space") and not ui._xr_cue.text.contains("Continue"), "XR tutorial has no manual advance instructions")
+	director.stage = TutorialDirector.Stage.GROUPS
+	ui.update_director(director, true)
 	director.stage = TutorialDirector.Stage.FREE_PLAY
 	ui.update_director(director, false)
 	assert(ui._desktop_root.visible and ui._desktop_status.text == "Tutorial complete — explore!", "desktop shows completion cue after adaptation")
@@ -44,6 +50,8 @@ func run_checks() -> void:
 	assert(ui._xr_cue.visible, "completion cue remains visible for about three seconds")
 	ui._process(0.2)
 	assert(not ui._xr_cue.visible and not ui._desktop_root.visible, "completion cue hides after timeout")
+	ui.update_ukon_proximity(2.0, director, true)
+	assert(ui._xr_cue.visible and ui._xr_cue.text.contains("Ukon:"), "nearby Ukon uses XR dialogue cue")
 	director.begin_run(true, 1024)
 	ui.update_director(director, true)
 	director.skip()
