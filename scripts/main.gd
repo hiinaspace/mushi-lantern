@@ -414,11 +414,15 @@ func _process(delta: float) -> void:
 			goal_shrine.set_night_vision(lantern.night_vision)
 			var primary_score: int = simulation.goal_scores[0] if _game_mode == "two_shrines" and simulation is FlightSimulation else simulation.score
 			if primary_score != _last_shrine_score:
+				if GroveAudio.should_play_shrine_confirmation(_last_shrine_score, primary_score):
+					grove_audio.play_shrine_return(0, goal_shrine.global_position)
 				_last_shrine_score = primary_score
 				goal_shrine.set_progress(primary_score, fixture_count)
 		if second_goal_shrine != null and _game_mode == "two_shrines":
 			second_goal_shrine.set_night_vision(lantern.night_vision)
 			if simulation is FlightSimulation and simulation.goal_scores[1] != _last_second_shrine_score:
+				if GroveAudio.should_play_shrine_confirmation(_last_second_shrine_score, simulation.goal_scores[1]):
+					grove_audio.play_shrine_return(1, second_goal_shrine.global_position)
 				_last_second_shrine_score = simulation.goal_scores[1]
 				second_goal_shrine.set_progress(_last_second_shrine_score, fixture_count)
 	light_field.update_transform(lantern.global_position, lantern.forward_direction())
@@ -479,6 +483,7 @@ func _process(delta: float) -> void:
 		_screenshot_elapsed += delta
 		if _screenshot_elapsed >= _screenshot_delay:
 			_capture_and_quit()
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if player != null and player.lamp_adjusting and event is InputEventMouseButton:

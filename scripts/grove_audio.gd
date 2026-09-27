@@ -6,6 +6,7 @@ const MUSHI_CAP := 12
 const FOREST_CAP := 6
 const TOOL_CAP := 4
 const STEP_CAP := 2
+const SHRINE_CAP := 2
 const AUDIBLE_RADIUS := 10.0
 const RELEASE_RADIUS := 12.0
 const STALE_SECONDS := 0.55
@@ -18,6 +19,13 @@ const MUSHI_PITCH_MIN := 0.35
 const MUSHI_PITCH_MAX := 1.6
 const MUSHI_CALM_PITCH_DEFAULT := 0.5
 const MUSHI_EXCITED_PITCH_DEFAULT := 1.0
+const SHRINE_RETURN_COOLDOWN := 0.55
+const SHRINE_RETURN_MAX_DISTANCE := 34.0
+
+
+static func should_play_shrine_confirmation(previous_score: int, current_score: int) -> bool:
+	# A negative baseline means initial state, reset, or late-join hydration.
+	return previous_score >= 0 and current_score > previous_score
 
 var mushi_limit := 6
 var forest_limit := 3
@@ -46,6 +54,8 @@ var _mushi: Array[Dictionary] = []
 var _forest: Array[Dictionary] = []
 var _tool: Array[Dictionary] = []
 var _steps: Array[Dictionary] = []
+var _shrine: Array[Dictionary] = []
+var _shrine_cooldowns := PackedFloat32Array([0.0, 0.0])
 var _last_head := Vector3.ZERO
 var _last_swing_local := Vector3.ZERO
 var _staff_speed := 0.0
@@ -72,12 +82,14 @@ func _ready() -> void:
 		_config.name = "SteamAudioConfig"
 		add_child(_config)
 	_load_streams()
-	for bus_name: String in ["Mushi", "Forest", "Tool", "Steps"]:
+	for bus_name: String in ["Mushi", "Forest", "Tool", "Steps", "Shrine"]:
 		_ensure_bus(bus_name)
 	_mushi = _make_pool("Mushi", MUSHI_CAP)
 	_forest = _make_pool("Forest", FOREST_CAP)
 	_tool = _make_pool("Tool", TOOL_CAP)
 	_steps = _make_pool("Footstep", STEP_CAP)
+	_shrine = _make_pool("Shrine", SHRINE_CAP)
+	_streams["shrine_return_pulse"] = _make_shrine_return_stream()
 	if _listener_camera != null:
 		set_listener_camera(_listener_camera)
 
@@ -186,6 +198,8 @@ func _process(delta: float) -> void:
 	_shutter_quiet_time += dt
 	_shutter_sound_cooldown = maxf(0.0, _shutter_sound_cooldown - dt)
 	_filter_cooldown = maxf(0.0, _filter_cooldown - dt)
+	for goal_index in _shrine_cooldowns.size():
+		_shrine_cooldowns[goal_index] = maxf(0.0, _shrine_cooldowns[goal_index] - dt)
 	if _simulation is RemoteFlightSimulation and _remote_snapshot_complete() and _clock - _last_remote_selection >= 0.12:
 		# Remote replicas do not emit the GPU snapshot_applied signal. Sample the
 		# interpolated host state at the network snapshot cadence instead.
@@ -200,6 +214,49 @@ func _process(delta: float) -> void:
 	_update_forest(dt)
 	_update_tool(dt)
 	_update_footsteps(dt)
+
+
+## Called only for a positive score delta after the scene's score baseline is
+## established. Each goal has an independent throttle for close-together returns.
+func play_shrine_return(goal_index: int, shrine_position: Vector3) -> void:
+	if not _enabled or goal_index < 0 or goal_index >= SHRINE_CAP or _shrine.size() < SHRINE_CAP:
+		return
+	if _shrine_cooldowns[goal_index] > 0.0 or _listener_camera == null or not is_instance_valid(_listener_camera):
+		return
+	var distance := shrine_position.distance_to(_listener_camera.global_position)
+	if distance >= SHRINE_RETURN_MAX_DISTANCE:
+		return
+	var proximity := 1.0 - smoothstep(5.0, SHRINE_RETURN_MAX_DISTANCE, distance)
+	var slot: Dictionary = _shrine[goal_index]
+	(slot.player as Node3D).global_position = shrine_position + Vector3.UP * 1.25
+	_play(slot, "shrine_return_pulse", -28.0, 1.0)
+	(slot.player as AudioStreamPlayer3D).volume_linear = float(slot.base_gain) * proximity
+	slot.gain = proximity
+	slot.target = proximity
+	_shrine_cooldowns[goal_index] = SHRINE_RETURN_COOLDOWN
+
+
+func _make_shrine_return_stream() -> AudioStreamWAV:
+	# Original procedural cue: three quiet, inharmonic glass partials with a
+	# short exponential tail. This avoids bundling an unlicensed third-party asset.
+	const SAMPLE_RATE := 24000
+	const DURATION := 0.34
+	var sample_count := int(SAMPLE_RATE * DURATION)
+	var pcm := PackedByteArray()
+	pcm.resize(sample_count * 2)
+	for index in sample_count:
+		var t := float(index) / SAMPLE_RATE
+		var attack := minf(1.0, t / 0.004)
+		var envelope := attack * exp(-t * 9.0)
+		var tone := sin(TAU * 880.0 * t) * 0.62 + sin(TAU * 1327.0 * t) * 0.25 + sin(TAU * 1761.0 * t) * 0.13
+		var sample := clampf(tone * envelope * 0.22, -1.0, 1.0)
+		pcm.encode_s16(index * 2, roundi(sample * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = SAMPLE_RATE
+	wav.stereo = false
+	wav.data = pcm
+	return wav
 
 
 func _on_snapshot(_milliseconds: float) -> void:
