@@ -39,6 +39,9 @@ const BONE_MAP := [
 	[&"B_R_Hand", &"RightHand", false],
 ]
 
+const IDLE_ARM_OUTWARD := 0.30
+const IDLE_ARM_FORWARD := 0.18
+
 var _source_root: Node3D
 var _source_skeleton: Skeleton3D
 var _source_player: AnimationPlayer
@@ -229,7 +232,11 @@ func _process_modification() -> void:
 					var parent_index := target.get_bone_parent(target_index)
 					var parent_rest := target.get_bone_global_rest(parent_index).basis if parent_index >= 0 else Basis.IDENTITY
 					var arm_vector := (target_rest.basis * target.get_bone_rest(lower_index).origin).normalized()
-					var down_vector := (parent_rest.inverse() * Vector3.DOWN).normalized()
+					var idle_weight := 1.0 - smoothstep(0.05, 0.4, _locomotion_speed)
+					var body_side := signf(target_global_rest.origin.x)
+					var relaxed_direction := Vector3(body_side * IDLE_ARM_OUTWARD, -0.93, IDLE_ARM_FORWARD).normalized()
+					var arm_direction := Vector3.DOWN.lerp(relaxed_direction, idle_weight).normalized()
+					var down_vector := (parent_rest.inverse() * arm_direction).normalized()
 					relaxed = Basis(Quaternion(arm_vector, down_vector)) * target_rest.basis
 			# The source upper-body clips keep both hands raised for combat.
 			# Use a modest gait swing around the relaxed arm instead.
