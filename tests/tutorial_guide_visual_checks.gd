@@ -14,6 +14,13 @@ func _run() -> void:
 	assert(not (lid.material_override as StandardMaterial3D).emission_enabled)
 	assert(not (base.material_override as StandardMaterial3D).emission_enabled)
 	assert(guide.get_node("GuideJar").material_override is ShaderMaterial)
+	var initial_anchor := guide.global_position
+	guide.hide_for_skip()
+	guide.reset_guide(Vector3(24.0, 3.0, -17.0))
+	assert(guide.global_position.is_equal_approx(initial_anchor),
+		"skip followed by run reset should restore the guide to its original anchor")
+	assert(is_equal_approx((guide.get_node("GuideJar") as Node3D).position.y, -0.08),
+		"run reset should restore the jar body pose")
 	guide._process(0.3)
 	var neutral_position: Vector3 = guide.get_node("GuideMushi").position
 	var neutral_heading: Color = guide._glyph_image.get_pixel(0, 2)

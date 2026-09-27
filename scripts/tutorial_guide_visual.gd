@@ -27,6 +27,8 @@ var _display_arousal := 0.45
 var _release_tween: Tween
 var _blue_pull := Vector3.ZERO
 var _previous_glyph_world := Vector3.ZERO
+var _initial_world_position := Vector3.ZERO
+var _has_initial_world_position := false
 
 
 func _ready() -> void:
@@ -72,7 +74,13 @@ func reset_guide(world_position: Vector3) -> void:
 	_display_arousal = 0.45
 	_blue_pull = Vector3.ZERO
 	scale = Vector3.ONE
-	global_position = world_position
+	# Keep the jar at its authored intro location across run resets. The caller's
+	# camera-relative position can change after Skip, but that must not relocate
+	# the tutorial prop when the level is restarted.
+	if not _has_initial_world_position:
+		_initial_world_position = world_position
+		_has_initial_world_position = true
+	global_position = _initial_world_position
 	_creature.position = Vector3.ZERO
 	_creature.rotation = Vector3.ZERO
 	_creature.scale = Vector3.ONE
