@@ -64,7 +64,8 @@ func run_checks() -> void:
 	assert(contents.find_child("XRStartButton", true, false) is Button, "XR exposes restart")
 	assert(contents.find_child("XRQuitButton", true, false) is Button, "XR exposes quit")
 	assert(skip.get_parent().name == "Play", "skip is in Play")
-	assert(tuning.get_parent().name == "Advanced", "tuning lives under Settings / Advanced")
+	assert(tuning.get_parent().name == "HiddenTuningControls" and not tuning.get_parent().visible,
+		"legacy tuning controls remain bound but are hidden from the jam menu")
 	assert(audio_control.get_parent().name == "Audio", "live mix controls stay attached under Settings / Audio")
 	var performance := _find_button_text(menu._xr_settings, "Quality: Performance")
 	performance.pressed.emit()
