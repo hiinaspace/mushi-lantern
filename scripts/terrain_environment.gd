@@ -200,6 +200,9 @@ func set_visual_tuning(values: Dictionary) -> void:
 		material.set_shader_parameter("foliage_reveal_end", float(values.get("foliage_end", 0.99)))
 		material.set_shader_parameter("river_plane_y", TerrainRiverReveal.RIVER_PLANE_Y * depth)
 		material.set_shader_parameter("river_depth", depth)
+	if _fern_groundcover != null:
+		_fern_groundcover.set_reveal_range(float(values.get("foliage_start", 0.90)),
+			float(values.get("foliage_end", 0.99)))
 
 func _set_mesh_night_vision(node: Node, value: float) -> void:
 	if node is MeshInstance3D:

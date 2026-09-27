@@ -266,10 +266,10 @@ func _update_status() -> void:
 		Stage.JAR_BLUE:
 			status_text = "Shine blue light into the glass. Blue quiets its energy and draws it close."
 		Stage.JAR_ORANGE:
-			status_text = "Now orange. It stirs the mushi's energy and nudges it away. I'll lift the glass; guide it toward the shrine."
+			status_text = "Now shine orange light. It stirs the mushi's energy and nudges it away. I'll lift the glass; guide it toward the shrine."
 		Stage.GUIDE:
 			status_text = "There it goes. The shrine leads it back into the light vein."
 		Stage.GROUPS:
-			status_text = "Groups gather with blue and stretch away from orange. Try guiding a few home."
+			status_text = "Groups gather with blue light and stretch away from orange light. Try guiding a few home."
 		Stage.FREE_PLAY:
 			status_text = "Free play · %d%% returned" % roundi(progress_ratio * 100.0)
