@@ -22,6 +22,10 @@ func _run() -> void:
 	# asserting that the GPU simulation advances.
 	if lab.friend_menu != null:
 		lab.friend_menu.set_open(false)
+	# The tutorial intentionally holds the real swarm until the player finishes
+	# or skips it. This fixture checks terrain flight, so enter free play first.
+	if lab.tutorial_director != null and lab.tutorial_director.tutorial_enabled:
+		lab._skip_tutorial()
 	lab.set_process_unhandled_input(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_expect(lab.environment_enabled, "environment enabled with rendered Mobile backend")
