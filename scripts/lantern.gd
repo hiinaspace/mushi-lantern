@@ -14,6 +14,7 @@ const KEYBOARD_SHUTTER_SECONDS := 0.28
 const BRASS_ALBEDO := preload("res://assets/lantern/st-brass/brass_albedo_1k.jpg")
 const BRASS_NORMAL := preload("res://assets/lantern/st-brass/brass_normal_1k.jpg")
 const BRASS_ROUGHNESS := preload("res://assets/lantern/st-brass/brass_roughness_1k.jpg")
+const BEVELED_BOX: Script = preload("res://scripts/beveled_box_mesh.gd")
 const PAPER_ALBEDO := preload("res://assets/lantern/cc0t-paper-002/paper_albedo_1k.jpg")
 
 var mode: LightField.Mode = LightField.Mode.BLUE
@@ -226,9 +227,12 @@ func _brass_material(tint: Color, metallic_value: float, roughness_value: float)
 func _box(label: String, size: Vector3, at: Vector3, material: Material, parent: Node3D = null) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
 	part.name = label
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	part.mesh = mesh
+	if label in ["RearWall", "LeftWall", "RightWall", "Top", "Bottom", "SettingGrip"]:
+		part.mesh = BEVELED_BOX.create(size, minf(0.006, minf(size.x, minf(size.y, size.z)) * 0.28))
+	else:
+		var mesh := BoxMesh.new()
+		mesh.size = size
+		part.mesh = mesh
 	part.position = at
 	if material != null:
 		part.material_override = material

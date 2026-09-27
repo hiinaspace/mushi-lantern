@@ -4,6 +4,12 @@ extends Node3D
 ## Configure once after adding the node, then update its compact progress cue.
 
 const PROGRESS_TICKS := 8
+const BEVELED_BOX: Script = preload("res://scripts/beveled_box_mesh.gd")
+const BRASS_ALBEDO: Texture2D = preload("res://assets/lantern/st-brass/brass_albedo_1k.jpg")
+const BRASS_NORMAL: Texture2D = preload("res://assets/lantern/st-brass/brass_normal_1k.jpg")
+const BRASS_ROUGHNESS: Texture2D = preload("res://assets/lantern/st-brass/brass_roughness_1k.jpg")
+const ROCK_ALBEDO: Texture2D = preload("res://assets/forest/polyhaven/material_pass/shrine_rock_surface/rock_surface_diff_1k.jpg")
+const ROCK_NORMAL: Texture2D = preload("res://assets/forest/polyhaven/material_pass/shrine_rock_surface/rock_surface_nor_gl_1k.jpg")
 
 var goal_radius: float = 2.05
 var ground_height: float = 0.0
@@ -102,17 +108,15 @@ func _build() -> void:
 	add_child(_architecture_root)
 	var warm_wood := _lacquered_wood(Color(1.0, 0.80, 0.70), 0.56)
 	var lacquer := _lacquered_wood(Color(1.0, 0.55, 0.48), 0.45)
-	var stone := _material(Color("41413b"), Color("000000"), 0.0)
-	var altar_top := _material(Color("887255"), Color("170d08"), 0.02)
+	var stone := _rock_surface_material()
+	var altar_top := _lacquered_wood(Color(0.82, 0.69, 0.53), 0.63)
 	var paper := _material(Color("b4a17f"), Color("000000"), 0.0)
 	var vermilion := _material(Color("8e3b27"), Color("000000"), 0.0)
-	var bronze := _material(Color("786348"), Color("000000"), 0.0)
-	bronze.metallic = 0.72
-	bronze.roughness = 0.4
+	var bronze := _aged_brass()
 
 	# Keep the center clear for descending returns; place the altar and tally at the far rim.
 	var altar_z := -maxf(0.35, goal_radius * 0.66)
-	_add_box("Foundation", Vector3(1.15, 0.16, 0.82), Vector3(0.0, 0.08, altar_z), stone)
+	_add_box("Foundation", Vector3(1.15, 0.30, 0.82), Vector3(0.0, 0.03, altar_z), stone)
 	_add_box("Altar", Vector3(0.76, 0.55, 0.54), Vector3(0.0, 0.435, altar_z), lacquer)
 	_add_box("AltarBand", Vector3(0.84, 0.055, 0.61), Vector3(0.0, 0.68, altar_z), bronze)
 	_add_box("AltarCap", Vector3(1.02, 0.11, 0.74), Vector3(0.0, 0.765, altar_z), altar_top)
@@ -126,9 +130,13 @@ func _build() -> void:
 	roof_right.rotation.z = deg_to_rad(-23.0)
 	_add_box("AltarRoofRidge", Vector3(0.09, 0.11, 0.82),
 		Vector3(0.0, 1.23, altar_z), lacquer)
+	for side_x in [-1.0, 1.0]:
+		for side_z in [-1.0, 1.0]:
+			_add_cylinder("AltarRoofSupport_%d_%d" % [int(side_x), int(side_z)], 0.028, 0.30,
+				Vector3(side_x * 0.29, 0.94, altar_z + side_z * 0.25), lacquer)
 	var post_x := 0.82
 	for side in [-1.0, 1.0]:
-		_add_box("GatewayPost", Vector3(0.17, 1.38, 0.17), Vector3(side * post_x, 0.76, 0.0), lacquer)
+		_add_box("GatewayPost", Vector3(0.17, 1.62, 0.17), Vector3(side * post_x, 0.64, 0.0), lacquer)
 		_add_box("PostCollar", Vector3(0.205, 0.055, 0.205), Vector3(side * post_x, 1.19, 0.0), bronze)
 	_add_box("GatewayLintel", Vector3(2.18, 0.15, 0.22), Vector3(0.0, 1.43, 0.0), warm_wood)
 	_add_box("GatewayCrown", Vector3(2.48, 0.21, 0.36), Vector3(0.0, 1.58, 0.0), altar_top)
@@ -225,9 +233,12 @@ func _apply_night_vision() -> void:
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
 	instance.name = node_name
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	instance.mesh = mesh
+	if node_name in ["Foundation", "Altar", "AltarCap", "AltarRoofLeft", "AltarRoofRight", "GatewayPost", "GatewayLintel", "GatewayCrown"]:
+		instance.mesh = BEVELED_BOX.create(size, minf(0.028, minf(size.x, minf(size.y, size.z)) * 0.16))
+	else:
+		var mesh := BoxMesh.new()
+		mesh.size = size
+		instance.mesh = mesh
 	instance.position = at + Vector3.UP * _terrain_delta(at)
 	instance.material_override = material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -277,4 +288,26 @@ func _lacquered_wood(tint: Color, roughness_value: float) -> StandardMaterial3D:
 	material.normal_texture = load("res://assets/forest/polyhaven/material_pass/lacquered_cherry_wood_nor_gl_2k.jpg")
 	material.normal_scale = 0.25
 	material.roughness = roughness_value
+	return material
+
+
+func _aged_brass() -> StandardMaterial3D:
+	var material := _material(Color(0.56, 0.48, 0.38), Color.BLACK, 0.0)
+	material.albedo_texture = BRASS_ALBEDO
+	material.normal_enabled = true
+	material.normal_texture = BRASS_NORMAL
+	material.normal_scale = 0.3
+	material.roughness_texture = BRASS_ROUGHNESS
+	material.roughness = 0.4
+	material.metallic = 0.72
+	return material
+
+
+func _rock_surface_material() -> StandardMaterial3D:
+	var material := _material(Color(0.72, 0.73, 0.72), Color.BLACK, 0.0)
+	material.albedo_texture = ROCK_ALBEDO
+	material.normal_enabled = true
+	material.normal_texture = ROCK_NORMAL
+	material.normal_scale = 0.36
+	material.roughness = 0.92
 	return material

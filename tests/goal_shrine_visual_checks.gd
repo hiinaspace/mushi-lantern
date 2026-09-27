@@ -29,10 +29,7 @@ func _run() -> void:
 	shrine.set_progress(64, 512)
 
 	var floor := MeshInstance3D.new()
-	var floor_mesh := PlaneMesh.new()
-	floor_mesh.size = Vector2(20.0, 20.0)
-	floor.mesh = floor_mesh
-	floor.position.y = shrine.position.y - 0.025
+	floor.mesh = _sampled_ground_mesh(surface)
 	var floor_material := StandardMaterial3D.new()
 	floor_material.albedo_color = Color("343a31")
 	floor_material.roughness = 0.96
@@ -76,8 +73,26 @@ func _run() -> void:
 		and uplight.position.y > 0.0 and uplight.position.y < 0.15 and uplight.spot_angle <= 115.0,
 		"shrine spot points up through a bounded cone")
 	var foundation := shrine.get_node("GateArchitecture/Foundation") as MeshInstance3D
-	check(absf(foundation.global_position.y - 0.08 - surface.get_height_at(Vector2(foundation.global_position.x, foundation.global_position.z))) < 0.02,
+	check(absf(foundation.global_position.y - 0.03 - surface.get_height_at(Vector2(foundation.global_position.x, foundation.global_position.z))) < 0.02,
 		"foundation follows sampled terrain rather than hovering on the shrine center height")
+	var architecture := shrine.get_node("GateArchitecture") as Node3D
+	var buried_posts := 0
+	for child in architecture.get_children():
+		if not child.name.begins_with("GatewayPost") and not child.name.begins_with("@MeshInstance3D"):
+			continue
+		var post := child as MeshInstance3D
+		if post == null or post.mesh.get_aabb().size.y < 1.5:
+			continue
+		var foot_y := post.global_position.y - post.mesh.get_aabb().size.y * 0.5
+		var local_ground := surface.get_height_at(Vector2(post.global_position.x, post.global_position.z))
+		if foot_y < local_ground - 0.12:
+			buried_posts += 1
+	check(buried_posts == 2, "both gate posts continue below sampled terrain")
+	check(shrine.find_children("AltarRoofSupport*", "MeshInstance3D", true, false).size() == 4,
+		"four small posts hold the altar roof")
+	var foundation_material := foundation.material_override as StandardMaterial3D
+	check(foundation_material.albedo_texture != null and foundation_material.normal_texture != null,
+		"foundation uses textured Rock Surface material")
 	check(shrine._progress_ticks.size() == GoalShrine.PROGRESS_TICKS,
 		"progress detail remains bounded")
 	var paper_material := (shrine.get_node("GateArchitecture/Ofuda") as MeshInstance3D).material_override as StandardMaterial3D
@@ -125,3 +140,27 @@ func _collect_meshes(node: Node, output: Array[MeshInstance3D]) -> void:
 func check(condition: bool, label: String) -> void:
 	if not condition:
 		failures.append(label)
+
+
+func _sampled_ground_mesh(surface: EnvironmentSurface) -> ArrayMesh:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for iz in 40:
+		for ix in 40:
+			var x := float(ix) * 0.5 - 10.0
+			var z := float(iz) * 0.5 - 10.0
+			_ground_vertex(tool, surface, x, z)
+			_ground_vertex(tool, surface, x + 0.5, z)
+			_ground_vertex(tool, surface, x, z + 0.5)
+			_ground_vertex(tool, surface, x + 0.5, z)
+			_ground_vertex(tool, surface, x + 0.5, z + 0.5)
+			_ground_vertex(tool, surface, x, z + 0.5)
+	return tool.commit()
+
+func _ground_vertex(tool: SurfaceTool, surface: EnvironmentSurface, x: float, z: float) -> void:
+	var height := surface.get_height_at(Vector2(x, z))
+	var dx := surface.get_height_at(Vector2(x + 0.2, z)) - surface.get_height_at(Vector2(x - 0.2, z))
+	var dz := surface.get_height_at(Vector2(x, z + 0.2)) - surface.get_height_at(Vector2(x, z - 0.2))
+	tool.set_normal(Vector3(-dx, 0.4, -dz).normalized())
+	tool.set_uv(Vector2(x, z) * 0.1)
+	tool.add_vertex(Vector3(x, height, z))

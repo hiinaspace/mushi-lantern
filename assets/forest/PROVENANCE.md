@@ -16,6 +16,7 @@ The Oak / Pine audition uses the same deterministic prop placement records, coar
 | `polyhaven/forest_ground_06_{diff,nor_gl}_1k.jpg` | Current dark pine-grove soil base and OpenGL normal | [Poly Haven Forest Ground 06](https://polyhaven.com/a/forest_ground_06), CC0 1.0 |
 | `polyhaven/forest_leaves_02_{diffuse,nor_gl}_1k.jpg` | Earlier mossy leaf-litter overlay audition, retained as a source reference | [Poly Haven Forest Leaves 02](https://polyhaven.com/a/forest_leaves_02), CC0 1.0 |
 | `polyhaven/forest_ground_04_{diff,nor_gl}_1k.jpg` | Restrained rocky-soil variation; 1K albedo is used with the 06 base | [Poly Haven](https://polyhaven.com/a/forest_ground_04), CC0 1.0 |
+| `polyhaven/material_pass/shrine_rock_surface/rock_surface_{diff,nor_gl}_1k.jpg` | Shrine foundation diffuse and OpenGL normal | [Poly Haven Rock Surface](https://polyhaven.com/a/rock_surface), CC0 1.0 |
 | `polyhaven/rock_01_{diff,nor_gl}_1k.jpg` | Weathered gray rock albedo and OpenGL normal for Terrain3D cliff layer and instanced boulders | [Poly Haven Rock 01](https://polyhaven.com/a/rock_01), CC0 1.0 |
 | `polyhaven/mossy_rock_{diff,nor_gl}_1k.jpg` | Mottled moss-on-stone albedo blended onto filtered gentle-ground patches | [Poly Haven Mossy Rock](https://polyhaven.com/a/mossy_rock), CC0 1.0 |
 | `cc0-flora/royal-fern.glb` | CC0 Royal Fern used at existing bush placements; re-exported through Blender to remove `KHR_mesh_quantization`, unsupported by this Godot 4.7 importer | [Dense Temperate Forest Flora](https://3dassets.dev/packs/dense-temperate-forest-flora), CC0 1.0 |
