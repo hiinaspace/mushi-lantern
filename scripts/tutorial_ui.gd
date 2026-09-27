@@ -32,8 +32,10 @@ var _last_spoken_line := ""
 var _spoken_characters := 0.0
 var _world_root: Node3D
 var _world_viewer: Camera3D
+var _ukon_avatar: Node3D
 var _world_line: Label3D
 var _world_hint: Label3D
+var _mouth_seconds := 0.0
 
 
 func _ready() -> void:
@@ -44,6 +46,7 @@ func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
 	if ukon_anchor == null or viewer == null or _world_root != null:
 		return
 	_world_viewer = viewer
+	_ukon_avatar = ukon_anchor.get_node_or_null("Miko") as Node3D
 	_world_root = Node3D.new()
 	_world_root.name = "UkonDialogue"
 	ukon_anchor.add_child(_world_root)
@@ -293,6 +296,17 @@ func _close_xr_sandbox() -> void:
 
 
 func _process(delta: float) -> void:
+	_mouth_seconds += delta
+	if is_instance_valid(_ukon_avatar) and _ukon_avatar.has_method("apply_voice_visemes"):
+		var speaking := _tutorial_active and _world_root != null and _world_root.visible \
+			and _spoken_characters < float(_last_spoken_line.length())
+		var mouth := PackedFloat32Array()
+		if speaking:
+			# Quiet text has a small syllabic mouth motion. Reuse the VRM's existing
+			# viseme driver without pretending there is recorded dialogue audio.
+			mouth.resize(15)
+			mouth[10] = 0.16 + 0.22 * pow(maxf(0.0, sin(_mouth_seconds * 37.0)), 1.5)
+		_ukon_avatar.call("apply_voice_visemes", mouth, delta)
 	if _world_root != null and is_instance_valid(_world_viewer):
 		var toward := _world_viewer.global_position - _world_root.global_position
 		toward.y = 0.0
