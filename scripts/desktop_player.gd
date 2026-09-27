@@ -2,6 +2,7 @@ class_name DesktopPlayer
 extends CharacterBody3D
 
 signal lamp_aim_motion(relative: Vector2)
+signal lamp_adjust_motion(relative: Vector2)
 
 @export var move_speed: float = 5.4
 @export var mouse_sensitivity: float = 0.0022
@@ -12,6 +13,7 @@ var movement_enabled: bool = true
 
 var camera: Camera3D
 var look_enabled: bool = true
+var lamp_adjusting: bool = false
 var _pitch: float = -0.12
 
 # Desktop holds the lantern staff like a low, off-side FPS tool. Keeping the
@@ -28,7 +30,8 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	if not controls_enabled or not movement_enabled or (look_enabled and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED) or get_viewport().gui_get_focus_owner() is LineEdit:
+	var gameplay_input := controls_enabled and movement_enabled and (not look_enabled or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED) and not (get_viewport().gui_get_focus_owner() is LineEdit)
+	if not gameplay_input:
 		input = Vector2.ZERO
 	if not Input.is_key_pressed(KEY_SHIFT):
 		input *= 0.6
@@ -41,6 +44,8 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		global_position.y = 0.0
 	else:
+		if gameplay_input and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_action_just_pressed("jump") and is_on_floor():
+			velocity.y = 4.8
 		var old_xz := Vector2(global_position.x, global_position.z)
 		var margin := float(world_surface.basin_margin(old_xz))
 		# The outer slope is scenery. Bleed outward input away as it steepens,
@@ -68,6 +73,9 @@ func _physics_process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and controls_enabled and look_enabled and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
+		if lamp_adjusting:
+			lamp_adjust_motion.emit(motion.relative)
+			return
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			# Give the cursor a useful reach across the view while captured. The
 			# lantern remains staff-driven, but a modest gain makes it feel like
@@ -89,9 +97,10 @@ func reset_look() -> void:
 		camera.rotation = Vector3(_pitch, 0.0, 0.0)
 
 
-func staff_hold_transform(aim: Vector2) -> Transform3D:
+func staff_hold_transform(aim: Vector2, adjusting: bool = false) -> Transform3D:
 	if camera == null:
 		return global_transform
-	var offset := STAFF_HOLD_OFFSET + Vector3(aim.x * 0.38, aim.y * 0.24, 0.0)
+	var rest_offset := STAFF_HOLD_OFFSET.lerp(Vector3(0.19, -0.17, -0.39), 1.0 if adjusting else 0.0)
+	var offset := rest_offset + Vector3(aim.x * 0.38, aim.y * 0.24, 0.0)
 	var staff_basis := camera.global_basis * Basis.from_euler(Vector3(-0.10 + aim.y * 0.52, aim.x * 0.58, 0.0))
 	return Transform3D(staff_basis.orthonormalized(), camera.global_transform * offset)

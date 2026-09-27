@@ -62,6 +62,10 @@ var _adjust_open := 1.0
 var _last_yaw_detent := 0
 var _adjust_origin_dial := 0.0
 var _adjust_last_dial := 0.0
+var _desktop_adjusting := false
+var _desktop_adjust_drag := Vector2.ZERO
+var _desktop_adjust_open := 1.0
+var _desktop_adjust_detent := 0
 var _recall_hand := Transform3D.IDENTITY
 var external_pose_owned := false
 var _identity_hue: float = 0.0
@@ -74,6 +78,42 @@ var _control_hint_material: StandardMaterial3D
 ## desktop keys or mouse input.
 func desktop_can_control_lantern() -> bool:
 	return placement == Placement.HELD and not external_pose_owned
+
+## Captured desktop mouse travel acts like the offhand pulling the short
+## setting grip. Releasing the button commits the nearest filter detent.
+func begin_desktop_adjust() -> void:
+	if not desktop_can_control_lantern():
+		return
+	_desktop_adjusting = true
+	_desktop_adjust_drag = Vector2.ZERO
+	_desktop_adjust_open = lantern.shutter_openness
+	_desktop_adjust_detent = _mode_detent(lantern.mode)
+	lantern.begin_dial_preview()
+	lantern.set_dial_preview(float(_desktop_adjust_detent) * FILTER_STEP_YAW)
+
+func update_desktop_adjust(relative: Vector2, allow_shutter: bool = true) -> void:
+	if not _desktop_adjusting or not desktop_can_control_lantern():
+		return
+	_desktop_adjust_drag += relative
+	var vertical := _desktop_adjust_drag.y
+	var travel := signf(vertical) * maxf(absf(vertical) - 6.0, 0.0)
+	if allow_shutter:
+		lantern.set_shutter(clampf(_desktop_adjust_open - travel / 150.0, 0.0, 1.0))
+	var dial := clampf(float(_desktop_adjust_detent) * FILTER_STEP_YAW + _desktop_adjust_drag.x * FILTER_STEP_YAW / 110.0,
+		-FILTER_STEP_YAW, FILTER_STEP_YAW)
+	lantern.set_dial_preview(dial)
+	var detent := -1 if dial < -FILTER_ENTER_YAW else 1 if dial > FILTER_ENTER_YAW else 0
+	if detent != _mode_detent(lantern.mode):
+		lantern.set_mode(LightField.Mode.BLUE if detent < 0 else LightField.Mode.ORANGE if detent > 0 else LightField.Mode.CLEAR, true)
+
+func end_desktop_adjust() -> void:
+	if not _desktop_adjusting:
+		return
+	_desktop_adjusting = false
+	lantern.end_dial_preview()
+
+func desktop_is_adjusting() -> bool:
+	return _desktop_adjusting
 
 ## During broom flight the beam follows the viewer's horizontal heading. A
 ## vertical gaze retains the previous heading, so looking up/down cannot turn

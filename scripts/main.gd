@@ -481,6 +481,12 @@ func _process(delta: float) -> void:
 			_capture_and_quit()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if player != null and player.lamp_adjusting and event is InputEventMouseButton:
+		var adjust_button := event as InputEventMouseButton
+		if adjust_button.button_index == MOUSE_BUTTON_RIGHT and not adjust_button.pressed:
+			_end_desktop_lamp_adjust()
+			get_viewport().set_input_as_handled()
+			return
 	if xr_player == null or not xr_player.xr_active:
 		if event.is_action_pressed("toggle_spectator") and not event.is_echo():
 			_toggle_spectator()
@@ -532,15 +538,22 @@ func _unhandled_input(event: InputEvent) -> void:
 	if (quality_menu != null and quality_menu.is_open()) or (audio_mix_menu != null and audio_mix_menu.is_open()):
 		return
 	if (xr_player == null or not xr_player.xr_active) and event is InputEventMouseButton \
-			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _tutorial_locks_shutter() \
+			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED \
 			and staff_tool != null and staff_tool.desktop_can_control_lantern():
 		var mouse := event as InputEventMouseButton
+		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_RIGHT and player.look_enabled:
+			staff_tool.begin_desktop_adjust()
+			player.lamp_adjusting = true
+			get_viewport().set_input_as_handled()
+			return
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_UP:
-			lantern.adjust_shutter(0.08)
+			if not _tutorial_locks_shutter() and not player.lamp_adjusting:
+				lantern.adjust_shutter(0.08)
 			get_viewport().set_input_as_handled()
 			return
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			lantern.adjust_shutter(-0.08)
+			if not _tutorial_locks_shutter() and not player.lamp_adjusting:
+				lantern.adjust_shutter(-0.08)
 			get_viewport().set_input_as_handled()
 			return
 	if xr_player == null or not xr_player.xr_active:
@@ -578,6 +591,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 	var lamp_controls_enabled: bool = xr_player != null and xr_player.xr_active or \
 		(staff_tool != null and staff_tool.desktop_can_control_lantern())
+	if player.lamp_adjusting and (event.is_action_pressed("mode_clear") or event.is_action_pressed("mode_blue") or event.is_action_pressed("mode_orange") or event.is_action_pressed("shutter_toggle")):
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("mode_clear") and lamp_controls_enabled:
 		lantern.request_mode(LightField.Mode.CLEAR)
 	elif event.is_action_pressed("mode_blue") and lamp_controls_enabled:
@@ -992,6 +1008,7 @@ func _build_player() -> void:
 	player.add_child(camera)
 	add_child(player)
 	player.lamp_aim_motion.connect(_on_desktop_lamp_aim_motion)
+	player.lamp_adjust_motion.connect(_on_desktop_lamp_adjust_motion)
 	staff_tool = load("res://scripts/staff_tool.gd").new()
 	staff_tool.name = "LanternStaff"
 	add_child(staff_tool)
@@ -1058,7 +1075,7 @@ func _xr_initial_staff_pose() -> Transform3D:
 
 
 func _desktop_staff_pose() -> Transform3D:
-	return player.staff_hold_transform(_desktop_aim)
+	return player.staff_hold_transform(_desktop_aim, player.lamp_adjusting)
 
 
 func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
@@ -1068,6 +1085,18 @@ func _on_desktop_lamp_aim_motion(relative: Vector2) -> void:
 	_desktop_aim += Vector2(relative.x * 0.004, -relative.y * 0.004)
 	_desktop_aim.x = clampf(_desktop_aim.x, -1.0, 1.0)
 	_desktop_aim.y = clampf(_desktop_aim.y, -0.8, 0.8)
+
+
+func _on_desktop_lamp_adjust_motion(relative: Vector2) -> void:
+	if staff_tool != null and staff_tool.desktop_is_adjusting():
+		staff_tool.update_desktop_adjust(relative, not _tutorial_locks_shutter())
+
+
+func _end_desktop_lamp_adjust() -> void:
+	if player != null:
+		player.lamp_adjusting = false
+	if staff_tool != null:
+		staff_tool.end_desktop_adjust()
 
 
 func _update_staff_pose(delta: float) -> void:
@@ -1081,6 +1110,8 @@ func _update_staff_pose(delta: float) -> void:
 		if _xr_recall_owner != null and is_instance_valid(_xr_recall_owner):
 			staff_tool.update_recall(_xr_recall_owner.global_transform, delta)
 	else:
+		if player.lamp_adjusting and (not staff_tool.desktop_can_control_lantern() or not player.look_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
+			_end_desktop_lamp_adjust()
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_desktop_aim = _desktop_aim.lerp(Vector2.ZERO, 1.0 - exp(-delta * 3.5))
 		if _desktop_recall_held:
@@ -1375,7 +1406,7 @@ func _build_ui() -> void:
 
 	help_label = Label.new()
 	help_label.add_theme_font_override("font", UI_FONT)
-	help_label.text = "WASD move · mouse look · hold left mouse: wave staff · scroll: shutter · 1/2/3: filter · F: shutter\nG: drop/pick up · hold E: recall · K: skip intro · R: reset · F1: debug · F2: quality · F3: audio · F6: spectator · Esc: menu\nSpectator: mouse look · WASD/Q/E fly · Shift fast · Ctrl slow · F7 sweep · F8/F9 eye adaptation · F10 auto"
+	help_label.text = "WASD move · Space jump · mouse look · hold left mouse: wave staff · hold right mouse: drag filter/shutter\nScroll: shutter · 1/2/3: filter · F: shutter · G: drop/pick up · hold E: recall · K: skip intro · R: reset\nF1: debug · F2: quality · F3: audio · F6: spectator · Esc: menu\nSpectator: mouse look · WASD/Q/E fly · Shift fast · Ctrl slow · F7 sweep · F8/F9 eye adaptation · F10 auto"
 	help_label.position = Vector2(24.0, 826.0)
 	help_label.add_theme_font_size_override("font_size", 15)
 	help_label.add_theme_color_override("font_color", Color("dceae8"))
@@ -1971,6 +2002,7 @@ func _reset_run(record_previous: bool) -> void:
 		tutorial_ui.update_director(tutorial_director, xr_player != null and xr_player.xr_active)
 	_desktop_aim = Vector2.ZERO
 	_desktop_recall_held = false
+	_end_desktop_lamp_adjust()
 	if xr_player != null and xr_player.xr_active:
 		if xr_staff_interaction != null:
 			xr_staff_interaction.reset_for_run()
@@ -2358,6 +2390,7 @@ func _setup_input() -> void:
 	_add_key_action("move_back", KEY_S)
 	_add_key_action("move_left", KEY_A)
 	_add_key_action("move_right", KEY_D)
+	_add_key_action("jump", KEY_SPACE)
 	_add_key_action("mode_clear", KEY_1)
 	_add_key_action("mode_blue", KEY_2)
 	_add_key_action("mode_orange", KEY_3)
@@ -3042,13 +3075,20 @@ func _sample_local_avatar_pose() -> Dictionary:
 	if staff_tool != null and staff_tool.placement == StaffTool.Placement.HELD:
 		right = Transform3D(staff_tool.global_basis, staff_tool.grip_world_position(staff_tool.grip_index))
 		tracked = 2
+		if player.lamp_adjusting:
+			left = Transform3D(staff_tool.global_basis, staff_tool.control_world_position())
+			tracked = 3
 	var motion := player.velocity
 	motion.y = 0.0
 	var empty_fingers: Array[Quaternion] = []
+	var desktop_curls := PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+	if player.lamp_adjusting:
+		for finger in range(5):
+			desktop_curls[finger] = [0.65, 0.85, 0.9, 0.9, 0.8][finger]
 	return {"body": body, "head": view, "left": left, "right": right,
 		"tracking": tracked, "velocity": motion,
 		"fingers": empty_fingers, "masks": PackedInt32Array([0, 0]),
-		"curls": PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+		"curls": desktop_curls,
 		# Saved XR standing height calibrates the device, never the fixed desktop camera.
 		"eye_height": clampf(view.origin.y - body.origin.y, 1.1, 2.1)}
 
