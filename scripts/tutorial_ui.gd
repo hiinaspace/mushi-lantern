@@ -147,9 +147,9 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 	if _desktop_root != null:
 		_desktop_status.text = "Tutorial complete — explore!" if completion_visible else director.status_text
 		if director.stage == TutorialDirector.Stage.JAR_ORANGE or director.stage == TutorialDirector.Stage.JAR_BLUE:
-			_desktop_status.text += "\n2: blue · 3: orange"
+			_desktop_status.text += "\n2: blue · 3: orange · or hold right mouse and drag sideways"
 		elif director.stage == TutorialDirector.Stage.ADAPTATION or director.stage == TutorialDirector.Stage.SHUTTER:
-			_desktop_status.text += "\nF: shutter · wheel: adjust"
+			_desktop_status.text += "\nF: shutter · wheel or hold right mouse and drag vertically"
 		_desktop_skip.visible = active and not xr_active
 		_desktop_skip.text = "Explore myself · K" if director.stage == TutorialDirector.Stage.WELCOME else "Skip introduction · K"
 		_desktop_begin.visible = director.stage == TutorialDirector.Stage.WELCOME and not xr_active
