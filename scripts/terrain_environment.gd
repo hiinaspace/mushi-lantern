@@ -3,6 +3,9 @@ extends Node3D
 
 const FOLIAGE_SHADER: Shader = preload("res://shaders/foliage_luminescence.gdshader")
 const FOREST_EDGE_SHADER: Shader = preload("res://shaders/forest_edge_emission.gdshader")
+const GROUNDCOVER_SHADER: Shader = preload("res://shaders/groundcover_live.gdshader")
+const WEED_SCENE: PackedScene = preload("res://assets/forest/polyhaven/groundcover_live/weed_plant_02.glb")
+const SHRUB_SCENE: PackedScene = preload("res://assets/forest/polyhaven/groundcover_live/shrub_02.glb")
 const RIVER_MESH_SCRIPT: Script = preload("res://scripts/river_mesh_prototype.gd")
 const RIVER_MESH_MASK_SHADER: Shader = preload("res://shaders/river_mesh_blocker_mask.gdshader")
 
@@ -74,8 +77,8 @@ func build(world_surface: EnvironmentSurface) -> void:
 	_mesh_assets = {
 		"tree": _forest_tree_asset(forest_style) if forest_style in ["oak", "pine"] else _mesh_asset("Meadow tree", _tree_mesh(), _distant_tree_mesh()),
 		"rock": _mesh_asset("Boulders", _rock_mesh(forest_style)),
-		"bush": _forest_fern_asset() if forest_style in ["oak", "pine"] else _mesh_asset("Understory", _bush_mesh()),
-		"grass": _forest_grass_asset() if forest_style == "pine" else _mesh_asset("Meadow tufts", _grass_mesh()),
+		"bush": _polyhaven_groundcover_asset("shrub_02", "shrub_02_b", 2.25, "Shrub 02") if forest_style in ["oak", "pine"] else _mesh_asset("Understory", _bush_mesh()),
+		"grass": _polyhaven_groundcover_asset("weed_plant_02", "weed_plant_02_a_LOD0", 7.5, "Weed Plant 02") if forest_style in ["oak", "pine"] else _mesh_asset("Meadow tufts", _grass_mesh()),
 	}
 	terrain.assets.set_mesh_asset(0, _mesh_assets.tree)
 	terrain.assets.set_mesh_asset(1, _mesh_assets.rock)
@@ -279,11 +282,14 @@ func apply_quality(settings: Dictionary) -> void:
 			var kind: String = prop.kind
 			if kind == "grass" or kind == "bush":
 				decorative_index += 1
-				if forest_style == "pine" and kind == "grass":
-					# Pine needles read best as a fine, intermittent carpet. Keep
-					# half the high-quality density available as a practical fallback.
-					var stride := 8 if low_vegetation else 4
+				if forest_style in ["oak", "pine"] and kind == "grass":
+					# The larger weed silhouettes read individually, with the fern
+					# pass filling some of the spaces between them.
+					var stride := 36 if low_vegetation else 18
 					if decorative_index % stride != 0:
+						continue
+				elif forest_style in ["oak", "pine"] and kind == "bush":
+					if decorative_index % (4 if low_vegetation else 2) != 0:
 						continue
 				elif low_vegetation and decorative_index % 3 != 0:
 					continue
@@ -333,10 +339,8 @@ func apply_quality(settings: Dictionary) -> void:
 	(_mesh_assets.tree as Terrain3DMeshAsset).lod0_range = 20.0 if low_vegetation else 32.0
 	(_mesh_assets.tree as Terrain3DMeshAsset).lod1_range = 55.0 if low_vegetation else 80.0
 	(_mesh_assets.tree as Terrain3DMeshAsset).lod2_range = 115.0 if low_vegetation else 144.0
-	(_mesh_assets.grass as Terrain3DMeshAsset).lod0_range = (10.0 if low_vegetation else 12.0) if forest_style == "pine" else (18.0 if low_vegetation else 32.0)
-	if forest_style == "pine":
-		(_mesh_assets.grass as Terrain3DMeshAsset).lod1_range = 24.0 if low_vegetation else 32.0
-	(_mesh_assets.bush as Terrain3DMeshAsset).lod0_range = 32.0 if low_vegetation else 60.0
+	(_mesh_assets.grass as Terrain3DMeshAsset).lod0_range = (18.0 if low_vegetation else 28.0) if forest_style in ["oak", "pine"] else (18.0 if low_vegetation else 32.0)
+	(_mesh_assets.bush as Terrain3DMeshAsset).lod0_range = (24.0 if low_vegetation else 36.0) if forest_style in ["oak", "pine"] else (32.0 if low_vegetation else 60.0)
 
 func _texture_asset(label: String, color: Color) -> Terrain3DTextureAsset:
 	# A deterministic, tileable multi-scale grain gives soil and exposed stone
@@ -514,6 +518,34 @@ func _forest_tree_asset(style: String) -> Terrain3DMeshAsset:
 	asset.lod1_range = 80.0
 	asset.lod2_range = 144.0
 	asset.last_lod = 2
+	return asset
+
+
+func _polyhaven_groundcover_asset(asset_id: String, mesh_name: String, preview_scale: float, label: String) -> Terrain3DMeshAsset:
+	# Audition GLBs contain several clumps offset along X. Fold just one
+	# representative into a single surface so each terrain record is one plant.
+	var source := (WEED_SCENE if asset_id == "weed_plant_02" else SHRUB_SCENE).instantiate()
+	var selected := source.find_child(mesh_name, true, false) as MeshInstance3D
+	assert(selected != null and selected.mesh != null)
+	var source_material := selected.mesh.surface_get_material(0) as StandardMaterial3D
+	assert(source_material != null and source_material.albedo_texture != null)
+	var material := ShaderMaterial.new()
+	material.shader = GROUNDCOVER_SHADER
+	material.set_shader_parameter("foliage_diffuse", source_material.albedo_texture)
+	material.set_shader_parameter("grove_size", surface.size_m)
+	material.set_shader_parameter("night_vision", _night_vision)
+	_foliage_materials.append(material)
+	var mesh := ArrayMesh.new()
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# The source bundles are at real-world scale. The audition showed these
+	# selected clumps at 3.0 and 0.9; multiply that presentation by 2.5.
+	tool.append_from(selected.mesh, 0, Transform3D(selected.transform.basis.scaled(Vector3.ONE * preview_scale), Vector3.ZERO))
+	tool.set_material(material)
+	tool.commit(mesh)
+	source.free()
+	var asset := _mesh_asset(label, mesh)
+	asset.lod0_range = 28.0 if asset_id == "weed_plant_02" else 36.0
 	return asset
 
 
