@@ -53,6 +53,10 @@ func _run() -> void:
 	var boundary := shrine.get_node("ReturnBoundary") as MeshInstance3D
 	check(boundary != null and boundary.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
 		"return ring keeps shadow casting disabled")
+	var ground_glow := shrine.get_node("ShrineGroundGlow") as MeshInstance3D
+	check(ground_glow != null and ground_glow.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		and ground_glow.material_override is ShaderMaterial,
+		"center fill follows ground without another shadowing light")
 	check(boundary.material_override is ShaderMaterial
 		and (boundary.material_override as ShaderMaterial).shader.resource_path == "res://shaders/goal_boundary.gdshader",
 		"return ring keeps its gameplay boundary shader")
@@ -111,7 +115,7 @@ func _run() -> void:
 	var architecture_meshes := 0
 	var shadowed_meshes := 0
 	for mesh: MeshInstance3D in visual_meshes:
-		if mesh != boundary:
+		if mesh != boundary and mesh.name != "ShrineGroundGlow":
 			architecture_meshes += 1
 			if mesh.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
 				shadowed_meshes += 1

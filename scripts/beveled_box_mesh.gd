@@ -20,7 +20,7 @@ static func create(size: Vector3, bevel: float) -> ArrayMesh:
 				point[a] = uv.x * inner[a]
 				point[b] = uv.y * inner[b]
 				corners.append(point)
-			_quad(tool, corners, _axis(axis, sign_value), size)
+			_quad(tool, corners, _axis(axis, sign_value), size, cut)
 	for first in 3:
 		for second in range(first + 1, 3):
 			var length_axis := 3 - first - second
@@ -33,7 +33,7 @@ static func create(size: Vector3, bevel: float) -> ArrayMesh:
 						point[second] = second_sign * (half[second] if pair.x > 0.5 else inner[second])
 						point[length_axis] = pair.y * inner[length_axis]
 						corners.append(point)
-					_quad(tool, corners, (_axis(first, first_sign) + _axis(second, second_sign)).normalized(), size)
+					_quad(tool, corners, (_axis(first, first_sign) + _axis(second, second_sign)).normalized(), size, cut)
 	for sx in [-1.0, 1.0]:
 		for sy in [-1.0, 1.0]:
 			for sz in [-1.0, 1.0]:
@@ -41,7 +41,7 @@ static func create(size: Vector3, bevel: float) -> ArrayMesh:
 					Vector3(sx * half.x, sy * inner.y, sz * inner.z),
 					Vector3(sx * inner.x, sy * half.y, sz * inner.z),
 					Vector3(sx * inner.x, sy * inner.y, sz * half.z),
-					Vector3(sx, sy, sz).normalized(), size)
+					Vector3(sx, sy, sz).normalized(), size, cut)
 	tool.generate_tangents()
 	return tool.commit()
 
@@ -50,19 +50,27 @@ static func _axis(index: int, sign_value: float) -> Vector3:
 	axis[index] = sign_value
 	return axis
 
-static func _quad(tool: SurfaceTool, corners: Array[Vector3], outward: Vector3, size: Vector3) -> void:
-	_triangle(tool, corners[0], corners[1], corners[2], outward, size)
-	_triangle(tool, corners[0], corners[2], corners[3], outward, size)
+static func _quad(tool: SurfaceTool, corners: Array[Vector3], outward: Vector3, size: Vector3, cut: float) -> void:
+	_triangle(tool, corners[0], corners[1], corners[2], outward, size, cut)
+	_triangle(tool, corners[0], corners[2], corners[3], outward, size, cut)
 
-static func _triangle(tool: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, outward: Vector3, size: Vector3) -> void:
+static func _triangle(tool: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, outward: Vector3, size: Vector3, cut: float) -> void:
 	if (b - a).cross(c - a).dot(outward) > 0.0:
 		var swap := b
 		b = c
 		c = swap
 	for point in [a, b, c]:
-		tool.set_normal(outward)
+		# Face and chamfer endpoints share a normal. The small bevel keeps its
+		# low triangle count while shading continuously into each broad face.
+		tool.set_normal(_rounded_normal(point, size, cut))
 		tool.set_uv(_uv(point, outward, size))
 		tool.add_vertex(point)
+
+static func _rounded_normal(point: Vector3, size: Vector3, cut: float) -> Vector3:
+	var inner := size * 0.5 - Vector3.ONE * cut
+	var nearest := Vector3(clampf(point.x, -inner.x, inner.x),
+		clampf(point.y, -inner.y, inner.y), clampf(point.z, -inner.z, inner.z))
+	return (point - nearest).normalized()
 
 static func _uv(point: Vector3, normal: Vector3, size: Vector3) -> Vector2:
 	var absolute := normal.abs()

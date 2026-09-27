@@ -46,8 +46,8 @@ var _guide_placement: RenIKPlacement3D
 var _guide_leg_modifiers: Array[SkeletonModifier3D] = []
 var _guide_foot_weight := 0.0
 const GUIDE_ARM_DROP := 1.16
-const GUIDE_LOOK_ENTER_DISTANCE := 4.2
-const GUIDE_LOOK_EXIT_DISTANCE := 5.6
+const GUIDE_LOOK_ENTER_DISTANCE := 7.2
+const GUIDE_LOOK_EXIT_DISTANCE := 8.6
 const GUIDE_BODY_TURN_START := 1.45
 const GUIDE_BODY_TURN_STOP := 0.30
 const GUIDE_STEP_ANGLE := PI / 6.0

@@ -98,6 +98,7 @@ func _build() -> void:
 	position.y = ground_height
 	set_process(false)
 	_add_goal_boundary()
+	_add_ground_glow()
 	# The migration runs along world X. Face the passage down that line while
 	# keeping the terrain-sampled goal boundary in unrotated world coordinates.
 	_architecture_root = Node3D.new()
@@ -177,6 +178,47 @@ func _build() -> void:
 	_soft_fill.shadow_enabled = false
 	_soft_fill.position = Vector3(0.0, 1.42, 1.15)
 	add_child(_soft_fill)
+
+
+func _add_ground_glow() -> void:
+	# The upward spot cannot illuminate an upward-facing floor. A faint,
+	# terrain-following pool keeps the shrine center from reading as a hole.
+	var mesh := ArrayMesh.new()
+	var vertices := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	const SEGMENTS := 48
+	const RINGS := 5
+	var radius := minf(goal_radius * 0.85, 1.9)
+	for ring in RINGS:
+		var unit_radius := float(ring) / float(RINGS - 1)
+		for segment in SEGMENTS + 1:
+			var angle := TAU * float(segment) / float(SEGMENTS)
+			var point := Vector2(cos(angle), sin(angle)) * radius * unit_radius
+			var height := ground_height
+			if world_surface != null:
+				height = float(world_surface.get_height_at(point + Vector2(position.x, position.z)))
+			vertices.append(Vector3(point.x, height - ground_height + 0.035, point.y))
+			uvs.append(Vector2(unit_radius, 0.0))
+	for ring in RINGS - 1:
+		for segment in SEGMENTS:
+			var a := ring * (SEGMENTS + 1) + segment
+			var b := a + SEGMENTS + 1
+			indices.append_array(PackedInt32Array([a, b, a + 1, b, b + 1, a + 1]))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var glow := MeshInstance3D.new()
+	glow.name = "ShrineGroundGlow"
+	glow.mesh = mesh
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var material := ShaderMaterial.new()
+	material.shader = load("res://shaders/shrine_ground_glow.gdshader")
+	glow.material_override = material
+	add_child(glow)
 
 
 func _add_goal_boundary() -> void:

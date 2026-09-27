@@ -18,7 +18,7 @@ const XR_COMFORT_PATH := "user://mushi_xr_comfort.json"
 const UI_FONT: Font = preload("res://assets/fonts/KleeOne-SemiBold.ttf")
 ## Desktop palm contact corrections in staff-local metres. XR tracking has its
 ## own pose path and never uses these artist-tunable offsets.
-@export var desktop_right_grip_offset := Vector3.ZERO
+@export var desktop_right_grip_offset := Vector3(0.015, -0.01, -0.035)
 @export var desktop_left_control_offset := Vector3.ZERO
 
 var environment_enabled: bool = true
@@ -203,12 +203,12 @@ var _visual_sliders: Dictionary = {}
 var _visual_tuning_defaults: Dictionary = {}
 var _visual_tuning := {
 	"dark_seconds": 6.0, "light_seconds": 1.5,
-	"stream_start": 0.48, "stream_end": 0.90, "stream_seconds": 0.9,
+	"stream_start": 0.90, "stream_end": 0.99, "stream_seconds": 0.9,
 	"star_start": 0.14, "star_end": 0.89, "milky_start": 0.64, "milky_end": 0.96,
 	"foliage_start": 0.90, "foliage_end": 0.99,
 	"clear_start": 0.10, "clear_end": 0.65, "clear_distance_start": 17.0, "clear_distance_end": 52.0,
 	"river_width": 4.0, "river_depth": 1.8,
-	"horizon_flare_strength": 0.25, "horizon_flare_spread": 1.0,
+	"horizon_flare_strength": 0.15, "horizon_flare_spread": 0.5,
 	"far_scintillation_blend": 1.0,
 	"path_long": 2.5, "path_medium": 1.45, "path_long_speed": 1.4, "path_medium_speed": 1.0,
 	"path_long_frequency": 1.25, "path_medium_frequency": 0.85,
@@ -496,7 +496,7 @@ func _process(delta: float) -> void:
 			_update_ukon_gaze(guide, delta, _viewer_eye_position())
 	_update_xr_tutorial_chain_cue()
 	if friend_menu != null and tutorial_director != null:
-		var session_status: String = tutorial_director.status_text + " · " + _network_status
+		var session_status: String = "%d/%d returned · %s" % [simulation.score, fixture_count, _network_status]
 		if _game_mode == "two_shrines" and simulation is FlightSimulation:
 			session_status = "Two shrines · Amber %d / Blue %d · %d/%d returned · %s" % [simulation.goal_scores[0], simulation.goal_scores[1], simulation.score, fixture_count, _network_status]
 		if not _milestone_times.is_empty():
@@ -1501,8 +1501,8 @@ func _build_ui() -> void:
 	_add_visual_group_label(stack, "Eye adaptation · light vein")
 	_add_visual_slider(stack, "Dark adaptation (s)", 1.0, 18.0, 6.0, 0.1, &"dark_seconds")
 	_add_visual_slider(stack, "Light adaptation (s)", 0.25, 8.0, 1.5, 0.05, &"light_seconds")
-	_add_visual_slider(stack, "Light vein starts at NV", 0.0, 0.8, 0.48, 0.01, &"stream_start")
-	_add_visual_slider(stack, "Light vein full at NV", 0.2, 1.0, 0.90, 0.01, &"stream_end")
+	_add_visual_slider(stack, "Light vein starts at NV", 0.0, 0.98, 0.90, 0.01, &"stream_start")
+	_add_visual_slider(stack, "Light vein full at NV", 0.2, 1.0, 0.99, 0.01, &"stream_end")
 	_add_visual_slider(stack, "Light vein fade-in (s)", 0.1, 6.0, 0.9, 0.1, &"stream_seconds")
 	_add_visual_group_label(stack, "Sky · foliage · lantern")
 	_add_visual_slider(stack, "Star detail starts", 0.0, 0.8, 0.14, 0.01, &"star_start")
@@ -1518,8 +1518,8 @@ func _build_ui() -> void:
 	_add_visual_group_label(stack, "River mesh · path and surface")
 	_add_visual_slider(stack, "River width scale", 0.6, 8.0, 4.0, 0.05, &"river_width")
 	_add_visual_slider(stack, "River depth scale", 0.6, 3.5, 1.8, 0.05, &"river_depth")
-	_add_visual_slider(stack, "Horizon gold flare", 0.0, 2.0, 0.25, 0.05, &"horizon_flare_strength")
-	_add_visual_slider(stack, "Horizon flare spread", 0.2, 2.5, 1.0, 0.05, &"horizon_flare_spread")
+	_add_visual_slider(stack, "Horizon gold flare", 0.0, 2.0, 0.15, 0.05, &"horizon_flare_strength")
+	_add_visual_slider(stack, "Horizon flare spread", 0.2, 2.5, 0.5, 0.05, &"horizon_flare_spread")
 	_add_visual_slider(stack, "Far light vein diffuse blend", 0.0, 1.0, 1.0, 0.05, &"far_scintillation_blend")
 	_add_visual_slider(stack, "Path long wobble", 0.0, 5.0, 2.5, 0.05, &"path_long")
 	_add_visual_slider(stack, "Path long frequency", 0.2, 6.0, 1.25, 0.05, &"path_long_frequency")
@@ -2777,8 +2777,13 @@ func _update_local_avatar(delta: float) -> void:
 		var target_pose: Transform3D = local_pose.left if holding_rope else rest_pose
 		if _desktop_left_hand_pose == Transform3D.IDENTITY:
 			_desktop_left_hand_pose = rest_pose
-		_desktop_left_hand_pose = _desktop_left_hand_pose.interpolate_with(target_pose,
-			1.0 - exp(-delta * 16.0))
+		# Once the fingers have closed, the wrist follows the moving control
+		# directly. World-space smoothing here made it trail during WASD movement.
+		if holding_rope and _desktop_left_hand_blend >= 0.99:
+			_desktop_left_hand_pose = target_pose
+		else:
+			_desktop_left_hand_pose = _desktop_left_hand_pose.interpolate_with(target_pose,
+				1.0 - exp(-delta * 24.0))
 		if holding_rope:
 			local_pose.left = _desktop_left_hand_pose
 			local_pose.tracking |= 1

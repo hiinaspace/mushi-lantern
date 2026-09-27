@@ -3,6 +3,7 @@ extends Node3D
 var _avatar: MushiMultiplayerAvatar
 var _wrist := Vector3.ZERO
 var _left_wrist := Vector3.ZERO
+const RIGHT_GRIP_OFFSET := Vector3(0.015, -0.01, -0.035)
 
 func _ready() -> void:
 	_run.call_deferred()
@@ -45,7 +46,7 @@ func _run() -> void:
 	if not OS.get_environment("MUSHI_DESKTOP_REACH_SCALE").is_empty():
 		_avatar.set_arm_reach_scale(float(OS.get_environment("MUSHI_DESKTOP_REACH_SCALE")))
 	_avatar.skeleton.skeleton_updated.connect(_capture)
-	var right := Transform3D(staff.global_basis, target)
+	var right := Transform3D(staff.global_basis, target + staff.global_basis * RIGHT_GRIP_OFFSET)
 	for frame in range(12):
 		_avatar.apply_pose(player.global_transform, camera.global_transform,
 			Transform3D.IDENTITY, right, 2, Vector3.ZERO, 1.0 / 60.0)
@@ -53,7 +54,7 @@ func _run() -> void:
 		await get_tree().physics_frame
 	var distance := _wrist.distance_to(target)
 	print("DESKTOP_HAND_CONTACT wrist_error=%.4f target=%s wrist=%s" % [distance, target, _wrist])
-	assert(distance < 0.08)
+	assert(distance < 0.045)
 	if not OS.get_environment("MUSHI_DESKTOP_CAPTURE").is_empty():
 		await _capture_pose(staff, player, camera, 0.5, false, "/tmp/mushi-desktop-reach-mid.png")
 		await _capture_pose(staff, player, camera, 1.0, true, "/tmp/mushi-desktop-reach-settled.png")
@@ -72,7 +73,8 @@ func _capture_pose(staff: StaffTool, player: DesktopPlayer, camera: Camera3D,
 	var rest := camera.global_transform * Transform3D(Basis.IDENTITY, Vector3(-0.28, -0.58, -0.34))
 	var control := Transform3D(staff.lantern.global_basis, staff.control_world_position())
 	var left := rest.interpolate_with(control, reach)
-	var right := Transform3D(staff.global_basis, staff.grip_world_position(staff.grip_index))
+	var right := Transform3D(staff.global_basis,
+		staff.grip_world_position(staff.grip_index) + staff.global_basis * RIGHT_GRIP_OFFSET)
 	var curls := PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 	if closed:
 		curls = PackedFloat32Array([0.65, 0.85, 0.9, 0.9, 0.8, 0, 0, 0, 0, 0])
