@@ -357,6 +357,7 @@ func _process(delta: float) -> void:
 	if xr_player != null and xr_player.xr_active:
 		_calibrate_xr_avatar_scale(delta)
 		player.camera.global_transform = xr_player.camera.global_transform
+	_update_local_avatar(delta)
 	if spectator_camera != null and spectator_camera.active:
 		spectator_camera.controls_enabled = not (friend_menu != null and friend_menu.is_open()) \
 			and not (quality_menu != null and quality_menu.is_open()) \
@@ -1070,6 +1071,7 @@ func _build_xr_player() -> void:
 	xr_staff_interaction.configure(staff_tool, xr_player)
 	xr_staff_interaction.broom_test_override = _broom_test_enabled
 	xr_staff_interaction.broom_unlocked = _broom_test_enabled or _broom_permanently_unlocked
+	_ensure_local_avatar()
 
 
 func _build_audio() -> void:
@@ -2748,6 +2750,32 @@ func _update_broom_access() -> void:
 	xr_staff_interaction.broom_unlocked = enabled
 
 
+func _ensure_local_avatar() -> void:
+	if _local_avatar == null:
+		_local_avatar = MushiMultiplayerAvatar.new()
+		_local_avatar.name = "LocalPlayerAvatar"
+		add_child(_local_avatar)
+	_local_avatar.configure(_local_avatar_hue, true)
+	_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
+	if xr_player != null and xr_player.xr_active:
+		xr_player.set_controller_hand_meshes_visible(false)
+
+
+func _update_local_avatar(delta: float) -> void:
+	if _local_avatar == null:
+		return
+	var local_pose := _sample_local_avatar_pose()
+	if xr_player != null and xr_player.xr_active:
+		_local_avatar.set_player_eye_height(local_pose.eye_height)
+	else:
+		_local_avatar.set_eye_height(local_pose.eye_height)
+	_local_avatar.apply_pose(local_pose.body, local_pose.head, local_pose.left,
+		local_pose.right, local_pose.tracking, local_pose.velocity, delta)
+	_local_avatar.apply_fingers(local_pose.fingers, local_pose.masks, local_pose.curls)
+	_update_avatar_voice(_local_avatar, _voice.get_local_level() if _voice != null else 0.0,
+		_voice.get_local_visemes() if _voice != null else PackedFloat32Array(), delta)
+
+
 func _start_multiplayer(secret: String, hosting: bool) -> void:
 	var room_code := secret.strip_edges().to_upper()
 	if room_code.length() < 3:
@@ -2777,15 +2805,9 @@ func _start_multiplayer(secret: String, hosting: bool) -> void:
 	_client_config_reset = false
 	_local_avatar_hue = randf()
 	staff_tool.set_identity_hue(_local_avatar_hue)
-	_local_avatar = MushiMultiplayerAvatar.new()
-	_local_avatar.name = "LocalPlayerAvatar"
-	add_child(_local_avatar)
-	_local_avatar.configure(_local_avatar_hue, true)
+	_ensure_local_avatar()
 	if spectator_camera != null and spectator_camera.active:
 		_local_avatar.set_local_first_person(false)
-	_local_avatar.set_arm_reach_scale(_avatar_arm_reach)
-	if xr_player != null and xr_player.xr_active:
-		xr_player.set_controller_hand_meshes_visible(false)
 	var presentation := get_node_or_null("MikoPresentation") as Node3D
 	if presentation != null:
 		presentation.visible = false
@@ -2809,11 +2831,9 @@ func _leave_multiplayer() -> void:
 	for avatar: MushiMultiplayerAvatar in _peer_avatars.values():
 		avatar.queue_free()
 	_peer_avatars.clear()
-	if _local_avatar != null:
+	if _local_avatar != null and (xr_player == null or not xr_player.xr_active):
 		_local_avatar.queue_free()
 		_local_avatar = null
-	if xr_player != null and xr_player.xr_active:
-		xr_player.set_controller_hand_meshes_visible(true)
 	var presentation := get_node_or_null("MikoPresentation") as Node3D
 	if presentation != null:
 		presentation.visible = true
@@ -2941,17 +2961,6 @@ func _update_multiplayer(delta: float) -> void:
 			pose.velocity, pose.eye_height, pose.fingers, pose.masks, pose.curls, _avatar_arm_reach)
 		packet = MultiplayerStaffPose.append(packet, staff_tool.global_transform, int(staff_tool.placement))
 		_network.send_lantern(packet)
-	if _local_avatar != null:
-		var local_pose := _sample_local_avatar_pose()
-		if xr_player != null and xr_player.xr_active:
-			_local_avatar.set_player_eye_height(local_pose.eye_height)
-		else:
-			_local_avatar.set_eye_height(local_pose.eye_height)
-		_local_avatar.apply_pose(local_pose.body, local_pose.head, local_pose.left,
-			local_pose.right, local_pose.tracking, local_pose.velocity, delta)
-		_local_avatar.apply_fingers(local_pose.fingers, local_pose.masks, local_pose.curls)
-		_update_avatar_voice(_local_avatar, _voice.get_local_level() if _voice != null else 0.0,
-			_voice.get_local_visemes() if _voice != null else PackedFloat32Array(), delta)
 	if _voice != null:
 		for peer_id: String in _peer_avatars:
 			_update_avatar_voice(_peer_avatars[peer_id] as MushiMultiplayerAvatar,

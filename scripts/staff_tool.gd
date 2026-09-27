@@ -9,6 +9,7 @@ const GRIP_Y := [-0.82, -0.62, -0.40, -0.18, 0.08, 0.43]
 const MID_GRIP_INDEX := 3
 const SHAFT_BOTTOM_Y := -1.02
 const SHAFT_TOP_Y := 0.77
+const GRIP_WRAP_RADIUS := 0.030
 const FLOAT_TIME := 0.38
 const PARK_HEIGHT := 1.04
 const RECALL_SPEED := 8.0
@@ -184,8 +185,8 @@ func _build_visual() -> void:
 	var shaft := MeshInstance3D.new()
 	shaft.name = "StaffShaft"
 	var shaft_mesh := CylinderMesh.new()
-	shaft_mesh.top_radius = 0.022
-	shaft_mesh.bottom_radius = 0.037
+	shaft_mesh.top_radius = 0.019
+	shaft_mesh.bottom_radius = 0.029
 	shaft_mesh.height = SHAFT_TOP_Y - SHAFT_BOTTOM_Y
 	shaft.mesh = shaft_mesh
 	shaft.position.y = (SHAFT_TOP_Y + SHAFT_BOTTOM_Y) * 0.5
@@ -211,8 +212,8 @@ func _build_visual() -> void:
 	for y: float in GRIP_Y:
 		var wrap := MeshInstance3D.new()
 		var wrap_mesh := CylinderMesh.new()
-		wrap_mesh.top_radius = 0.037
-		wrap_mesh.bottom_radius = 0.037
+		wrap_mesh.top_radius = GRIP_WRAP_RADIUS
+		wrap_mesh.bottom_radius = GRIP_WRAP_RADIUS
 		wrap_mesh.height = 0.13
 		wrap.mesh = wrap_mesh
 		wrap.position.y = y
