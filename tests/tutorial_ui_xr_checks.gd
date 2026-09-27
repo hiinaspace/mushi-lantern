@@ -64,7 +64,10 @@ func run_checks() -> void:
 	ui._process(0.2)
 	assert(not ui._world_root.visible and not ui._desktop_root.visible, "completion cue hides after timeout")
 	ui.update_ukon_proximity(2.0, director, true)
-	assert(ui._world_root.visible and ui._world_line.text == director.ukon_nearby_line(), "nearby dialogue has no speaker prefix")
+	assert(ui._world_root.visible and ui._world_line.get_parsed_text() == director.ukon_nearby_line(), "nearby dialogue has no speaker prefix")
+	assert(ui._world_line.text.contains("[color=#91dda3]mushi[/color]"), "mushi keyword uses dialogue color")
+	assert(ui._world_line.get_total_character_count() == director.ukon_nearby_line().length(),
+		"dialogue markup must not change typewriter length")
 	director.begin_run(true, 1024)
 	ui.update_director(director, true)
 	director.skip()

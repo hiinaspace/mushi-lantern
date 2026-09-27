@@ -34,7 +34,7 @@ var _spoken_characters := 0.0
 var _world_root: Node3D
 var _world_viewer: Camera3D
 var _ukon_avatar: Node3D
-var _world_line: Label
+var _world_line: RichTextLabel
 var _world_hint: Label3D
 var _mouth_seconds := 0.0
 var _panel_material: ShaderMaterial
@@ -70,17 +70,17 @@ func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
 	text_viewport.transparent_bg = true
 	text_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	_world_root.add_child(text_viewport)
-	_world_line = Label.new()
+	_world_line = RichTextLabel.new()
 	_world_line.name = "UkonLine"
 	_world_line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_world_line.add_theme_font_override("font", DIALOGUE_FONT)
-	_world_line.add_theme_font_size_override("font_size", 68)
-	_world_line.add_theme_color_override("font_color", Color("f3f4e8"))
+	_world_line.bbcode_enabled = true
+	_world_line.scroll_active = false
+	_world_line.add_theme_font_override("normal_font", DIALOGUE_FONT)
+	_world_line.add_theme_font_size_override("normal_font_size", 68)
+	_world_line.add_theme_color_override("default_color", Color("f3f4e8"))
 	_world_line.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
 	_world_line.add_theme_constant_override("outline_size", 7)
 	_world_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_world_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_world_line.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	text_viewport.add_child(_world_line)
 	_world_line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_world_line.offset_left = 45.0
@@ -207,7 +207,7 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 	if _world_root != null:
 		_world_root.visible = active or completion_visible
 		if _world_root.visible:
-			_world_line.text = "Tutorial complete — explore!" if completion_visible else director.status_text
+			_world_line.text = "Tutorial complete — explore!" if completion_visible else _styled_dialogue(director.status_text)
 			_world_line.visible_characters = -1 if completion_visible else int(_spoken_characters)
 			_world_hint.text = _world_prompt(director, xr_active) if active else ""
 	if _desktop_root != null:
@@ -254,7 +254,7 @@ func update_ukon_proximity(distance: float, director: TutorialDirector, xr_activ
 			if full_line != _last_spoken_line:
 				_last_spoken_line = full_line
 				_spoken_characters = 0.0
-			_world_line.text = full_line
+			_world_line.text = _styled_dialogue(full_line)
 			_world_line.visible_characters = int(_spoken_characters)
 			_world_hint.text = ""
 		else:
@@ -262,6 +262,19 @@ func update_ukon_proximity(distance: float, director: TutorialDirector, xr_activ
 			_spoken_characters = 0.0
 	if _desktop_nearby != null:
 		_desktop_nearby.visible = false
+
+
+func _styled_dialogue(line: String) -> String:
+	var styled := line
+	for word in ["mushi", "Mushi"]:
+		styled = styled.replace(word, "[color=#91dda3]%s[/color]" % word)
+	for word in ["blue", "Blue"]:
+		styled = styled.replace(word, "[color=#91baff]%s[/color]" % word)
+	for word in ["orange", "Orange"]:
+		styled = styled.replace(word, "[color=#ffb477]%s[/color]" % word)
+	for word in ["光脈筋", "koumyakusuji", "light vein"]:
+		styled = styled.replace(word, "[color=#e9cc80]%s[/color]" % word)
+	return styled
 
 
 func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
@@ -295,7 +308,7 @@ func finish_text() -> void:
 	if _xr_status != null:
 		_xr_status.visible_characters = -1
 	if _world_line != null:
-		_world_line.text = _last_spoken_line
+		_world_line.text = _styled_dialogue(_last_spoken_line)
 		_world_line.visible_characters = -1
 	if _xr_continue != null:
 		_xr_continue.visible = _tutorial_active

@@ -203,7 +203,7 @@ func ukon_nearby_line() -> String:
 	if reward_is_unlocked:
 		return "You brought so many home. Thank you. You can keep exploring, or invite a friend through Session."
 	if score > 0:
-		return "That one found the stream. Blue draws mushi close; orange can nudge them toward a shrine."
+		return "That one found the light vein. Blue draws mushi close; orange can nudge them toward a shrine."
 	return "Take your time. The mushi won't hurt you. If you'd like help, open Session for a private peer-to-peer room."
 
 
@@ -258,7 +258,7 @@ func _update_status() -> void:
 			elif _adaptation_page == 1:
 				status_text = "This grove lies over a 光脈筋 (koumyakusuji), a light vein. Its pull leaves some mushi adrift."
 			else:
-				status_text = "The golden stream shows through the ground, but the earth is solid. We guide the lost mushi back with lantern and shrine."
+				status_text = "The light vein shows through the ground, but the earth is solid. We guide the lost mushi back with lantern and shrine."
 		Stage.REVEAL_WAIT:
 			status_text = "There is the light vein. Take a moment to look; open the shutter when ready. There are no jumpscares or dangerous creatures here."
 		Stage.JAR_NEUTRAL:
@@ -268,7 +268,7 @@ func _update_status() -> void:
 		Stage.JAR_ORANGE:
 			status_text = "Now orange. It stirs the mushi's energy and nudges it away. I'll lift the glass; guide it toward the shrine."
 		Stage.GUIDE:
-			status_text = "There it goes. The shrine leads it back into the stream."
+			status_text = "There it goes. The shrine leads it back into the light vein."
 		Stage.GROUPS:
 			status_text = "Groups gather with blue and stretch away from orange. Try guiding a few home."
 		Stage.FREE_PLAY:
