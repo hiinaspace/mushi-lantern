@@ -486,6 +486,9 @@ func _process(delta: float) -> void:
 		if guide != null:
 			tutorial_ui.update_ukon_proximity(_viewer_eye_position().distance_to(guide.global_position),
 				tutorial_director, xr_player != null and xr_player.xr_active)
+			if guide.has_method("set_guide_look_target"):
+				guide.call("set_guide_look_target", _viewer_eye_position(),
+					tutorial_director.tutorial_enabled and tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY, delta)
 	_update_xr_tutorial_chain_cue()
 	if friend_menu != null and tutorial_director != null:
 		var session_status: String = tutorial_director.status_text + " · " + _network_status

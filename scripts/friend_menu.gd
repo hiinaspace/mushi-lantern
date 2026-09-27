@@ -621,7 +621,7 @@ func _build_desktop_menu() -> void:
 	guide_intro.add_theme_font_size_override("font_size", 21)
 	guide.add_child(guide_intro)
 	var controls := Label.new()
-	controls.text = "Move: WASD · Look: mouse · Aim lamp: hold left mouse\nShutter: mouse wheel · Drop / pick up staff: G · Recall: hold E"
+	controls.text = "Move: WASD · Look: mouse · Aim lamp: hold left mouse\nHold right mouse: drag down/up for shutter, sideways for filter\nDrop / pick up staff: G · Recall: hold E"
 	controls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	guide.add_child(controls)
 	_desktop_skip = _add_desktop_button(guide, "Skip introduction", func() -> void: skip_requested.emit())
