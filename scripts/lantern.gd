@@ -81,7 +81,12 @@ func _build_visual() -> void:
 	housing_fill.shadow_enabled = false
 	add_child(housing_fill)
 
-	var metal := _material(Color("514751"), 0.0)
+	var metal := _material(Color("776355"), 0.0)
+	metal.metallic = 0.56
+	metal.roughness = 0.4
+	var brass := _material(Color("907653"), 0.0)
+	brass.metallic = 0.72
+	brass.roughness = 0.34
 	var glass := _material(Color("2e3036"), 0.0)
 	# Opaque side and rear walls keep the high-energy emitter directional.
 	_box("RearWall", Vector3(0.34, 0.40, 0.018), Vector3(0.0, 0.0, 0.112), metal)
@@ -94,6 +99,13 @@ func _build_visual() -> void:
 		_box("FrontStile", Vector3(0.018, 0.40, 0.025), Vector3(x, 0.0, -0.131), metal)
 	for y: float in [-0.19, 0.19]:
 		_box("FrontRail", Vector3(0.34, 0.018, 0.025), Vector3(0.0, y, -0.131), metal)
+	# A narrow inset rim and four peened pins give the folded metal some scale.
+	# All detail stays inside the existing casing silhouette and grip volume.
+	for y: float in [-0.174, 0.174]:
+		_box("BrassWindowLip", Vector3(0.294, 0.004, 0.006), Vector3(0.0, y, -0.146), brass)
+	for x: float in [-0.153, 0.153]:
+		for y: float in [-0.184, 0.184]:
+			_box("CornerPin", Vector3(0.006, 0.006, 0.004), Vector3(x, y, -0.148), brass)
 
 	# A quad gives the filter full 0..1 UVs; BoxMesh atlas UVs collapse the
 	# moving color boundary into one side of its tiny front panel.
@@ -112,6 +124,7 @@ func _build_visual() -> void:
 	# The suspension is part of the lantern so it follows the pendulum joint.
 	_box("Hanger", Vector3(0.013, 0.17, 0.013), Vector3(0.0, 0.29, 0.0), metal)
 	_box("HangerLoop", Vector3(0.08, 0.015, 0.06), Vector3(0.0, 0.38, 0.0), metal)
+	_box("HangerCollar", Vector3(0.052, 0.012, 0.052), Vector3(0.0, 0.206, 0.0), brass)
 
 	var rear_face := _material(Color("242630"), 0.0)
 	var glyph_colors := [_mode_color(LightField.Mode.BLUE), _mode_color(LightField.Mode.CLEAR), _mode_color(LightField.Mode.ORANGE)]
@@ -181,6 +194,12 @@ void fragment() {
 	float source_line = source_chevron < -0.5 ? blue_line : source_chevron > 0.5 ? red_line : 0.0;
 	float target_line = target_chevron < -0.5 ? blue_line : target_chevron > 0.5 ? red_line : 0.0;
 	color *= 1.0 - 0.19 * mix(source_line, target_line, mix_amount);
+	// Fine paper fibers break up the perfectly flat lamp face at hand distance.
+	// The variation is stationary in UV space and leaves the filter cue legible.
+	float fibers = sin(UV.y * 540.0 + sin(UV.x * 79.0) * 1.7);
+	float pulp = sin(UV.x * 173.0 + UV.y * 131.0) * sin(UV.y * 207.0);
+	float edge = smoothstep(0.0, 0.055, UV.x) * smoothstep(0.0, 0.055, 1.0 - UV.x);
+	color *= (0.965 + 0.025 * fibers + 0.018 * pulp) * (0.92 + 0.08 * edge);
 	// Unshaded materials write their visible light through ALBEDO.
 	ALBEDO = vec3(0.012, 0.012, 0.018) + color * lit * glow_strength;
 }

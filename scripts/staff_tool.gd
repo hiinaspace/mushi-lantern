@@ -149,7 +149,7 @@ func _build_visual() -> void:
 	shaft_mesh.height = SHAFT_TOP_Y - SHAFT_BOTTOM_Y
 	shaft.mesh = shaft_mesh
 	shaft.position.y = (SHAFT_TOP_Y + SHAFT_BOTTOM_Y) * 0.5
-	shaft.material_override = _material(Color("51402b"), 0.75, 0.0)
+	shaft.material_override = _wood_material()
 	add_child(shaft)
 	# An emissive wrap stays visible from either side without adding a light.
 	# Keep it between grip positions so hands do not conceal the owner cue.
@@ -167,6 +167,7 @@ func _build_visual() -> void:
 	identity_band.material_override = _identity_material
 	add_child(identity_band)
 	set_identity_hue(_identity_hue)
+	var wrap_material := _woven_grip_material()
 	for y: float in GRIP_Y:
 		var wrap := MeshInstance3D.new()
 		var wrap_mesh := CylinderMesh.new()
@@ -175,7 +176,7 @@ func _build_visual() -> void:
 		wrap_mesh.height = 0.13
 		wrap.mesh = wrap_mesh
 		wrap.position.y = y
-		wrap.material_override = _material(Color("9d7953"), 0.8, 0.0)
+		wrap.material_override = wrap_material
 		add_child(wrap)
 	var ferrule := MeshInstance3D.new()
 	var ferrule_mesh := CylinderMesh.new()
@@ -184,7 +185,9 @@ func _build_visual() -> void:
 	ferrule_mesh.height = 0.09
 	ferrule.mesh = ferrule_mesh
 	ferrule.position.y = SHAFT_BOTTOM_Y
-	ferrule.material_override = _material(Color("857f69"), 0.48, 0.0)
+	var dark_brass := _material(Color("88745c"), 0.39, 0.0)
+	dark_brass.metallic = 0.72
+	ferrule.material_override = dark_brass
 	add_child(ferrule)
 	var arm := MeshInstance3D.new()
 	var arm_mesh := CylinderMesh.new()
@@ -194,7 +197,7 @@ func _build_visual() -> void:
 	arm.mesh = arm_mesh
 	arm.rotation.x = -PI * 0.5
 	arm.position = Vector3(0.0, 0.75, -0.17)
-	arm.material_override = _material(Color("857f69"), 0.48, 0.0)
+	arm.material_override = dark_brass
 	add_child(arm)
 	_swing = Node3D.new()
 	_swing.name = "DampedLanternJoint"
@@ -206,7 +209,7 @@ func _build_visual() -> void:
 	crook_mesh.height = 0.11
 	crook_tip.mesh = crook_mesh
 	crook_tip.position = Vector3(0.0, 0.69, -0.36)
-	crook_tip.material_override = _material(Color("857f69"), 0.48, 0.0)
+	crook_tip.material_override = dark_brass
 	add_child(crook_tip)
 	_swing.position = SUSPENSION_PIVOT_LOCAL
 	add_child(_swing)
@@ -218,7 +221,7 @@ func _build_visual() -> void:
 	cord_mesh.height = 0.13
 	suspension.mesh = cord_mesh
 	suspension.position.y = -0.065
-	suspension.material_override = _material(Color("857f69"), 0.55, 0.0)
+	suspension.material_override = dark_brass
 	suspension.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_swing.add_child(suspension)
 	lantern = Lantern.new()
@@ -293,6 +296,38 @@ func _material(color: Color, roughness: float, emission: float) -> StandardMater
 		mat.emission = color
 		mat.emission_energy_multiplier = emission
 	return mat
+
+func _wood_material() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+void fragment() {
+	float grain = sin(UV.x * 74.0 + sin(UV.y * 17.0) * 1.2 + sin(UV.x * 13.0 + UV.y * 31.0));
+	float fine = sin(UV.x * 173.0 + UV.y * 8.0);
+	float stain = 0.83 + 0.11 * grain + 0.035 * fine;
+	ALBEDO = vec3(0.31, 0.21, 0.12) * stain;
+	ROUGHNESS = 0.79;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	return material
+
+func _woven_grip_material() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+void fragment() {
+	float strand = abs(fract(UV.x * 18.0 + UV.y * 5.0) - 0.5);
+	float crossing = abs(fract(UV.x * 18.0 - UV.y * 5.0) - 0.5);
+	float weave = smoothstep(0.36, 0.49, min(strand, crossing));
+	ALBEDO = mix(vec3(0.31, 0.19, 0.105), vec3(0.49, 0.35, 0.21), weave);
+	ROUGHNESS = 0.91;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	return material
 
 func set_identity_hue(hue_turns: float) -> void:
 	# Ukon's authored garment is red; its network color rotates that hue.
