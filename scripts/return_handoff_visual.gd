@@ -12,6 +12,11 @@ var _origins := PackedVector3Array()
 var _material := ShaderMaterial.new()
 
 
+static func beam_scale(progress: float) -> Vector2:
+	var t := clampf(progress, 0.0, 1.0)
+	return Vector2(lerpf(0.22, 0.11, t), lerpf(0.95, 2.8, t))
+
+
 func configure(count: int) -> void:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1.0, 1.0)
@@ -57,6 +62,8 @@ func update_handoffs(sim: Variant, delta: float, goal: Vector2, ground_y: float)
 		var camera := get_viewport().get_camera_3d()
 		if camera != null:
 			camera_basis = camera.global_transform.basis.orthonormalized()
-		multimesh.set_instance_transform(i, Transform3D(camera_basis.scaled(Vector3.ONE * lerpf(0.25, 0.08, t)), pos))
+		var dimensions := beam_scale(t)
+		var instance_basis := camera_basis * Basis.from_scale(Vector3(dimensions.x, dimensions.y, 1.0))
+		multimesh.set_instance_transform(i, Transform3D(instance_basis, pos))
 		var fade := 1.0 - smoothstep(0.48, 1.0, t)
 		multimesh.set_instance_color(i, Color(1.0, 0.88, 0.44, fade))

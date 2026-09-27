@@ -30,6 +30,9 @@ func _run() -> void:
 
 	cue.update_handoffs(sim, ReturnHandoffVisual.CUE_SECONDS * 0.5, Vector2(10.0, 12.0), 1.0)
 	_check(is_equal_approx(cue._ages[0], ReturnHandoffVisual.CUE_SECONDS * 0.5), "cue remains active during travel", failures)
+	var half_beam := ReturnHandoffVisual.beam_scale(0.5)
+	_check(half_beam.y > 1.8 and half_beam.y < 2.0 and half_beam.x < 0.18,
+		"return cue draws a long narrow vertical beam behind its ball", failures)
 
 	cue.update_handoffs(sim, ReturnHandoffVisual.CUE_SECONDS, Vector2(10.0, 12.0), 1.0)
 	_check(cue._ages[0] >= ReturnHandoffVisual.CUE_SECONDS - 0.001, "cue expires after its short lifetime", failures)
@@ -41,7 +44,7 @@ func _run() -> void:
 	sim.committed_this_step = [0]
 	cue.update_handoffs(sim, 0.0, Vector2(10.0, 12.0), 1.0)
 	_check(cue._started[0] == 1 and cue._ages[0] == 0.0, "reset cue can play on a later run", failures)
-	_check(_shader_keeps_depth_test(), "surface cue shader retains ordinary depth testing", failures)
+	_check(_shader_draws_through_terrain(), "surface cue shader draws return ball and beam through terrain", failures)
 
 	for failure: String in failures:
 		push_error(failure)
@@ -54,6 +57,6 @@ func _check(condition: bool, message: String, failures: Array[String]) -> void:
 		failures.append(message)
 
 
-func _shader_keeps_depth_test() -> bool:
+func _shader_draws_through_terrain() -> bool:
 	var source := FileAccess.get_file_as_string("res://shaders/return_handoff.gdshader")
-	return not source.contains("depth_test_disabled") and not source.contains("depth_draw_always")
+	return source.contains("depth_test_disabled") and source.contains("depth_draw_never") and source.contains("float beam")

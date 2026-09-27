@@ -58,7 +58,11 @@ func _run() -> void:
 		var instance_transform := ring_mesh.multimesh.get_instance_transform(index)
 		print("MUSHROOM_INSTANCE %d up=%s position=%s" % [index, str(instance_transform.basis.y.normalized()), str(instance_transform.origin)])
 	var unadapted_image: Image
-	for state: Dictionary in [{"label": "night-vision-off", "value": 0.0}, {"label": "night-vision-on", "value": 1.0}]:
+	for state: Dictionary in [
+		{"label": "night-vision-off", "value": 0.0},
+		{"label": "night-vision-mid", "value": 0.6},
+		{"label": "night-vision-on", "value": 1.0},
+	]:
 		patch.set_night_vision(float(state.value))
 		for _frame in 4:
 			await process_frame
@@ -72,6 +76,12 @@ func _run() -> void:
 		print("MUSHROOM_CAPTURE ", path)
 		if float(state.value) == 0.0:
 			unadapted_image = image.duplicate()
+		elif is_equal_approx(float(state.value), 0.6):
+			var changed_pixels := _count_changed_pixels(unadapted_image, image, 0.025)
+			print("MUSHROOM_MID_NV_COMPARISON changed_pixels=", changed_pixels)
+			if changed_pixels < 60:
+				push_error("Mid adaptation did not produce a perceptible mushroom glow change")
+				failures += 1
 		else:
 			var changed_pixels := _count_changed_pixels(unadapted_image, image, 0.025)
 			print("MUSHROOM_NV_COMPARISON changed_pixels=", changed_pixels)

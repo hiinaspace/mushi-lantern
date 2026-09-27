@@ -18,6 +18,7 @@ var _progress_materials: Array[StandardMaterial3D] = []
 var _ember_material: StandardMaterial3D
 var _ember_lights: Array[OmniLight3D] = []
 var _underlight: OmniLight3D
+var _up_light: SpotLight3D
 var _architecture_root: Node3D
 
 
@@ -84,6 +85,7 @@ func _rebuild() -> void:
 	_progress_materials.clear()
 	_ember_lights.clear()
 	_underlight = null
+	_up_light = null
 	_boundary_material = null
 	_build()
 	_apply_night_vision()
@@ -97,7 +99,9 @@ func _build() -> void:
 	# keeping the terrain-sampled goal boundary in unrotated world coordinates.
 	_architecture_root = Node3D.new()
 	_architecture_root.name = "GateArchitecture"
-	_architecture_root.rotation.y = PI * 0.5
+	# Turn the tally and ofuda around from the old cross-grove presentation so
+	# the tutorial player's position southwest of the goal sees their front.
+	_architecture_root.rotation.y = -PI * 0.5
 	add_child(_architecture_root)
 	var dark_wood := _material(Color("38251d"), Color("160b07"), 0.02)
 	var warm_wood := _material(Color("65452f"), Color("1c1009"), 0.025)
@@ -159,7 +163,7 @@ func _build() -> void:
 		ember_mesh.radius = 0.07
 		ember_mesh.height = 0.14
 		ember.mesh = ember_mesh
-		ember.position = Vector3(x, 0.56, 0.0)
+		ember.position = Vector3(x, 0.56 + _terrain_delta(Vector3(x, 0.0, 0.0)), 0.0)
 		ember.material_override = _ember_material
 		_architecture_root.add_child(ember)
 		var light := OmniLight3D.new()
@@ -168,19 +172,30 @@ func _build() -> void:
 		light.light_energy = 0.12
 		light.omni_range = 1.7
 		light.shadow_enabled = false
-		light.position = Vector3(x, 0.6, 0.0)
+		light.position = Vector3(x, 0.6 + _terrain_delta(Vector3(x, 0.0, 0.0)), 0.0)
 		_architecture_root.add_child(light)
 		_ember_lights.append(light)
-	# A low, warm fill catches nearby faces, hands and lantern hardware as the
-	# player approaches the return ring. It does not spend a shadow atlas slot.
+	# Broad upward fill catches the shrine, Ukon and the teaching jar with one
+	# fixture while avoiding another point light on the floor.
 	_underlight = OmniLight3D.new()
 	_underlight.name = "ShrineUnderlight"
 	_underlight.light_color = Color("ffb25f")
-	_underlight.light_energy = 0.22
-	_underlight.omni_range = 4.5
+	_underlight.light_energy = 0.06
+	_underlight.omni_range = 2.4
 	_underlight.shadow_enabled = false
-	_underlight.position = Vector3(0.0, 0.35, 0.0)
+	_underlight.position = Vector3(0.0, 0.16, 0.0)
 	add_child(_underlight)
+	_up_light = SpotLight3D.new()
+	_up_light.name = "ShrineWarmUplight"
+	_up_light.light_color = Color("ffc477")
+	_up_light.light_energy = 1.15
+	_up_light.spot_range = 7.5
+	_up_light.spot_angle = 104.0
+	_up_light.spot_attenuation = 1.15
+	_up_light.shadow_enabled = false
+	_up_light.rotation.x = deg_to_rad(90.0)
+	_up_light.position = Vector3(0.0, 0.18, 0.58)
+	add_child(_up_light)
 
 
 func _add_goal_boundary() -> void:
@@ -233,7 +248,9 @@ func _apply_night_vision() -> void:
 	for light in _ember_lights:
 		light.light_energy = lerpf(0.07, 0.14, night_vision)
 	if _underlight != null:
-		_underlight.light_energy = lerpf(0.18, 0.24, night_vision)
+		_underlight.light_energy = lerpf(0.04, 0.07, night_vision)
+	if _up_light != null:
+		_up_light.light_energy = lerpf(0.75, 1.2, night_vision)
 
 
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
@@ -242,7 +259,7 @@ func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material)
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	instance.mesh = mesh
-	instance.position = at
+	instance.position = at + Vector3.UP * _terrain_delta(at)
 	instance.material_override = material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_architecture_root.add_child(instance)
@@ -257,11 +274,18 @@ func _add_cylinder(node_name: String, radius: float, height: float, at: Vector3,
 	mesh.bottom_radius = radius * 1.2
 	mesh.height = height
 	instance.mesh = mesh
-	instance.position = at
+	instance.position = at + Vector3.UP * _terrain_delta(at)
 	instance.material_override = material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_architecture_root.add_child(instance)
 	return instance
+
+
+func _terrain_delta(local_position: Vector3) -> float:
+	if world_surface == null or _architecture_root == null:
+		return 0.0
+	var world_position := _architecture_root.to_global(local_position)
+	return float(world_surface.get_height_at(Vector2(world_position.x, world_position.z))) - ground_height
 
 
 func _material(color: Color, emission: Color, energy: float) -> StandardMaterial3D:

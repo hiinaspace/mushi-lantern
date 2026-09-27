@@ -48,6 +48,10 @@ func _run() -> void:
 		var edge_color: Color = material.get_shader_parameter("edge_color")
 		_expect(edge_color.b > edge_color.r and edge_color.r > edge_color.g, "fruit glow stays violet and distinct from sleeping mushi")
 		_expect(float(material.get_shader_parameter("edge_strength")) >= 1.5, "edge emission remains perceptible in dark adaptation")
+		var reveal_start := float(material.get_shader_parameter("foliage_reveal_start"))
+		var reveal_end := float(material.get_shader_parameter("foliage_reveal_end"))
+		_expect(reveal_start >= 0.35 and reveal_start <= 0.5 and reveal_end >= 0.55 and reveal_end <= 0.72,
+			"mushroom bioluminescence reaches mid adaptation while preserving tuning")
 	quit(0 if not root.get_meta("checks_failed", false) else 1)
 
 func _expect(condition: bool, message: String) -> void:

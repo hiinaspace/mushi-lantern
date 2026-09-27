@@ -60,8 +60,7 @@ func set_visual_tuning(values: Dictionary) -> void:
 	if _fruit != null:
 		var material := _fruit.material_override as ShaderMaterial
 		if material != null:
-			material.set_shader_parameter("foliage_reveal_start", float(_visual_tuning.get("foliage_start", 0.90)))
-			material.set_shader_parameter("foliage_reveal_end", float(_visual_tuning.get("foliage_end", 0.99)))
+			_apply_mushroom_reveal_tuning(material)
 
 func _instances(label: String, shape: Mesh, material: Material) -> MultiMeshInstance3D:
 	var node := MultiMeshInstance3D.new()
@@ -137,10 +136,19 @@ func _fruit_material() -> ShaderMaterial:
 	material.set_shader_parameter("silhouette_strength", 0.72)
 	material.set_shader_parameter("alpha_cutoff", 0.5)
 	material.set_shader_parameter("night_vision", _night_vision)
-	material.set_shader_parameter("foliage_reveal_start", float(_visual_tuning.get("foliage_start", 0.90)))
-	material.set_shader_parameter("foliage_reveal_end", float(_visual_tuning.get("foliage_end", 0.99)))
+	_apply_mushroom_reveal_tuning(material)
 	material.set_shader_parameter("patch_seed", Vector2(global_position.x, global_position.z))
 	return material
+
+
+func _apply_mushroom_reveal_tuning(material: ShaderMaterial) -> void:
+	# Mushrooms start glowing earlier than tree/grass edge treatment, while the
+	# existing foliage controls still adjust their reveal timing.
+	var start := clampf(float(_visual_tuning.get("foliage_start", 0.90)) - 0.48, 0.18, 0.7)
+	var end := maxf(start + 0.12,
+		clampf(float(_visual_tuning.get("foliage_end", 0.99)) - 0.35, start + 0.12, 0.85))
+	material.set_shader_parameter("foliage_reveal_start", start)
+	material.set_shader_parameter("foliage_reveal_end", end)
 
 func _material(color: Color, emission: float) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()

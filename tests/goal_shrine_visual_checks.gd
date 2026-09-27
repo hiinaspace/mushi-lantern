@@ -45,7 +45,7 @@ func _run() -> void:
 	light.light_energy = 1.1
 	root.add_child(light)
 	var camera := Camera3D.new()
-	camera.position = Vector3(4.2, 2.75, 4.6)
+	camera.position = Vector3(-4.2, 2.75, 4.6)
 	camera.fov = 52.0
 	root.add_child(camera)
 	camera.look_at(Vector3(0.0, 0.95, 0.0), Vector3.UP)
@@ -68,6 +68,15 @@ func _run() -> void:
 	check(maximum_ring_sample_error < 0.001, "return ring continues to follow sampled terrain")
 	check(shrine.find_children("*", "CollisionObject3D", true, false).is_empty(),
 		"shrine remains free of gameplay collision bodies")
+	check(is_equal_approx((shrine.get_node("GateArchitecture") as Node3D).rotation.y, -PI * 0.5),
+		"tutorial-facing gate and progress front face southwest toward the intro player")
+	var uplight := shrine.get_node("ShrineWarmUplight") as SpotLight3D
+	check(uplight != null and not uplight.shadow_enabled and uplight.light_energy >= 0.75
+		and uplight.global_basis.z.dot(Vector3.DOWN) > 0.99,
+		"warm shrine spot points up without adding a shadow light")
+	var foundation := shrine.get_node("GateArchitecture/Foundation") as MeshInstance3D
+	check(absf(foundation.global_position.y - 0.08 - surface.get_height_at(Vector2(foundation.global_position.x, foundation.global_position.z))) < 0.02,
+		"foundation follows sampled terrain rather than hovering on the shrine center height")
 	check(shrine._progress_ticks.size() == GoalShrine.PROGRESS_TICKS,
 		"progress detail remains bounded")
 	var paper_material := (shrine.get_node("GateArchitecture/Ofuda") as MeshInstance3D).material_override as StandardMaterial3D
@@ -90,11 +99,11 @@ func _run() -> void:
 	check(architecture_meshes > 0 and shadowed_meshes == architecture_meshes,
 		"shrine architecture retains shadows")
 
-	for _frame in 30:
-		await process_frame
-	await RenderingServer.frame_post_draw
 	var capture_path := OS.get_environment("MUSHI_SHRINE_CAPTURE")
 	if not capture_path.is_empty():
+		for _frame in 30:
+			await process_frame
+		await RenderingServer.frame_post_draw
 		check(root.get_texture().get_image().save_png(capture_path) == OK, "rendered shrine capture saved")
 	for failure: String in failures:
 		push_error(failure)
