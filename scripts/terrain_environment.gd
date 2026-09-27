@@ -523,8 +523,11 @@ func _append_forest_grass_meshes(mesh_out: ArrayMesh, node: Node, parent_transfo
 			material.set_shader_parameter("fleck_strength", 0.26)
 			var surface_tool := SurfaceTool.new()
 			surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-			var small_scale := Transform3D(Basis().scaled(Vector3.ONE * 0.5), Vector3.ZERO)
-			surface_tool.append_from(mesh_instance.mesh, surface_index, small_scale * composed)
+			# Give the forest floor grass enough height and width to read as small
+			# natural clumps at the player's lantern range. The old half-scale
+			# export collapsed into thin isolated spikes in the wide grove view.
+			var grass_scale := Transform3D(Basis().scaled(Vector3.ONE * 0.66), Vector3.ZERO)
+			surface_tool.append_from(mesh_instance.mesh, surface_index, grass_scale * composed)
 			surface_tool.set_material(material)
 			surface_tool.commit(mesh_out)
 	for child: Node in node.get_children():
