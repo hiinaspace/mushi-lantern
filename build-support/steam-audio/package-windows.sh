@@ -63,6 +63,14 @@ mkdir -p "$package_dir/licenses/terrain3d" \
 
 cp "$export_dir/mushi-lantern.exe" "$export_dir/mushi-lantern.pck" \
   "$export_dir"/*.dll "$export_dir/phonon.lib" "$package_dir/"
+# GDExtension loads this library by the res:// path declared in
+# mushi_multiplayer.gdextension. Keep a loose copy at that package-relative
+# path; the root copy remains alongside the other runtime DLLs for Windows
+# dependency resolution.
+windows_extension_dir="$package_dir/multiplayer-native/target/x86_64-pc-windows-gnu/release"
+mkdir -p "$windows_extension_dir"
+cp "$export_dir/mushi_multiplayer_native.dll" \
+  "$windows_extension_dir/mushi_multiplayer_native.dll"
 cp bin/windows/onnxruntime.dll "$package_dir/"
 cp bin/windows/onnxruntime_providers_shared.dll "$package_dir/"
 cp "$windows_prefix/bin/libopus-0.dll" "$package_dir/"
