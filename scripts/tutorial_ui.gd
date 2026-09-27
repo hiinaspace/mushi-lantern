@@ -128,32 +128,10 @@ func attach_xr_menu(menu_root: Control) -> void:
 	if contents == null:
 		return
 	_xr_menu_contents = contents
-	contents.add_child(HSeparator.new())
-	var title := Label.new()
-	title.text = "Introduction"
-	title.add_theme_font_size_override("font_size", 22)
-	contents.add_child(title)
-	_xr_status = Label.new()
-	_xr_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_xr_status.visible = false
-	contents.add_child(_xr_status)
 	_xr_skip = Button.new()
 	_xr_skip.text = "Skip introduction"
 	_xr_skip.pressed.connect(func() -> void: skip_requested.emit())
 	contents.add_child(_xr_skip)
-	_xr_begin = Button.new()
-	_xr_begin.text = "Show me"
-	_xr_begin.pressed.connect(func() -> void: begin_requested.emit())
-	contents.add_child(_xr_begin)
-	_xr_continue = Button.new()
-	_xr_continue.text = "Continue / show full line"
-	_xr_continue.pressed.connect(request_advance)
-	_xr_continue.visible = false
-	contents.add_child(_xr_continue)
-	_xr_reward = Label.new()
-	_xr_reward.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_xr_reward.add_theme_color_override("font_color", Color("f4d59a"))
-	contents.add_child(_xr_reward)
 	_xr_sandbox_button = Button.new()
 	_xr_sandbox_button.text = "Open tuning sandbox"
 	_xr_sandbox_button.visible = false
@@ -227,18 +205,10 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 		if director.stage == TutorialDirector.Stage.ADAPTATION:
 			_desktop_status.text += " · %d%%" % roundi(director.adaptation_progress * 100.0)
 		_desktop_status.visible_characters = -1 if completion_visible else int(_spoken_characters)
-	if _xr_status != null:
-		_xr_status.text = director.status_text
-		_xr_status.visible_characters = int(_spoken_characters)
-		if director.stage == TutorialDirector.Stage.ADAPTATION:
-			_xr_status.text += " · %d%%" % roundi(director.adaptation_progress * 100.0)
+	if _xr_skip != null:
 		_xr_skip.visible = active
 		_xr_skip.text = "Explore myself" if director.stage == TutorialDirector.Stage.WELCOME else "Skip introduction"
-		_xr_begin.visible = director.stage == TutorialDirector.Stage.WELCOME
-		_xr_continue.visible = active and director.stage != TutorialDirector.Stage.WELCOME
 		set_sandbox_unlocked(not director.tutorial_enabled or director.reward_is_unlocked)
-		if _xr_reward != null and _reward_remaining <= 0.0:
-			_xr_reward.text = ""
 	if _reward_toast != null:
 		_reward_toast.visible = _reward_remaining > 0.0 and not xr_active
 	if _desktop_nearby != null:

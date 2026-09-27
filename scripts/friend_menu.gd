@@ -139,7 +139,7 @@ func set_shared_role(role: String) -> void:
 		_xr_start.disabled = role == "client"
 		_xr_start.text = "Start / restart"
 	for selector in _mode_selectors:
-		selector.visible = role != "client"
+		selector.get_parent().visible = role != "client"
 	_refresh_room_ui()
 
 
@@ -338,7 +338,7 @@ func attach_xr_menu(menu_root: Control) -> void:
 
 func _remove_legacy_xr_header(contents: VBoxContainer) -> void:
 	for child in contents.get_children():
-		if child.name in ["Title", "Description"]:
+		if child.name == "Title":
 			contents.remove_child(child)
 			child.queue_free()
 
@@ -367,6 +367,7 @@ func _wrap_xr_audio_section(contents: VBoxContainer) -> void:
 
 
 func _build_xr_session(contents: VBoxContainer) -> void:
+	contents.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var intro_nodes := contents.get_children()
 	_xr_tabs = TabContainer.new()
 	_xr_tabs.name = "FriendTabs"
@@ -377,15 +378,21 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	if _xr_audio_scroll != null:
 		_xr_audio_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var session := _create_xr_tab("Play")
-	var room := _create_xr_tab("Session")
-	var intro := _create_xr_tab("Guide")
+	var room := _create_xr_tab("Multiplayer")
+	var settings := _create_xr_tab("Settings")
+	var intro := _create_xr_tab("Controls")
+	var settings_tabs := TabContainer.new()
+	settings_tabs.name = "SettingsTabs"
+	settings_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	settings.add_child(settings_tabs)
+	var comfort := _create_xr_tab("Comfort", settings_tabs)
+	_xr_settings = _create_xr_tab("Graphics", settings_tabs)
+	var mix := _create_xr_tab("Audio", settings_tabs)
+	_xr_voice = _create_xr_tab("Voice", settings_tabs)
+	var mushi := _create_xr_tab("Advanced", settings_tabs)
 	for child in intro_nodes:
-		child.reparent(intro)
-	var comfort := _create_xr_tab("Comfort")
-	_xr_settings = _create_xr_tab("Settings")
-	_xr_voice = _create_xr_tab("Voice")
-	var mix := _create_xr_tab("Mix")
-	var mushi := _create_xr_tab("Mushi")
+		var is_tuning := child.name == "TuningSandboxScroll" or (child is Button and "tuning sandbox" in (child as Button).text.to_lower())
+		child.reparent(mushi if is_tuning else intro)
 	var title := Label.new()
 	title.text = "MUSHI LANTERN"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -406,9 +413,8 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	start.name = "XRStartButton"
 	_xr_start = start
 	_xr_start.disabled = _shared_role == "client"
-	_add_mode_selector(session)
 	var session_hint := Label.new()
-	session_hint.text = "Play solo here, or use Session for a private game."
+	session_hint.text = "Continue exploring, or restart the grove."
 	session_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	session.add_child(session_hint)
 	var quit := _add_xr_button(session, "Quit", _on_quit)
@@ -418,7 +424,8 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	_add_comfort_controls(comfort)
 	_add_xr_button(_xr_settings, "Quality: Default", func() -> void: quality_profile_requested.emit("default"))
 	_add_xr_button(_xr_settings, "Quality: Performance", func() -> void: quality_profile_requested.emit("performance"))
-	_add_avatar_fit_sliders(_xr_settings)
+	_add_section_label(comfort, "Avatar fit")
+	_add_avatar_fit_sliders(comfort)
 	if _xr_audio != null:
 		var bus_rows := 0
 		for child in _xr_audio.get_children():
@@ -433,27 +440,32 @@ func _build_xr_session(contents: VBoxContainer) -> void:
 	_refresh_room_ui()
 
 
-func _create_xr_tab(title: String) -> VBoxContainer:
+func _create_xr_tab(title: String, tabs: TabContainer = null) -> VBoxContainer:
 	var page := VBoxContainer.new()
 	page.name = title
 	page.add_theme_constant_override("separation", 7)
 	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_xr_tabs.add_child(page)
+	var scroll := ScrollContainer.new()
+	scroll.name = title
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	(tabs if tabs != null else _xr_tabs).add_child(scroll)
+	scroll.add_child(page)
 	return page
 
 
 func _build_xr_room(room: VBoxContainer) -> void:
 	var heading := Label.new()
-	heading.text = "SESSION · EXPERIMENTAL"
+	heading.text = "PLAY WITH A FRIEND"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 25)
 	room.add_child(heading)
 	var info := Label.new()
-	info.text = "Private peer-to-peer game for two. Host shares a code; friend joins with the same code. The host runs the grove."
+	info.text = "Choose a code and host a game for two, or enter your friend’s code to join."
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	room.add_child(info)
+	_add_mode_selector(room)
 	_xr_room_status = Label.new()
 	_xr_room_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_xr_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -510,6 +522,7 @@ func _build_xr_room(room: VBoxContainer) -> void:
 	join.pressed.connect(func() -> void: _submit_room(false))
 	actions.add_child(join)
 	_room_join_buttons.append(join)
+	room.move_child(actions, keyboard.get_index())
 	var leave := _add_xr_button(room, "Leave private room", func() -> void: multiplayer_leave_requested.emit())
 	_room_leave_buttons.append(leave)
 
@@ -580,23 +593,23 @@ func _build_desktop_menu() -> void:
 	title.add_theme_font_size_override("font_size", 31)
 	title.add_theme_color_override("font_color", Color("e2d8f1"))
 	stack.add_child(title)
-	var subtitle := Label.new()
-	subtitle.text = "A quiet night walk through the grove"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 15)
-	subtitle.add_theme_color_override("font_color", Color("bdc9c5"))
-	stack.add_child(subtitle)
 	_desktop_tabs = TabContainer.new()
 	_desktop_tabs.name = "DesktopTabs"
 	_desktop_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_desktop_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stack.add_child(_desktop_tabs)
 	var play := _create_desktop_tab("Play")
-	var session := _create_desktop_tab("Session")
-	var guide := _create_desktop_tab("Guide")
-	var comfort := _create_desktop_tab("Comfort")
-	var settings := _create_desktop_tab("Settings")
-	var voice := _create_desktop_tab("Voice")
+	var session := _create_desktop_tab("Multiplayer")
+	var settings_page := _create_desktop_tab("Settings")
+	var guide := _create_desktop_tab("Controls")
+	var settings_tabs := TabContainer.new()
+	settings_tabs.name = "SettingsTabs"
+	settings_tabs.custom_minimum_size.y = 400.0
+	settings_page.add_child(settings_tabs)
+	var settings := _create_desktop_tab("General", settings_tabs)
+	var comfort := _create_desktop_tab("VR & avatar", settings_tabs)
+	var voice := _create_desktop_tab("Voice", settings_tabs)
+	var advanced := _create_desktop_tab("Advanced", settings_tabs)
 	_desktop_status = Label.new()
 	_desktop_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_desktop_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -609,9 +622,8 @@ func _build_desktop_menu() -> void:
 	play.add_child(HSeparator.new())
 	_desktop_start = _add_desktop_button(play, "Start / restart", _on_new_game)
 	_desktop_start.disabled = _shared_role == "client"
-	_add_mode_selector(play)
 	var play_hint := Label.new()
-	play_hint.text = "Play solo here, or use Session for a private game."
+	play_hint.text = "Continue exploring, or restart the grove."
 	play_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	play.add_child(play_hint)
 	_add_desktop_button(play, "Quit", _on_quit)
@@ -626,16 +638,16 @@ func _build_desktop_menu() -> void:
 	guide.add_child(controls)
 	_desktop_skip = _add_desktop_button(guide, "Skip introduction", func() -> void: skip_requested.emit())
 	_desktop_skip.visible = false
-	_desktop_tuning = _add_desktop_button(guide, "Open tuning sandbox", func() -> void: tuning_requested.emit())
+	_desktop_tuning = _add_desktop_button(advanced, "Open tuning sandbox", func() -> void: tuning_requested.emit())
 	_desktop_tuning.visible = false
 	_add_comfort_controls(comfort)
 	_add_desktop_button(settings, "Visual quality", _on_settings)
 	_add_desktop_button(settings, "Audio mix", func() -> void: audio_settings_requested.emit())
 	var fit_heading := Label.new()
 	fit_heading.text = "Avatar fit"
-	settings.add_child(fit_heading)
+	comfort.add_child(fit_heading)
 	_desktop_avatar_fit = VBoxContainer.new()
-	settings.add_child(_desktop_avatar_fit)
+	comfort.add_child(_desktop_avatar_fit)
 	_add_avatar_fit_sliders(_desktop_avatar_fit)
 	_desktop_comfort = comfort
 	var voice_note := Label.new()
@@ -681,13 +693,13 @@ func _fit_desktop_panel() -> void:
 		maxf(260.0, minf(630.0, available.y - 28.0)))
 
 
-func _create_desktop_tab(title: String) -> VBoxContainer:
+func _create_desktop_tab(title: String, tabs: TabContainer = null) -> VBoxContainer:
 	var scroll := ScrollContainer.new()
 	scroll.name = title
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_desktop_tabs.add_child(scroll)
+	(tabs if tabs != null else _desktop_tabs).add_child(scroll)
 	var page := VBoxContainer.new()
 	page.name = "Contents"
 	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -700,31 +712,22 @@ func _build_desktop_room(parent: VBoxContainer) -> void:
 	_desktop_room_panel.name = "PrivateRoom"
 	_desktop_room_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	parent.add_child(_desktop_room_panel)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.035, 0.055, 0.064, 0.98)
-	style.border_color = Color(0.48, 0.39, 0.62, 0.9)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(16)
-	_desktop_room_panel.add_theme_stylebox_override("panel", style)
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_top", 12)
-	margin.add_theme_constant_override("margin_bottom", 12)
-	_desktop_room_panel.add_child(margin)
+	# A plain form on the Multiplayer page, without a second framed dialog.
+	_desktop_room_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 8)
-	margin.add_child(stack)
+	_desktop_room_panel.add_child(stack)
 	var heading := Label.new()
-	heading.text = "PRIVATE SESSION · EXPERIMENTAL"
+	heading.text = "PLAY WITH A FRIEND"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 21)
 	stack.add_child(heading)
 	var info := Label.new()
-	info.text = "Private peer-to-peer game for two. Host shares a code; friend joins with the same code. The host runs the grove."
+	info.text = "Choose a code and host a game for two, or enter your friend’s code to join."
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(info)
+	_add_mode_selector(stack)
 	_desktop_room_status = Label.new()
 	_desktop_room_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_desktop_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -837,13 +840,13 @@ func _add_mode_selector(parent: VBoxContainer) -> void:
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var label := Label.new()
-	label.text = "Host mode"
+	label.text = "Hosting mode"
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 	var selector := OptionButton.new()
 	selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	selector.add_item("Classic", 0)
-	selector.add_item("Two shrines · PvP", 1)
+	selector.add_item("Together · Classic", 0)
+	selector.add_item("Compete · Two shrines", 1)
 	selector.select(0)
 	selector.item_selected.connect(func(index: int) -> void:
 		_selected_mode = "two_shrines" if selector.get_item_id(index) == 1 else "classic"
@@ -853,7 +856,7 @@ func _add_mode_selector(parent: VBoxContainer) -> void:
 	row.add_child(selector)
 	parent.add_child(row)
 	_mode_selectors.append(selector)
-	selector.visible = _shared_role != "client"
+	row.visible = _shared_role != "client"
 
 
 func _on_new_game() -> void:
@@ -869,7 +872,7 @@ func _on_new_game() -> void:
 			return
 		_xr_restart_armed = false
 		_xr_start.text = "Start / restart"
-	mode_requested.emit(_selected_mode)
+	mode_requested.emit(_selected_mode if _shared_role == "host" else "classic")
 	new_game_requested.emit()
 	if _desktop_visible:
 		set_open(false)

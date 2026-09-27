@@ -15,22 +15,22 @@ func _run() -> void:
 	await process_frame
 	friend.attach_xr_menu(surface)
 	var tabs := surface.find_child("FriendTabs", true, false) as TabContainer
-	assert(tabs != null and tabs.get_tab_count() == 8)
+	assert(tabs != null and tabs.get_tab_count() == 4)
 	assert(tabs.get_tab_title(0) == "Play")
-	assert(tabs.get_tab_title(1) == "Session")
-	assert(tabs.get_tab_title(2) == "Guide")
-	assert(tabs.get_tab_title(3) == "Comfort")
-	assert(tabs.get_tab_title(4) == "Settings")
-	assert(tabs.get_tab_title(5) == "Voice")
-	assert(tabs.get_tab_title(6) == "Mix")
-	assert(tabs.get_tab_title(7) == "Mushi")
+	assert(tabs.get_tab_title(1) == "Multiplayer")
+	assert(tabs.get_tab_title(2) == "Settings")
+	assert(tabs.get_tab_title(3) == "Controls")
+	var settings := tabs.find_child("SettingsTabs", true, false) as TabContainer
+	assert(settings != null and settings.get_tab_count() == 5)
+	assert(settings.get_tab_title(0) == "Comfort")
+	assert(settings.get_tab_title(1) == "Graphics")
+	assert(settings.get_tab_title(2) == "Audio")
+	assert(settings.get_tab_title(3) == "Voice")
+	assert(settings.get_tab_title(4) == "Advanced")
 	var scroll := surface.find_child("AudioScroll", true, false) as ScrollContainer
 	assert(scroll != null and scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED)
 	var panel := surface.get_node("Panel") as PanelContainer
 	var style := panel.get_theme_stylebox("panel") as StyleBoxFlat
 	assert(style != null and style.bg_color.a >= 0.95)
-	assert((tabs.get_child(3) as VBoxContainer).get_child_count() >= 4)
-	assert((tabs.get_child(6) as VBoxContainer).get_child_count() >= 7)
-	assert((tabs.get_child(7) as VBoxContainer).get_child_count() >= 4)
 	print("XR_FRIEND_MENU_TABS_OK")
 	quit(0)

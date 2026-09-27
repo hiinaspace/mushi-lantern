@@ -33,10 +33,10 @@ func run_checks() -> void:
 	var director := TutorialDirector.new()
 	director.begin_run(true, 1024)
 	ui.update_director(director, true)
-	assert(ui._xr_begin.visible and ui._xr_skip.visible, "XR menu offers tutorial or explore choice")
-	assert(ui._xr_status.visible_characters == 0, "XR menu dialogue starts unrevealed")
+	assert(ui._xr_skip.visible, "XR menu retains introduction skip")
+	assert(ui._xr_status == null and ui._xr_begin == null and ui._xr_continue == null,
+		"Ukon dialogue and advance actions are only shown in the grove")
 	ui.finish_text()
-	assert(ui._xr_status.visible_characters == -1, "XR menu can fast-forward dialogue")
 	assert(ui._world_root.visible, "Ukon's world dialogue should be visible while tutorial is active")
 	assert(ui._world_root.get_parent() == ukon, "dialogue must be attached to Ukon, not the tracked headset")
 	assert(not ui._desktop_skip.visible, "desktop K skip button should not appear in XR")

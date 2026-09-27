@@ -13,7 +13,7 @@ func _check() -> void:
 	menu.attach_xr_menu(surface)
 	var tabs := surface.find_child("FriendTabs", true, false) as TabContainer
 	assert(tabs != null)
-	var room := tabs.find_child("Room", false, false) as VBoxContainer
+	var room := tabs.get_child(1).get_child(0) as VBoxContainer
 	assert(room != null)
 	assert(room.find_child("RoomKeyboard", true, false) != null)
 	var keyboard := room.find_child("RoomKeyboard", true, false) as VBoxContainer
