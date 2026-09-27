@@ -401,4 +401,65 @@ mod tests {
             second_ep.close().await;
         });
     }
+
+    #[test]
+    fn localhost_eight_player_capacity_and_lantern_relay() {
+        let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build().unwrap();
+        rt.block_on(async {
+            let host_ep = Endpoint::builder(presets::Minimal).alpns(vec![ALPN.to_vec()]).bind().await.unwrap();
+            let (host, _) = make_shared(true);
+            *host.local_id.write().unwrap() = host_ep.id().to_string();
+            let accept_host = host.clone();
+            let accept_ep = host_ep.clone();
+            let accept_task = tokio::spawn(async move {
+                let mut accepted = Vec::new();
+                for _ in 0..8 {
+                    let incoming = accept_ep.accept().await.unwrap();
+                    let conn = incoming.await.unwrap();
+                    accepted.push(admit(conn, accept_host.clone(), [23; 32], false, "Host".into()).await.is_ok());
+                }
+                accepted
+            });
+
+            let mut client_endpoints = Vec::new();
+            let mut client_states = Vec::new();
+            let mut client_events = Vec::new();
+            for index in 0..8 {
+                let endpoint = Endpoint::builder(presets::Minimal).alpns(vec![ALPN.to_vec()]).bind().await.unwrap();
+                let (client, events) = make_shared(false);
+                *client.local_id.write().unwrap() = endpoint.id().to_string();
+                let conn = endpoint.connect(host_ep.addr(), ALPN).await.unwrap();
+                // The ninth participant may finish its local handshake before the
+                // host's capacity check closes it. Capacity is asserted on the host.
+                let _ = admit(conn, client.clone(), [23; 32], true, format!("Guest {index}")).await;
+                *client.host_id.write().unwrap() = host_ep.id().to_string();
+                client_endpoints.push(endpoint);
+                client_states.push(client);
+                client_events.push(events);
+            }
+            let accepted = accept_task.await.unwrap();
+            assert_eq!(&accepted[..7], &[true; 7], "host should admit seven remote peers");
+            assert!(!accepted[7], "host should reject a ninth participant");
+            assert_eq!(host.peers.read().unwrap().len(), 7, "host capacity is eight participants including itself");
+
+            assert!(client_states[0].send_lantern(b"eight-peer-lantern"));
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            let mut received = [false; 8];
+            loop {
+                for (index, events) in client_events.iter().enumerate().skip(1) {
+                    if events.try_iter().any(|event| matches!(event,
+                        Event::Lantern(id, bytes) if id == client_endpoints[0].id().to_string() && bytes == b"eight-peer-lantern")) {
+                        received[index] = true;
+                    }
+                }
+                if received[1..7].iter().all(|value| *value) { break; }
+                assert!(tokio::time::Instant::now() < deadline, "lantern did not reach all admitted peers: {received:?}");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            assert!(!received[7], "rejected ninth participant must not receive relayed lantern traffic");
+
+            host_ep.close().await;
+            for endpoint in client_endpoints { endpoint.close().await; }
+        });
+    }
 }
