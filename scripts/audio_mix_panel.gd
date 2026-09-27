@@ -23,8 +23,6 @@ var _excited_pitch := DEFAULT_EXCITED_PITCH
 var _panel: PanelContainer
 var _desktop_sliders: Dictionary = {}
 var _xr_sliders: Dictionary = {}
-var _desktop_pitch_sliders: Dictionary = {}
-var _xr_pitch_sliders: Dictionary = {}
 var _status_labels: Array[Label] = []
 
 
@@ -103,7 +101,6 @@ func attach_xr_menu(menu_root: Control) -> void:
 	contents.add_child(title)
 	for bus_name: String in BUS_NAMES:
 		_xr_sliders[bus_name] = _add_slider(contents, bus_name, true)
-	_add_pitch_controls(contents, true)
 	var actions := HBoxContainer.new()
 	contents.add_child(actions)
 	_add_action_buttons(actions)
@@ -154,7 +151,6 @@ func _build_desktop_panel() -> void:
 	stack.add_child(note)
 	for bus_name: String in BUS_NAMES:
 		_desktop_sliders[bus_name] = _add_slider(stack, bus_name, false)
-	_add_pitch_controls(stack, false)
 	_add_action_buttons(stack)
 	var status := Label.new()
 	status.text = "Loaded mix · Save preset keeps it locally"
@@ -192,37 +188,6 @@ func _add_slider(parent: BoxContainer, bus_name: String, xr: bool) -> HSlider:
 	return slider
 
 
-func _add_pitch_controls(parent: BoxContainer, xr: bool) -> void:
-	var caption := Label.new()
-	caption.text = "Mushi pitch · calm to excited"
-	parent.add_child(caption)
-	for calm: bool in [true, false]:
-		var row := HBoxContainer.new()
-		parent.add_child(row)
-		var label := Label.new()
-		label.text = "Calm" if calm else "Excited"
-		label.custom_minimum_size.x = 105.0 if xr else 75.0
-		row.add_child(label)
-		var slider := HSlider.new()
-		slider.min_value = PITCH_MIN * 100.0
-		slider.max_value = PITCH_MAX * 100.0
-		slider.step = 1.0
-		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		slider.custom_minimum_size.x = 170.0
-		row.add_child(slider)
-		var value_label := Label.new()
-		value_label.custom_minimum_size.x = 48.0
-		row.add_child(value_label)
-		slider.value_changed.connect(func(value: float) -> void:
-			if calm:
-				set_mushi_pitch_range(minf(value / 100.0, _excited_pitch), _excited_pitch)
-			else:
-				set_mushi_pitch_range(_calm_pitch, maxf(value / 100.0, _calm_pitch))
-		)
-		(_xr_pitch_sliders if xr else _desktop_pitch_sliders)["calm" if calm else "excited"] = slider
-	_sync_sliders()
-
-
 func _add_action_buttons(parent: BoxContainer) -> void:
 	var row := HBoxContainer.new()
 	parent.add_child(row)
@@ -243,13 +208,6 @@ func _sync_sliders() -> void:
 				var slider := sliders[bus_name] as HSlider
 				slider.set_value_no_signal(float(_levels[bus_name]) * 100.0)
 				(slider.get_parent().get_child(2) as Label).text = "%d%%" % roundi(float(_levels[bus_name]) * 100.0)
-	for sliders: Dictionary in [_desktop_pitch_sliders, _xr_pitch_sliders]:
-		for key: String in ["calm", "excited"]:
-			if sliders.has(key):
-				var slider := sliders[key] as HSlider
-				var pitch := _calm_pitch if key == "calm" else _excited_pitch
-				slider.set_value_no_signal(pitch * 100.0)
-				(slider.get_parent().get_child(2) as Label).text = "%.2fx" % pitch
 
 
 func _apply_levels() -> void:

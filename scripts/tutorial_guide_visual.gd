@@ -79,11 +79,13 @@ func reset_guide(world_position: Vector3) -> void:
 	_creature.visible = true
 	visible = true
 	_jar.visible = true
-	_jar.position.y = 0.0
+	# The guide anchor sits on the terrain surface. Sink the glass slightly so
+	# the brass foot meets uneven ground instead of hovering above it.
+	_jar.position.y = -0.08
 	_jar_top.visible = true
-	_jar_top.position.y = 0.967
+	_jar_top.position.y = 0.887
 	_jar_bottom.visible = true
-	_jar_bottom.position.y = 0.085
+	_jar_bottom.position.y = 0.005
 	_set_cloche_opacity(1.0)
 	_previous_glyph_world = _creature.global_position
 	_set_state(TutorialDirector.GuideState.JARRED)
@@ -101,9 +103,9 @@ func release_to(goal_above: Vector3, stream_below: Vector3) -> void:
 		return
 	_released = true
 	_release_tween = create_tween()
-	_release_tween.tween_property(_jar, "position:y", 0.5, 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_release_tween.parallel().tween_property(_jar_top, "position:y", 1.467, 0.5)
-	_release_tween.parallel().tween_property(_jar_bottom, "position:y", 0.585, 0.5)
+	_release_tween.tween_property(_jar, "position:y", 0.42, 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_release_tween.parallel().tween_property(_jar_top, "position:y", 1.387, 0.5)
+	_release_tween.parallel().tween_property(_jar_bottom, "position:y", 0.505, 0.5)
 	_release_tween.parallel().tween_method(_set_cloche_opacity, 1.0, 0.0, 0.5)
 	_release_tween.tween_property(_creature, "global_position", global_position + Vector3.UP * 1.25, 0.48).set_trans(Tween.TRANS_SINE)
 	_release_tween.tween_property(_creature, "global_position", goal_above, 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
@@ -137,6 +139,7 @@ func _build() -> void:
 	_creature.name = "GuideMushi"
 	add_child(_creature)
 	_jar = _mesh_instance(_cloche_mesh(), "GuideJar")
+	_jar.position.y = -0.08
 	_glass_material = ShaderMaterial.new()
 	var glass_shader := Shader.new()
 	glass_shader.code = """
@@ -159,13 +162,13 @@ void fragment() {
 	knob.radius = 0.055
 	knob.height = 0.075
 	_jar_top = _mesh_instance(knob, "JarLid")
-	_jar_top.position.y = 0.967
+	_jar_top.position.y = 0.887
 	_jar_top.material_override = _brass_jar_material()
 	var open_rim := TorusMesh.new()
 	open_rim.inner_radius = 0.357
 	open_rim.outer_radius = 0.378
 	_jar_bottom = _mesh_instance(open_rim, "JarBase")
-	_jar_bottom.position.y = 0.085
+	_jar_bottom.position.y = 0.005
 	_jar_bottom.material_override = _brass_jar_material()
 
 	_build_glyph()
