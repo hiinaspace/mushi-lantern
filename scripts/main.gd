@@ -2975,6 +2975,11 @@ func _update_avatar_voice(avatar: MushiMultiplayerAvatar, level: float,
 func _limit_remote_lights() -> void:
 	if _peer_lanterns.is_empty():
 		return
+	var high_shadows := str(_quality_settings.get("shadows", "high")) == "high"
+	# Give the local beam the positional shadow atlas while its shutter is open.
+	# Remote beams remain lit, but their projector pattern requires a shadow slot.
+	var local_shadow_priority := high_shadows and lantern != null and lantern.spot != null \
+		and lantern.spot.visible and lantern.shutter_openness > 0.01
 	var eye: Vector3 = _viewer_eye_position()
 	var ranked: Array[Dictionary] = []
 	for peer_id: String in _peer_lanterns:
@@ -2984,7 +2989,7 @@ func _limit_remote_lights() -> void:
 	for index: int in ranked.size():
 		var visual := _peer_lanterns[ranked[index].id] as Lantern
 		var beam_visible := index < _max_remote_spots and visual.shutter_openness > 0.01
-		visual.set_beam_shadows_enabled(beam_visible and str(_quality_settings.get("shadows", "high")) == "high")
+		visual.set_beam_shadows_enabled(beam_visible and high_shadows and not local_shadow_priority)
 		visual.spot.visible = beam_visible
 		visual.housing_fill.visible = false
 

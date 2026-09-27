@@ -54,8 +54,15 @@ func _run() -> void:
 	game._on_network_lantern("peer-a", MultiplayerLantern.encode(1, incoming))
 	var visual: Lantern = game._peer_lanterns["peer-a"]
 	game._limit_remote_lights()
-	_expect(visual.spot.visible and visual.spot.shadow_enabled and visual.spot.light_projector != null,
-		"visible peer cookie keeps a valid shadow matrix")
+	_expect(visual.spot.visible and not visual.spot.shadow_enabled and visual.spot.light_projector == null,
+		"open local lantern reserves the shadow slot while peer beam stays visible")
+	_expect(visual.spot.light_color == Color("ed5d49"), "shadowless peer beam retains its filter color")
+	game.lantern.set_shutter(0.0)
+	game._limit_remote_lights()
+	_expect(visual.spot.shadow_enabled and visual.spot.light_projector != null,
+		"peer cookie regains its shadow matrix when local shutter closes")
+	game.lantern.set_shutter(0.75)
+	game._limit_remote_lights()
 	_expect(game.lantern.mode == LightField.Mode.BLUE and is_equal_approx(game.lantern.shutter_openness, 0.75), "received peer packet leaves local lamp untouched")
 	_expect(visual.mode == LightField.Mode.ORANGE and absf(visual.shutter_openness - 0.25) < 1.0 / 255.0, "received peer packet updates only peer lamp")
 	_expect(visual.forward_direction().dot(direction) > 0.999 and visual.global_position.is_equal_approx(incoming.source_position), "received peer packet preserves beam direction and origin")
