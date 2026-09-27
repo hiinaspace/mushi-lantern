@@ -35,7 +35,7 @@ func _run() -> void:
 	cover.visible = false
 	cover.set_night_vision(night_vision)
 	print("FERN_AUDITION cells=%d instances=%d triangles_total=%d" % [cover.cell_total, cover.instance_total, cover.instance_total * 784])
-	if cover.instance_total < 100 or cover.instance_total > 1000:
+	if cover.instance_total < 100 or cover.instance_total > 1300:
 		push_error("Fern scatter count outside bounded prototype range")
 		quit(2)
 		return

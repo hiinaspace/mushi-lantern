@@ -37,9 +37,17 @@ func build(surface: EnvironmentSurface, low_quality: bool = false) -> void:
 		if prop.kind != "grass":
 			continue
 		grass_index += 1
-		if grass_index % stride != 0:
-			continue
 		var position: Vector3 = prop.position
+		var xz := Vector2(position.x, position.z)
+		# The authored lesson looks along this stream-facing bank. A little
+		# extra edge detail there makes the traversable terrain legible during
+		# adaptation while keeping the shrine ring and lesson path open.
+		var stream_bank := xz.x > 6.0 and xz.x < 28.0 and xz.y > -9.0 and xz.y < 7.0 \
+			and xz.distance_to(Vector2(-3.0, 4.0)) > 7.0 \
+			and xz.distance_to(Vector2(0.0, 18.4)) > 9.0
+		var chosen_stride := (10 if low_quality else 5) if stream_bank else stride
+		if grass_index % chosen_stride != 0:
+			continue
 		var cell := Vector2i(floori(position.x / CELL_SIZE), floori(position.z / CELL_SIZE))
 		var transforms: Array = cells.get(cell, [])
 		var variant: int = int(prop.get("variant", 0))
