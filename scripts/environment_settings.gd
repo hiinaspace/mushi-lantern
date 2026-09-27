@@ -6,6 +6,7 @@ signal population_reset_requested(count: int)
 signal panel_visibility_changed(open: bool)
 
 const SAVE_PATH := "user://m1_quality.json"
+const UI_FONT: Font = preload("res://assets/fonts/KleeOne-SemiBold.ttf")
 const DEFAULT_SETTINGS := {
 	"population": 1024,
 	"vegetation": "high",
@@ -94,6 +95,9 @@ func _build_panel() -> void:
 	_panel.position = Vector2(24.0, 90.0)
 	_panel.custom_minimum_size = Vector2(340.0, 0.0)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var font_theme := Theme.new()
+	font_theme.default_font = UI_FONT
+	_panel.theme = font_theme
 	add_child(_panel)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.055, 0.075, 0.09, 0.96)
