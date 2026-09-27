@@ -17,6 +17,7 @@ var _progress_ticks: Array[MeshInstance3D] = []
 var _progress_materials: Array[StandardMaterial3D] = []
 var _ember_material: StandardMaterial3D
 var _ember_lights: Array[OmniLight3D] = []
+var _underlight: OmniLight3D
 var _architecture_root: Node3D
 
 
@@ -82,6 +83,7 @@ func _rebuild() -> void:
 	_progress_ticks.clear()
 	_progress_materials.clear()
 	_ember_lights.clear()
+	_underlight = null
 	_boundary_material = null
 	_build()
 	_apply_night_vision()
@@ -169,6 +171,16 @@ func _build() -> void:
 		light.position = Vector3(x, 0.6, 0.0)
 		_architecture_root.add_child(light)
 		_ember_lights.append(light)
+	# A low, warm fill catches nearby faces, hands and lantern hardware as the
+	# player approaches the return ring. It does not spend a shadow atlas slot.
+	_underlight = OmniLight3D.new()
+	_underlight.name = "ShrineUnderlight"
+	_underlight.light_color = Color("ffb25f")
+	_underlight.light_energy = 0.22
+	_underlight.omni_range = 4.5
+	_underlight.shadow_enabled = false
+	_underlight.position = Vector3(0.0, 0.35, 0.0)
+	add_child(_underlight)
 
 
 func _add_goal_boundary() -> void:
@@ -220,6 +232,8 @@ func _apply_night_vision() -> void:
 		_ember_material.emission_energy_multiplier = lerpf(0.32, 0.72, night_vision)
 	for light in _ember_lights:
 		light.light_energy = lerpf(0.07, 0.14, night_vision)
+	if _underlight != null:
+		_underlight.light_energy = lerpf(0.18, 0.24, night_vision)
 
 
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
