@@ -46,6 +46,13 @@ func _run() -> void:
 		path = "/tmp/mushi-lantern-audition.png"
 	var image := viewport.get_texture().get_image()
 	assert(image.save_png(path) == OK)
+	var close_path := OS.get_environment("MUSHI_LANTERN_CLOSE_CAPTURE")
+	if not close_path.is_empty():
+		camera.position = Vector3(0.38, 1.55, -0.58)
+		camera.look_at(Vector3(0.0, 1.38, -0.16))
+		for i in 8:
+			await get_tree().process_frame
+		assert(viewport.get_texture().get_image().save_png(close_path) == OK)
 	var draws := viewport.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
 	var objects := viewport.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_OBJECTS_IN_FRAME)
 	var primitives := viewport.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_PRIMITIVES_IN_FRAME)

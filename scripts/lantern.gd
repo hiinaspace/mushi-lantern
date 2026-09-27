@@ -11,6 +11,10 @@ const HOUSING_SCALE := 0.7
 const DIAL_RANGE_YAW := 0.55
 const COLOR_SETTLE_TIME := 0.42
 const KEYBOARD_SHUTTER_SECONDS := 0.28
+const BRASS_ALBEDO := preload("res://assets/lantern/st-brass/brass_albedo_1k.jpg")
+const BRASS_NORMAL := preload("res://assets/lantern/st-brass/brass_normal_1k.jpg")
+const BRASS_ROUGHNESS := preload("res://assets/lantern/st-brass/brass_roughness_1k.jpg")
+const PAPER_ALBEDO := preload("res://assets/lantern/cc0t-paper-002/paper_albedo_1k.jpg")
 
 var mode: LightField.Mode = LightField.Mode.BLUE
 var shutter_openness: float = 1.0
@@ -81,12 +85,8 @@ func _build_visual() -> void:
 	housing_fill.shadow_enabled = false
 	add_child(housing_fill)
 
-	var metal := _material(Color("776355"), 0.0)
-	metal.metallic = 0.56
-	metal.roughness = 0.4
-	var brass := _material(Color("907653"), 0.0)
-	brass.metallic = 0.72
-	brass.roughness = 0.34
+	var metal := _brass_material(Color("aa9b87"), 0.58, 0.46)
+	var brass := _brass_material(Color("d2b58a"), 0.78, 0.38)
 	var glass := _material(Color("2e3036"), 0.0)
 	# Opaque side and rear walls keep the high-energy emitter directional.
 	_box("RearWall", Vector3(0.34, 0.40, 0.018), Vector3(0.0, 0.0, 0.112), metal)
@@ -177,6 +177,7 @@ uniform float split_fraction = 0.0;
 uniform bool split_active = false;
 uniform float shutter_open = 1.0;
 uniform float glow_strength = 0.28;
+uniform sampler2D paper_texture : source_color, filter_linear_mipmap, repeat_enable;
 void fragment() {
 	float row = UV.y;
 	float strip = fract(row * 7.0);
@@ -194,18 +195,32 @@ void fragment() {
 	float source_line = source_chevron < -0.5 ? blue_line : source_chevron > 0.5 ? red_line : 0.0;
 	float target_line = target_chevron < -0.5 ? blue_line : target_chevron > 0.5 ? red_line : 0.0;
 	color *= 1.0 - 0.19 * mix(source_line, target_line, mix_amount);
-	// Fine paper fibers break up the perfectly flat lamp face at hand distance.
-	// The variation is stationary in UV space and leaves the filter cue legible.
-	float fibers = sin(UV.y * 540.0 + sin(UV.x * 79.0) * 1.7);
-	float pulp = sin(UV.x * 173.0 + UV.y * 131.0) * sin(UV.y * 207.0);
-	float edge = smoothstep(0.0, 0.055, UV.x) * smoothstep(0.0, 0.055, 1.0 - UV.x);
-	color *= (0.965 + 0.025 * fibers + 0.018 * pulp) * (0.92 + 0.08 * edge);
+	// The real paper grain stays subtle beneath the sliding color and glyphs.
+	vec3 paper = texture(paper_texture, UV * vec2(1.4, 1.7)).rgb;
+	float grain = smoothstep(0.58, 0.83, dot(paper, vec3(0.2126, 0.7152, 0.0722)));
+	float side_edge = smoothstep(0.0, 0.14, UV.x) * smoothstep(0.0, 0.14, 1.0 - UV.x);
+	float end_edge = smoothstep(0.0, 0.13, UV.y) * smoothstep(0.0, 0.13, 1.0 - UV.y);
+	float vignette = mix(0.82, 1.0, side_edge * end_edge);
+	color *= (0.90 + 0.20 * grain) * vignette;
 	// Unshaded materials write their visible light through ALBEDO.
 	ALBEDO = vec3(0.012, 0.012, 0.018) + color * lit * glow_strength;
 }
 """
 	var material := ShaderMaterial.new()
 	material.shader = shader
+	material.set_shader_parameter("paper_texture", PAPER_ALBEDO)
+	return material
+
+func _brass_material(tint: Color, metallic_value: float, roughness_value: float) -> StandardMaterial3D:
+	var material := _material(tint, 0.0)
+	material.albedo_texture = BRASS_ALBEDO
+	material.metallic = metallic_value
+	material.roughness = roughness_value
+	material.roughness_texture = BRASS_ROUGHNESS
+	material.normal_enabled = true
+	material.normal_texture = BRASS_NORMAL
+	material.normal_scale = 0.38
+	material.uv1_scale = Vector3(1.9, 1.9, 1.9)
 	return material
 
 func _box(label: String, size: Vector3, at: Vector3, material: Material, parent: Node3D = null) -> MeshInstance3D:
