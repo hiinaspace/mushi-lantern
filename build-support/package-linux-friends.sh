@@ -68,7 +68,8 @@ cp addons/godot-steam-audio/bin/libgodot-steam-audio.linux.template_release.x86_
   addons/godot-steam-audio/bin/libphonon.so "$package_dir/addons/godot-steam-audio/bin/"
 cp "$multiplayer_library" "$package_dir/multiplayer-native/target/release/"
 cp bin/linux/libonnxruntime.so bin/linux/libonnxruntime_providers_shared.so "$package_dir/lib/"
-cp assets/fonts/DejaVu-LICENSE.txt "$package_dir/licenses/fonts/"
+cp assets/fonts/DejaVu-LICENSE.txt assets/fonts/KleeOne-OFL.txt \
+  "$package_dir/licenses/fonts/"
 install -m 755 scripts/friend-desktop.sh scripts/friend-vr.sh "$package_dir/"
 cp addons/terrain_3d/LICENSE.txt "$package_dir/licenses/terrain3d/"
 cp addons/godot-xr-tools/LICENSE "$package_dir/licenses/godot-xr-tools/"
@@ -117,11 +118,10 @@ Both launchers use the same saved game data and start a fresh session. The
 archive includes its standalone game executable; no Godot installation is
 needed.
 
-For multiplayer, open the menu, choose Room, enter the same code (at least
-three characters) on each computer, then choose Host on one and Join on the
-others. Codes are case-insensitive. The XR menu has a pointer keyboard. Mics
-start muted; use the Voice tab to choose a mic, adjust levels, and unmute.
-The two-hand broom flight gesture is enabled in multiplayer.
+For experimental peer-to-peer multiplayer, open Session, enter the same code
+(at least three characters) on each computer, then choose Host on one and Join
+on the others. Codes are case-insensitive. The XR menu has a pointer keyboard.
+Mics start muted; use the Voice tab to choose a mic, adjust levels, and unmute.
 
 The game needs a Vulkan-capable graphics driver. Steam Audio's optional GPU
 utilities may need OpenCL from the graphics driver. Game libraries and a

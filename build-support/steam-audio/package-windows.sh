@@ -88,7 +88,8 @@ cp assets/forest/PROVENANCE.md assets/forest/licenses/* \
   "$package_dir/licenses/forest/"
 cp addons/renik/LICENSE.txt "$package_dir/licenses/renik/"
 cp assets/animations/LICENSE assets/animations/README.md "$package_dir/licenses/rpg-animations/"
-cp assets/fonts/DejaVu-LICENSE.txt "$package_dir/licenses/fonts/"
+cp assets/fonts/DejaVu-LICENSE.txt assets/fonts/KleeOne-OFL.txt \
+  "$package_dir/licenses/fonts/"
 cp multiplayer-native/vendor/godot-network-audio/LICENSE \
   "$package_dir/licenses/multiplayer-native/godot-network-audio-LICENSE"
 cp multiplayer-native/viseme-model/LICENSE \
@@ -112,11 +113,10 @@ Run friend-desktop.bat for keyboard and mouse, or friend-vr.bat with a working
 Windows OpenXR runtime selected and a headset connected. Both launchers use
 the same saved game data and start a fresh session.
 
-For multiplayer, open the menu, choose Room, enter the same code (at least
-three characters) on each computer, then choose Host on one and Join on the
-others. Codes are case-insensitive. The XR menu has a pointer keyboard. Mics
-start muted; use the Voice tab to choose a mic, adjust levels, and unmute.
-The two-hand broom flight gesture is enabled in multiplayer.
+For experimental peer-to-peer multiplayer, open Session, enter the same code
+(at least three characters) on each computer, then choose Host on one and Join
+on the others. Codes are case-insensitive. The XR menu has a pointer keyboard.
+Mics start muted; use the Voice tab to choose a mic, adjust levels, and unmute.
 
 This package is exported on Linux. It has not been validated on a native
 Windows headset.
