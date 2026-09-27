@@ -77,6 +77,7 @@ func _process(delta: float) -> void:
 
 func _rebuild() -> void:
 	for child in get_children():
+		remove_child(child)
 		child.queue_free()
 	_progress_ticks.clear()
 	_progress_materials.clear()

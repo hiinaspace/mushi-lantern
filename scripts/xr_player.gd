@@ -48,6 +48,7 @@ var _active_move_deadzone: float = 0.22
 var _active_turn_deadzone: float = 0.22
 var _single_controller_side: int = -1 # -1: both/neither, 0: left only, 1: right only
 var _controller_active_mask: int = -1 # Force an initial route refresh before either controller is active.
+var _jump_input_latched: bool = false
 var _recall_pressed_at: Dictionary = {}
 var _recall_active: Dictionary = {}
 var _last_ground_recovery_msec: int = -10000
@@ -80,6 +81,7 @@ const BROOM_LAND_CLEARANCE: float = 0.18
 const FALL_RECOVERY_Y: float = -10.0
 const BROOM_MAX_YAW_STEP: float = 0.05
 const BROOM_SMOOTH_TURN_SPEED: float = 2.0
+const JUMP_STICK_THRESHOLD: float = 0.8
 
 func _enter_tree() -> void:
 	_broom_provider = BroomFlightProvider.new()
@@ -156,6 +158,7 @@ func _physics_process(_delta: float) -> void:
 	if not _body.enabled:
 		_try_activate_body()
 		return
+	_update_jump_input()
 	if world_surface == null:
 		return
 	if _broom_flying:
@@ -187,6 +190,31 @@ func _physics_process(_delta: float) -> void:
 	if _broom_flying and _body.on_ground:
 		if _broom_landing_requested:
 			_finish_broom_flight()
+
+func _update_jump_input() -> void:
+	var left_active := left_controller.get_is_active()
+	var right_active := right_controller.get_is_active()
+	# A lone controller uses this same Y axis for walking. Keep that axis free
+	# and use its stick click instead; either hand can then play one-handed.
+	var pressed := _jump_input_pressed(
+		left_active, right_active,
+		right_controller.get_vector2("primary").y,
+		left_controller.is_button_pressed("primary_click"),
+		right_controller.is_button_pressed("primary_click"))
+	var can_jump := not _menu_open and not _interaction_lock and not _movement_neutral_required and not _broom_flying
+	if pressed and not _jump_input_latched and can_jump and _body.on_ground:
+		_body.request_jump()
+	_jump_input_latched = pressed
+
+static func _jump_input_pressed(left_active: bool, right_active: bool, right_stick_y: float,
+		left_stick_click: bool, right_stick_click: bool) -> bool:
+	if left_active and right_active:
+		return right_stick_y >= JUMP_STICK_THRESHOLD or right_stick_click
+	if left_active:
+		return left_stick_click
+	if right_active:
+		return right_stick_click
+	return false
 
 func _update_broom_motion(delta: float) -> void:
 	# Controller poses are local to this rig. Unlike the Pickable's physics-tick
