@@ -17,7 +17,7 @@ var _progress_ticks: Array[MeshInstance3D] = []
 var _progress_materials: Array[StandardMaterial3D] = []
 var _ember_material: StandardMaterial3D
 var _ember_lights: Array[OmniLight3D] = []
-var _underlight: OmniLight3D
+var _ring_underlights: Array[OmniLight3D] = []
 var _up_light: SpotLight3D
 var _architecture_root: Node3D
 
@@ -84,7 +84,7 @@ func _rebuild() -> void:
 	_progress_ticks.clear()
 	_progress_materials.clear()
 	_ember_lights.clear()
-	_underlight = null
+	_ring_underlights.clear()
 	_up_light = null
 	_boundary_material = null
 	_build()
@@ -175,22 +175,27 @@ func _build() -> void:
 		light.position = Vector3(x, 0.6 + _terrain_delta(Vector3(x, 0.0, 0.0)), 0.0)
 		_architecture_root.add_child(light)
 		_ember_lights.append(light)
-	# Broad upward fill catches the shrine, Ukon and the teaching jar with one
-	# fixture while avoiding another point light on the floor.
-	_underlight = OmniLight3D.new()
-	_underlight.name = "ShrineUnderlight"
-	_underlight.light_color = Color("ffb25f")
-	_underlight.light_energy = 0.06
-	_underlight.omni_range = 2.4
-	_underlight.shadow_enabled = false
-	_underlight.position = Vector3(0.0, 0.16, 0.0)
-	add_child(_underlight)
+	# Four low, shadowless sources spread the warm fill around the return ring,
+	# avoiding a bright center point while lifting nearby faces and altar details.
+	for index in 4:
+		var angle := TAU * float(index) / 4.0 + PI * 0.25
+		var local_position := Vector3(cos(angle) * 1.12, 0.055, sin(angle) * 1.12)
+		var fill := OmniLight3D.new()
+		fill.name = "ShrineRingUnderlight"
+		fill.light_color = Color("ffb25f")
+		fill.light_energy = 0.11
+		fill.omni_range = 6.4
+		fill.omni_attenuation = 0.42
+		fill.shadow_enabled = false
+		fill.position = local_position + Vector3.UP * _terrain_delta(local_position)
+		_architecture_root.add_child(fill)
+		_ring_underlights.append(fill)
 	_up_light = SpotLight3D.new()
 	_up_light.name = "ShrineWarmUplight"
 	_up_light.light_color = Color("ffc477")
-	_up_light.light_energy = 1.15
-	_up_light.spot_range = 7.5
-	_up_light.spot_angle = 104.0
+	_up_light.light_energy = 0.84
+	_up_light.spot_range = 6.5
+	_up_light.spot_angle = 112.0
 	_up_light.spot_attenuation = 1.15
 	_up_light.shadow_enabled = false
 	_up_light.rotation.x = deg_to_rad(90.0)
@@ -247,10 +252,10 @@ func _apply_night_vision() -> void:
 		_ember_material.emission_energy_multiplier = lerpf(0.32, 0.72, night_vision)
 	for light in _ember_lights:
 		light.light_energy = lerpf(0.07, 0.14, night_vision)
-	if _underlight != null:
-		_underlight.light_energy = lerpf(0.04, 0.07, night_vision)
+	for light in _ring_underlights:
+		light.light_energy = lerpf(0.09, 0.15, night_vision)
 	if _up_light != null:
-		_up_light.light_energy = lerpf(0.75, 1.2, night_vision)
+		_up_light.light_energy = lerpf(0.62, 0.84, night_vision)
 
 
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
