@@ -68,7 +68,7 @@ func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
 	text_viewport.name = "DialogueTextViewport"
 	text_viewport.size = Vector2i(1500, 310)
 	text_viewport.transparent_bg = true
-	text_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	text_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	_world_root.add_child(text_viewport)
 	_world_line = Label.new()
 	_world_line.name = "UkonLine"
