@@ -81,6 +81,15 @@ func build(world_surface: EnvironmentSurface) -> void:
 	terrain.assets.set_mesh_asset(1, _mesh_assets.rock)
 	terrain.assets.set_mesh_asset(2, _mesh_assets.bush)
 	terrain.assets.set_mesh_asset(3, _mesh_assets.grass)
+	if forest_style == "pine":
+		# Three small, photographed moss-rock silhouettes share the existing
+		# coarse prop records and collision; ID 1 remains the greybox fallback.
+		for variant in 3:
+			var id := 4 + variant
+			var asset := _mesh_asset("Moss rock %d" % (variant + 1), GroveRockModels.rock_mesh(variant))
+			asset.lod0_range = 70.0
+			_mesh_assets["rock_%d" % variant] = asset
+			terrain.assets.set_mesh_asset(id, asset)
 	var origin := Vector3(-surface.size_m * 0.5, 0.0, -surface.size_m * 0.5)
 	var control_image: Image = _pine_ground_control_image() if forest_style == "pine" else null
 	terrain.data.import_images([surface.get_terrain_height_image(), control_image, null], origin, 0.0, 1.0)
@@ -260,6 +269,8 @@ func apply_quality(settings: Dictionary) -> void:
 			_fern_groundcover.build(surface, low_vegetation)
 			_fern_groundcover.set_night_vision(_night_vision)
 		var groups: Array[Array] = [[], [], [], []]
+		if forest_style == "pine":
+			groups.append_array([[], [], []])
 		var decorative_index := 0
 		for prop in surface.get_props():
 			var kind: String = prop.kind
@@ -282,8 +293,9 @@ func apply_quality(settings: Dictionary) -> void:
 			var prop_scale := Vector3.ONE * sc
 			var variant: int = int(prop.get("variant", 0))
 			if kind == "rock":
-				# The same rock mesh gets visibly different silhouettes from
-				# deterministic nonuniform scaling and a wider yaw spread.
+				if forest_style == "pine":
+					mesh_id = 4 + posmod(variant, 3)
+				# Deterministic nonuniform scaling and yaw diversify each mesh.
 				match variant % 3:
 					0:
 						prop_scale *= Vector3(1.18, 0.78, 0.90)
@@ -303,7 +315,7 @@ func apply_quality(settings: Dictionary) -> void:
 			var yaw := float(prop.yaw) + yaw_spread
 			var basis := Basis(Vector3.UP, yaw).scaled(prop_scale)
 			groups[mesh_id].append(Transform3D(basis, prop.position))
-		for mesh_id in 4:
+		for mesh_id in groups.size():
 			terrain.instancer.clear_by_mesh(mesh_id)
 			terrain.instancer.add_transforms(mesh_id, groups[mesh_id])
 		_instanced_vegetation_mode = vegetation_mode
