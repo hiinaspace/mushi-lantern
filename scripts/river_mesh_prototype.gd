@@ -4,6 +4,7 @@ extends MeshInstance3D
 ## Independent near-grove tube experiment. The live opaque receiver is left
 ## intact until this raster path proves stereo, foliage, and blocker masking.
 const SHADER: Shader = preload("res://shaders/river_mesh_prototype.gdshader")
+const FLARE_SHADER: Shader = preload("res://shaders/river_horizon_flare.gdshader")
 const CREST_HALF_M := 28.0
 const SIDES := 24
 
@@ -36,6 +37,21 @@ func _ready() -> void:
 		shell.material_override = material
 		shell.custom_aabb = custom_aabb
 		add_child(shell)
+	for side in [-1.0, 1.0]:
+		var flare := MeshInstance3D.new()
+		flare.name = "HorizonFlare%s" % ("Left" if side < 0.0 else "Right")
+		var quad := QuadMesh.new()
+		quad.size = Vector2(1800.0, 500.0)
+		flare.mesh = quad
+		flare.position = Vector3(side * 3500.0, -250.0, -2.0)
+		flare.rotation.y = PI * 0.5
+		flare.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		flare.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+		var flare_material := ShaderMaterial.new()
+		flare_material.shader = FLARE_SHADER
+		flare_material.render_priority = 3
+		flare.material_override = flare_material
+		add_child(flare)
 	apply_tuning({})
 
 
@@ -44,12 +60,12 @@ func set_tuning(values: Dictionary) -> void:
 
 
 func apply_tuning(values: Dictionary) -> void:
-	var names := ["river_width", "river_depth", "path_long_scale", "path_medium_scale", "path_long_frequency", "path_medium_frequency", "path_long_speed", "path_medium_speed", "surface_bump_scale", "surface_bump_frequency", "surface_bump_speed"]
-	var keys := [&"river_width", &"river_depth", &"path_long", &"path_medium", &"path_long_frequency", &"path_medium_frequency", &"path_long_speed", &"path_medium_speed", &"surface_bump", &"surface_bump_frequency", &"surface_bump_speed"]
-	var defaults := [2.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+	var names := ["river_width", "river_depth", "path_long_scale", "path_medium_scale", "path_long_frequency", "path_medium_frequency", "path_long_speed", "path_medium_speed", "surface_bump_scale", "surface_bump_frequency", "surface_bump_speed", "far_scintillation_blend"]
+	var keys := [&"river_width", &"river_depth", &"path_long", &"path_medium", &"path_long_frequency", &"path_medium_frequency", &"path_long_speed", &"path_medium_speed", &"surface_bump", &"surface_bump_frequency", &"surface_bump_speed", &"far_scintillation_blend"]
+	var defaults := [2.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 	var targets: Array[Node] = [self]
 	for child: Node in get_children():
-		if child is MeshInstance3D:
+		if child is MeshInstance3D and child.name.begins_with("ParticleShell"):
 			targets.append(child)
 	for target: Node in targets:
 		var material := (target as MeshInstance3D).material_override as ShaderMaterial
@@ -57,6 +73,18 @@ func apply_tuning(values: Dictionary) -> void:
 			continue
 		for i in names.size():
 			material.set_shader_parameter(names[i], float(values.get(keys[i], defaults[i])))
+	var depth := float(values.get(&"river_depth", 1.0))
+	for child: Node in get_children():
+		if not child is MeshInstance3D or not child.name.begins_with("HorizonFlare"):
+			continue
+		var flare := child as MeshInstance3D
+		var height := 500.0 * depth
+		flare.position.y = -0.5 * height
+		(flare.mesh as QuadMesh).size.y = height
+		var material := flare.material_override as ShaderMaterial
+		material.set_shader_parameter("flare_height", height)
+		material.set_shader_parameter("horizon_flare_strength", float(values.get(&"horizon_flare_strength", 0.25)))
+		material.set_shader_parameter("horizon_flare_spread", float(values.get(&"horizon_flare_spread", 1.0)))
 
 
 func _build_mesh() -> ArrayMesh:

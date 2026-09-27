@@ -17,6 +17,7 @@ uniform float path_medium_speed = 1.0;
 uniform float surface_bump_scale = 1.0;
 uniform float surface_bump_frequency = 1.0;
 uniform float surface_bump_speed = 1.0;
+uniform float far_scintillation_blend = 1.0;
 
 varying vec2 river_uv;
 varying float river_x;
@@ -108,7 +109,9 @@ void fragment() {
 	float dots = spark(uv1, 0.78) + 0.48 * spark(uv2, 0.88);
 	float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
 	float edge_softness = smoothstep(0.02, 0.78, facing);
-	float diffuse = shell_index == 0 ? 0.045 * pow(facing, 0.8) : 0.0;
+	float far_merge = smoothstep(380.0, 2500.0, abs(river_x)) * clamp(far_scintillation_blend, 0.0, 1.0);
+	dots *= 1.0 - far_merge;
+	float diffuse = shell_index == 0 ? (0.045 + 0.14 * far_merge) * pow(facing, 0.8) : 0.0;
 	float far_fade = 1.0 - smoothstep(2500.0, 3000.0, abs(river_x));
 	// The close light vein emerges first; its arms follow toward the horizon.
 	float distance_delay = smoothstep(16.0, 900.0, abs(river_x));
