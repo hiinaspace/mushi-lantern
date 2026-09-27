@@ -1,12 +1,13 @@
 # Forest audition asset samples
 
-Prepared 2026-09-24 for a naturalistic, restrained Mushi Lantern forest pass. All assets here are audition-only; they are not imported into the Godot project or included in exports. Ground maps were downloaded from the individual Poly Haven file endpoints at 1K JPG resolution. The normal maps use Poly Haven's OpenGL tangent-space variant (`nor_gl`), appropriate for Godot's normal-map convention.
+Prepared 2026-09-24 for a naturalistic, restrained Mushi Lantern forest pass. Forest Ground 06 and the Forest Ground 04 albedo are now used in the pine grove; the other source candidates remain available for comparison. Ground maps were downloaded from the individual Poly Haven file endpoints at 1K JPG resolution. The normal maps use Poly Haven's OpenGL tangent-space variant (`nor_gl`), appropriate for Godot's normal-map convention.
 
 ## Ground A/B
 
 | Candidate | Character | Dimensions | Albedo | Normal | License |
 |---|---|---:|---:|---:|---|
 | Forest Ground 01 | Leaf litter, dry grass, twigs and mossy soil; likely the broadleaf oak/ash baseline | 2 m material tile | `forrest_ground_01_diff_1k.jpg` (833,711 B) | `forrest_ground_01_nor_gl_1k.jpg` (1,428,763 B) | CC0 1.0 |
+| Forest Ground 06 | Dark compact soil, pebble and twig flecks; current pine base | 2.1 m material tile | `forest_ground_06_diff_1k.jpg` (851,532 B) | `forest_ground_06_nor_gl_1k.jpg` (1,392,106 B) | CC0 1.0 |
 | Forest Ground 04 | Dry soil with stones and gravel; useful rockier/pine comparison | 3.2 m material tile | `forest_ground_04_diff_1k.jpg` (1,113,899 B) | `forest_ground_04_nor_gl_1k.jpg` (1,326,812 B) | CC0 1.0 |
 
 Sources: [Forest Ground 01](https://polyhaven.com/a/forrest_ground_01), [Forest Ground 04](https://polyhaven.com/a/forest_ground_04), [Poly Haven license](https://polyhaven.com/license). Poly Haven's individual asset pages specify CC0; its license page says its textures, models and HDRIs are CC0. The API download endpoints are listed below for file-level provenance. These are 1K JPGs, not the much larger all-map packages advertised on the asset pages.
@@ -32,4 +33,6 @@ SHA-256:
 - `forest_ground_04_nor_gl_1k.jpg`: `9c3a0200e02ce40edffbbf9f5f623ef08ea9b1b7812b556182ec978f88887151`
 - `warspawn_mushroom.zip`: `82723eb8dafad63b3cfbab278f52edd9342c4c71619172bd2322193ebd20f110`
 
-Only the source archive and extracted source files are present. No project scripts, scenes, materials, or renderer settings were changed. No GPU or headset tests were run.
+The original source-audition note predates the current pine-ground integration. The current 06/04 use and rendered validation are documented in `PROVENANCE.md` and `tests/ground_refresh_visual.gd`; headset appearance remains a separate review.
+
+Forest Ground 06 official 1K JPG files: https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_ground_06/forest_ground_06_diff_1k.jpg and https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_ground_06/forest_ground_06_nor_gl_1k.jpg. SHA-256: `2bcfe6e3de263e50c236b1e7db09b674a4385e79f8906c94dce4c9d10afa7e18` (diffuse), `73d28252b149b46c9274b3da84d2ffb6b7749ad9e2cf1c73906811dd90643822` (OpenGL normal). [Source and CC0 license](https://polyhaven.com/a/forest_ground_06).

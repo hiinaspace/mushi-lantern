@@ -4,7 +4,6 @@ extends Node3D
 const FOLIAGE_SHADER: Shader = preload("res://shaders/foliage_luminescence.gdshader")
 const FOREST_EDGE_SHADER: Shader = preload("res://shaders/forest_edge_emission.gdshader")
 const GROUNDCOVER_SHADER: Shader = preload("res://shaders/groundcover_live.gdshader")
-const WEED_SCENE: PackedScene = preload("res://assets/forest/polyhaven/groundcover_live/weed_plant_02.glb")
 const SHRUB_SCENE: PackedScene = preload("res://assets/forest/polyhaven/groundcover_live/shrub_02.glb")
 const RIVER_MESH_SCRIPT: Script = preload("res://scripts/river_mesh_prototype.gd")
 const RIVER_MESH_MASK_SHADER: Shader = preload("res://shaders/river_mesh_blocker_mask.gdshader")
@@ -58,10 +57,10 @@ func build(world_surface: EnvironmentSurface) -> void:
 		))
 	elif forest_style == "pine":
 		terrain.assets.set_texture(0, _file_texture_asset(
-			"Pine needles",
-			"res://assets/forest/polyhaven/forrest_ground_03_diff_1k.jpg",
-			"res://assets/forest/polyhaven/forrest_ground_03_nor_gl_1k.jpg",
-			0.50
+			"Dark forest soil",
+			"res://assets/forest/polyhaven/forest_ground_06_diff_1k.jpg",
+			"res://assets/forest/polyhaven/forest_ground_06_nor_gl_1k.jpg",
+			1.0 / 2.1
 		))
 	else:
 		terrain.assets.set_texture(0, _texture_asset("Meadow earth", Color(0.18, 0.24, 0.14)))
@@ -77,8 +76,8 @@ func build(world_surface: EnvironmentSurface) -> void:
 	_mesh_assets = {
 		"tree": _forest_tree_asset(forest_style) if forest_style in ["oak", "pine"] else _mesh_asset("Meadow tree", _tree_mesh(), _distant_tree_mesh()),
 		"rock": _mesh_asset("Boulders", _rock_mesh(forest_style)),
-		"bush": _polyhaven_groundcover_asset("shrub_02", "shrub_02_b", 2.25, "Shrub 02") if forest_style in ["oak", "pine"] else _mesh_asset("Understory", _bush_mesh()),
-		"grass": _polyhaven_groundcover_asset("weed_plant_02", "weed_plant_02_a_LOD0", 7.5, "Weed Plant 02") if forest_style in ["oak", "pine"] else _mesh_asset("Meadow tufts", _grass_mesh()),
+		"bush": _polyhaven_groundcover_asset("shrub_02_b", 1.50, "Shrub 02") if forest_style in ["oak", "pine"] else _mesh_asset("Understory", _bush_mesh()),
+		"grass": _forest_grass_asset() if forest_style in ["oak", "pine"] else _mesh_asset("Meadow tufts", _grass_mesh()),
 	}
 	terrain.assets.set_mesh_asset(0, _mesh_assets.tree)
 	terrain.assets.set_mesh_asset(1, _mesh_assets.rock)
@@ -283,9 +282,7 @@ func apply_quality(settings: Dictionary) -> void:
 			if kind == "grass" or kind == "bush":
 				decorative_index += 1
 				if forest_style in ["oak", "pine"] and kind == "grass":
-					# The larger weed silhouettes read individually, with the fern
-					# pass filling some of the spaces between them.
-					var stride := 36 if low_vegetation else 18
+					var stride := 8 if low_vegetation else 4
 					if decorative_index % stride != 0:
 						continue
 				elif forest_style in ["oak", "pine"] and kind == "bush":
@@ -299,6 +296,8 @@ func apply_quality(settings: Dictionary) -> void:
 				"bush": mesh_id = 2
 				"grass": mesh_id = 3
 			var sc: float = prop.scale
+			if kind == "bush" and forest_style in ["oak", "pine"]:
+				sc = minf(sc, 1.10)
 			var prop_scale := Vector3.ONE * sc
 			var variant: int = int(prop.get("variant", 0))
 			if kind == "rock":
@@ -403,8 +402,8 @@ func _install_smooth_moss_blend() -> void:
 	var code := terrain_shader.code
 	const HEADER := "shader_type spatial;\n"
 	const BASE_ALBEDO := "ALBEDO = mat.albedo_height.rgb * color_map.rgb * macrov;"
-	const MOSS_UNIFORMS := "uniform sampler2D mushi_moss_albedo : source_color, filter_linear_mipmap, repeat_enable;\nuniform sampler2D mushi_moss_coverage : filter_linear_mipmap, repeat_disable;\nuniform float mushi_moss_world_extent = 128.0;\nuniform float mushi_moss_night_vision = 0.0;\n"
-	const MOSS_BLEND := "\n vec2 mushi_moss_uv = (v_vertex.xz + vec2(mushi_moss_world_extent * 0.5)) / mushi_moss_world_extent;\n float mushi_moss_weight = texture(mushi_moss_coverage, mushi_moss_uv).r;\n vec3 mushi_moss_color = texture(mushi_moss_albedo, v_vertex.xz / 3.0).rgb;\n ALBEDO = mix(ALBEDO, mushi_moss_color, mushi_moss_weight);\n float mushi_moss_glow = smoothstep(0.54, 0.84, mushi_moss_night_vision);\n float mushi_moss_fleck = smoothstep(0.24, 0.54, mushi_moss_color.g);\n EMISSION += vec3(0.055, 0.017, 0.085) * mushi_moss_weight * mushi_moss_fleck * mushi_moss_glow;"
+	const MOSS_UNIFORMS := "uniform sampler2D mushi_moss_albedo : source_color, filter_linear_mipmap, repeat_enable;\nuniform sampler2D mushi_soil_variation_albedo : source_color, filter_linear_mipmap, repeat_enable;\nuniform sampler2D mushi_moss_coverage : filter_linear_mipmap, repeat_disable;\nuniform float mushi_moss_world_extent = 128.0;\nuniform float mushi_moss_night_vision = 0.0;\n"
+	const MOSS_BLEND := "\n vec2 mushi_moss_uv = (v_vertex.xz + vec2(mushi_moss_world_extent * 0.5)) / mushi_moss_world_extent;\n vec2 mushi_ground_coverage = texture(mushi_moss_coverage, mushi_moss_uv).rg;\n float mushi_moss_weight = mushi_ground_coverage.r;\n vec3 mushi_soil_color = texture(mushi_soil_variation_albedo, v_vertex.xz / 3.2).rgb;\n ALBEDO = mix(ALBEDO, mushi_soil_color, mushi_ground_coverage.g);\n vec3 mushi_moss_color = texture(mushi_moss_albedo, v_vertex.xz / 3.0).rgb;\n ALBEDO = mix(ALBEDO, mushi_moss_color, mushi_moss_weight);\n float mushi_moss_glow = smoothstep(0.54, 0.84, mushi_moss_night_vision);\n float mushi_moss_fleck = smoothstep(0.24, 0.54, mushi_moss_color.g);\n EMISSION += vec3(0.055, 0.017, 0.085) * mushi_moss_weight * mushi_moss_fleck * mushi_moss_glow;"
 	if not code.begins_with(HEADER) or not code.contains(BASE_ALBEDO):
 		push_warning("Pine moss blend skipped: Terrain3D shader anchor changed")
 		return
@@ -414,6 +413,7 @@ func _install_smooth_moss_blend() -> void:
 	terrain.material.shader_override = terrain_shader
 	terrain.material.shader_override_enabled = true
 	terrain.material.set_shader_param("mushi_moss_albedo", _mipmapped_texture("res://assets/forest/polyhaven/mossy_rock_diff_1k.jpg"))
+	terrain.material.set_shader_param("mushi_soil_variation_albedo", _mipmapped_texture("res://assets/forest/polyhaven/forest_ground_04_diff_1k.jpg"))
 	terrain.material.set_shader_param("mushi_moss_coverage", _moss_coverage_texture())
 	terrain.material.set_shader_param("mushi_moss_world_extent", float(surface.size_m))
 	terrain.material.set_shader_param("mushi_moss_night_vision", _night_vision)
@@ -422,7 +422,7 @@ func _install_smooth_moss_blend() -> void:
 func _moss_coverage_texture() -> ImageTexture:
 	var extent := surface.size_m
 	var half := float(extent) * 0.5
-	var image := Image.create_empty(extent, extent, false, Image.FORMAT_R8)
+	var image := Image.create_empty(extent, extent, false, Image.FORMAT_RG8)
 	for y in extent:
 		for x in extent:
 			var world := Vector2(float(x) + 0.5 - half, float(y) + 0.5 - half)
@@ -430,7 +430,8 @@ func _moss_coverage_texture() -> ImageTexture:
 			var coverage := 0.0
 			if surface.is_playable(world, 1.0):
 				coverage = _moss_coverage(world) * _moss_clearance(world) * slope_fade
-			image.set_pixel(x, y, Color(coverage, 0.0, 0.0, 1.0))
+			var soil_variation := _soil_variation_coverage(world) * (1.0 - coverage)
+			image.set_pixel(x, y, Color(coverage, soil_variation, 0.0, 1.0))
 	# Preserve the same inexpensive per-metre field computation as the control
 	# map, then resample it to half-metre texels for filtered transitions.
 	image.resize(extent * 2, extent * 2, Image.INTERPOLATE_LANCZOS)
@@ -447,7 +448,13 @@ func _ground_grade(world: Vector2) -> float:
 func _moss_coverage(world: Vector2) -> float:
 	var broad := sin(world.x * 0.21 + sin(world.y * 0.13) * 1.4) * 0.5 + 0.5
 	var medium := sin(world.y * 0.47 + world.x * 0.17 + sin(world.x * 0.31) * 0.8) * 0.5 + 0.5
-	return smoothstep(0.53, 0.79, broad * 0.62 + medium * 0.38) * 0.78
+	return smoothstep(0.48, 0.77, broad * 0.62 + medium * 0.38) * 0.88
+
+
+func _soil_variation_coverage(world: Vector2) -> float:
+	var broad := sin(world.x * 0.13 + world.y * 0.17) * 0.5 + 0.5
+	var medium := sin(world.y * 0.31 - world.x * 0.23) * 0.5 + 0.5
+	return smoothstep(0.62, 0.86, broad * 0.6 + medium * 0.4) * 0.48
 
 
 func _moss_clearance(world: Vector2) -> float:
@@ -521,31 +528,29 @@ func _forest_tree_asset(style: String) -> Terrain3DMeshAsset:
 	return asset
 
 
-func _polyhaven_groundcover_asset(asset_id: String, mesh_name: String, preview_scale: float, label: String) -> Terrain3DMeshAsset:
+func _polyhaven_groundcover_asset(mesh_name: String, preview_scale: float, label: String) -> Terrain3DMeshAsset:
 	# Audition GLBs contain several clumps offset along X. Fold just one
 	# representative into a single surface so each terrain record is one plant.
-	var source := (WEED_SCENE if asset_id == "weed_plant_02" else SHRUB_SCENE).instantiate()
+	var source := SHRUB_SCENE.instantiate()
 	var selected := source.find_child(mesh_name, true, false) as MeshInstance3D
 	assert(selected != null and selected.mesh != null)
-	var source_material := selected.mesh.surface_get_material(0) as StandardMaterial3D
-	assert(source_material != null and source_material.albedo_texture != null)
 	var material := ShaderMaterial.new()
 	material.shader = GROUNDCOVER_SHADER
-	material.set_shader_parameter("foliage_diffuse", source_material.albedo_texture)
+	material.set_shader_parameter("foliage_diffuse", load("res://assets/forest/polyhaven/groundcover_live/shrub_02_shrub_02_diff_1k.png"))
+	material.set_shader_parameter("foliage_alpha", load("res://assets/forest/polyhaven/groundcover_live/shrub_02_alpha_1k.png"))
 	material.set_shader_parameter("grove_size", surface.size_m)
 	material.set_shader_parameter("night_vision", _night_vision)
 	_foliage_materials.append(material)
 	var mesh := ArrayMesh.new()
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# The source bundles are at real-world scale. The audition showed these
-	# selected clumps at 3.0 and 0.9; multiply that presentation by 2.5.
+	# The selected clump is rescaled to sit below the largest fern fronds.
 	tool.append_from(selected.mesh, 0, Transform3D(selected.transform.basis.scaled(Vector3.ONE * preview_scale), Vector3.ZERO))
 	tool.set_material(material)
 	tool.commit(mesh)
 	source.free()
 	var asset := _mesh_asset(label, mesh)
-	asset.lod0_range = 28.0 if asset_id == "weed_plant_02" else 36.0
+	asset.lod0_range = 36.0
 	return asset
 
 
@@ -934,9 +939,17 @@ func _add_prop_collision(prop: Dictionary) -> void:
 		cylinder.height = h
 		shape_node.shape = cylinder
 	else:
-		var sphere := SphereShape3D.new()
-		sphere.radius = prop.radius
-		shape_node.shape = sphere
-	body.position = prop.position + Vector3.UP * (h * 0.5)
+		# The photographed rock is sunk into the floor. Keep its coarse body
+		# below the visible crest so the player can jump across it.
+		var variant: int = posmod(int(prop.get("variant", 0)), 3)
+		var visual_y_scale := float([0.78, 1.16, 0.96][variant])
+		var visible_height := GroveRockModels.rock_height(variant) * float(prop.scale) * visual_y_scale * 0.70 if forest_style == "pine" else h
+		var cylinder := CylinderShape3D.new()
+		cylinder.radius = float(prop.radius) * 0.72
+		cylinder.height = visible_height * 0.86 + 0.08
+		shape_node.shape = cylinder
+		body.position = prop.position + Vector3.UP * (cylinder.height * 0.5 - 0.08)
+	if prop.kind == "tree":
+		body.position = prop.position + Vector3.UP * (h * 0.5)
 	body.add_child(shape_node)
 	_prop_bodies.add_child(body)

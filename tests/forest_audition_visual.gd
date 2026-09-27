@@ -28,6 +28,8 @@ func _run() -> void:
 	var lab: Node = load("res://scenes/main.tscn").instantiate()
 	root.add_child(lab)
 	lab.set_process_unhandled_input(false)
+	if lab.friend_menu != null:
+		lab.friend_menu.set_open(false)
 	lab.player.set_process_unhandled_input(false)
 	lab.player.set_physics_process(false)
 	lab.simulation_paused = true
@@ -44,7 +46,7 @@ func _run() -> void:
 	if style == "oak":
 		expected_texture_name = "Oak leaf litter"
 	elif style == "pine":
-		expected_texture_name = "Pine needles"
+		expected_texture_name = "Dark forest soil"
 	_expect(texture_asset.name == expected_texture_name, "style-specific ground material selected")
 	var rock_texture: Terrain3DTextureAsset = environment.terrain.assets.get_texture(1)
 	if style in ["oak", "pine"]:
@@ -67,7 +69,7 @@ func _run() -> void:
 				var bits := Terrain3DUtil.as_uint(controls.get_pixel(x, z).r)
 				if Terrain3DUtil.is_auto(bits) and Terrain3DUtil.get_base(bits) == 0:
 					autoshader_pixels += 1
-		_expect(autoshader_pixels == expected_size * expected_size, "needle base and automatic slope material remain across the pine control map")
+		_expect(autoshader_pixels == expected_size * expected_size, "soil base and automatic slope material remain across the pine control map")
 		_expect(_control_is_auto(controls, Vector2(0.0, 18.4)), "goal clearing retains automatic cliff material")
 		_expect(_control_is_auto(controls, Vector2(-14.4, -8.0)), "player start retains automatic slope material")
 		_expect(environment.terrain_reveal_active and environment._river_mesh_active, "normal river mesh path remains installed beside smooth moss material")
@@ -75,7 +77,7 @@ func _run() -> void:
 	var grass_asset: Terrain3DMeshAsset = environment._mesh_assets.grass
 	if style == "pine":
 		_expect(grass_asset.name == "CC0 Meadow Grass Clump" and grass_asset.last_lod == 1, "natural pine grass uses CC0 clumps with a distant LOD")
-		_expect(is_equal_approx(grass_asset.lod0_range, 12.0) and is_equal_approx(grass_asset.lod1_range, 32.0), "pine grass detail switches at 12m and culls at 32m")
+		_expect(is_equal_approx(grass_asset.lod0_range, 28.0) and is_equal_approx(grass_asset.lod1_range, 32.0), "pine grass detail uses 28m and culls at 32m")
 	if style in ["oak", "pine"]:
 		_expect(tree_asset.last_lod == 2 and tree_asset.scene_file != null, "three LOD tree scene assigned to Terrain3D")
 		print("FOREST_LOD_CONFIG count=%d last=%d ranges=%.1f/%.1f/%.1f" % [tree_asset.lod_count, tree_asset.last_lod, tree_asset.lod0_range, tree_asset.lod1_range, tree_asset.lod2_range])

@@ -57,7 +57,7 @@ func build(surface: EnvironmentSurface, low_quality: bool = false) -> void:
 		var variant: int = int(prop.get("variant", 0))
 		# Distinct clump silhouettes without a second draw material or mesh.
 		var size_hash := float(posmod(grass_index * 37 + variant * 17, 101)) / 100.0
-		var scale := 0.62 + 0.70 * size_hash
+		var scale := 0.62 + 1.38 * size_hash
 		var width := 0.86 + 0.28 * (1.0 - size_hash)
 		var basis := Basis(Vector3.UP, float(prop.yaw)).scaled(Vector3(scale * width, scale, scale / width))
 		var cell_origin := Vector3(float(cell.x) * CELL_SIZE, 0.0, float(cell.y) * CELL_SIZE)
