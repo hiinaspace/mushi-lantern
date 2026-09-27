@@ -68,6 +68,12 @@ func run_checks() -> void:
 	assert(ui._world_line.text.contains("[color=#91dda3]mushi[/color]"), "mushi keyword uses dialogue color")
 	assert(ui._world_line.get_total_character_count() == director.ukon_nearby_line().length(),
 		"dialogue markup must not change typewriter length")
+	var first_visit := ui._world_line.get_parsed_text()
+	ui.update_ukon_proximity(7.0, director, true)
+	ui.update_ukon_proximity(2.0, director, true)
+	assert(ui._world_line.get_parsed_text() == director.ukon_nearby_line(1)
+		and ui._world_line.get_parsed_text() != first_visit,
+		"Ukon rotates general tips between visits without restarting them each frame")
 	director.begin_run(true, 1024)
 	ui.update_director(director, true)
 	director.skip()

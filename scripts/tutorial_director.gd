@@ -7,7 +7,7 @@ signal reveal_changed(amount: float)
 signal adaptation_progress_changed(amount: float)
 signal adaptation_started
 signal reward_unlocked
-signal broom_reward_unlocked
+signal near_complete_reached
 signal guide_released
 
 enum Stage { WELCOME, SHUTTER, ADAPTATION, REVEAL_WAIT, JAR_NEUTRAL, JAR_BLUE, JAR_ORANGE, GUIDE, GROUPS, FREE_PLAY }
@@ -22,7 +22,7 @@ const ADAPTATION_SECONDS := 8.0
 const REVEAL_HOLD_SECONDS := 5.0
 const DIALOGUE_PAUSE_SECONDS := 5.0
 const REWARD_RATIO := 0.60
-const BROOM_REWARD_RATIO := 0.80
+const NEAR_COMPLETE_RATIO := 0.80
 const ACTIVE_SHUTTER_THRESHOLD := 0.05
 
 var stage: Stage = Stage.FREE_PLAY
@@ -35,7 +35,7 @@ var total: int = 0
 var tutorial_enabled: bool = false
 var goal_accepting: bool = true
 var reward_is_unlocked: bool = false
-var broom_reward_is_unlocked: bool = false
+var near_complete_milestone_reached: bool = false
 var reveal_amount: float = 0.0
 var adaptation_progress: float = 0.0
 var _stage_elapsed := 0.0
@@ -52,7 +52,7 @@ func begin_run(enabled: bool, run_total: int) -> void:
 	score = 0
 	progress_ratio = 0.0
 	reward_is_unlocked = false
-	broom_reward_is_unlocked = false
+	near_complete_milestone_reached = false
 	reveal_amount = 0.0
 	adaptation_progress = 0.0
 	_stage_elapsed = 0.0
@@ -189,22 +189,42 @@ func observe_score(new_score: int) -> void:
 	if not reward_is_unlocked and total > 0 and progress_ratio >= REWARD_RATIO:
 		reward_is_unlocked = true
 		reward_unlocked.emit()
-	if not broom_reward_is_unlocked and total > 0 and progress_ratio >= BROOM_REWARD_RATIO:
-		broom_reward_is_unlocked = true
-		broom_reward_unlocked.emit()
+	if not near_complete_milestone_reached and total > 0 and progress_ratio >= NEAR_COMPLETE_RATIO:
+		near_complete_milestone_reached = true
+		near_complete_reached.emit()
 	_update_status()
 
 
-func ukon_nearby_line() -> String:
-	if stage != Stage.FREE_PLAY:
+func ukon_nearby_line(tip_index: int = 0) -> String:
+	if not tutorial_enabled or stage != Stage.FREE_PLAY:
 		return ""
-	if broom_reward_is_unlocked:
-		return "Wonderful work! Try the broom gesture to fly together, or keep helping the mushi find their way."
-	if reward_is_unlocked:
-		return "You brought so many home. Thank you. You can keep exploring, or invite a friend through Session."
-	if score > 0:
-		return "That one found the light vein. Blue draws mushi close; red can nudge them toward a shrine."
-	return "Take your time. The mushi won't hurt you. If you'd like help, open Session for a private peer-to-peer room."
+	var tip := posmod(tip_index, 3)
+	if progress_ratio >= 1.0:
+		return "Every mushi found its way home. What a wonderful migration! Your completion time is in the Session menu."
+	if progress_ratio >= 0.95:
+		return "Nearly everyone is home. The last few are optional; your completion time is in the Session menu."
+	if progress_ratio >= 0.80:
+		return "Most mushi have found their way back. Finding all is optional; your time is saved in Session."
+	if progress_ratio >= 0.50:
+		var mid_tips := [
+			"Half the grove has come home. Blue gathers them; red can nudge them toward a shrine.",
+			"Wonderful progress. A broad lantern sweep can find strays along the light vein.",
+			"So many have returned! The Session menu keeps your completion times if you want to compare later."
+		]
+		return mid_tips[tip]
+	if progress_ratio >= 0.25:
+		var early_tips := [
+			"Good work bringing them home. Blue draws mushi close; red can guide them toward a shrine.",
+			"Every return brightens the light vein. Try sweeping the lantern slowly across the grove.",
+			"The light vein bends beneath the earth. A few returns at a time is plenty."
+		]
+		return early_tips[tip]
+	var opening_tips := [
+		"Take your time; the mushi won't hurt you. Blue draws them close, and red can guide them home.",
+		"A slow lantern sweep can reveal strays. The light vein is patient; there is no rush.",
+		"The mushi wander where the buried light grows thin. Help a few find the shrine when you like."
+	]
+	return opening_tips[tip]
 
 
 func _change_stage(next_stage: Stage) -> void:

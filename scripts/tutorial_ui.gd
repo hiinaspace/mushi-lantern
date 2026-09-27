@@ -31,6 +31,8 @@ var _sandbox_unlocked := false
 var _tutorial_active := false
 var _last_spoken_line := ""
 var _spoken_characters := 0.0
+var _ukon_nearby := false
+var _ukon_visit_index := 0
 var _world_root: Node3D
 var _world_viewer: Camera3D
 var _ukon_avatar: Node3D
@@ -245,7 +247,12 @@ func update_director(director: TutorialDirector, xr_active: bool) -> void:
 
 func update_ukon_proximity(distance: float, director: TutorialDirector, xr_active: bool = false) -> void:
 	var nearby := director.tutorial_enabled and director.stage == TutorialDirector.Stage.FREE_PLAY and distance <= 6.0
-	var line := director.ukon_nearby_line() if nearby else ""
+	if nearby and not _ukon_nearby:
+		_ukon_visit_index += 1
+	elif not nearby:
+		_ukon_nearby = false
+	var line := director.ukon_nearby_line(_ukon_visit_index - 1) if nearby else ""
+	_ukon_nearby = nearby
 	_world_alpha = clampf((6.0 - distance) / 1.5, 0.0, 1.0) if nearby else 0.0
 	if _world_root != null and not _tutorial_active and _completion_remaining <= 0.0:
 		_world_root.visible = nearby
@@ -332,13 +339,13 @@ func show_reward_unlocked() -> void:
 		_xr_reward.text = "60% returned · Sandbox controls unlocked"
 
 
-func show_broom_unlocked() -> void:
-	_reward_remaining = 9.0
+func show_progress_congratulations() -> void:
+	_reward_remaining = 7.0
 	if _reward_toast != null:
-		_reward_toast.text = "Wonderful work! Broom flight unlocked."
+		_reward_toast.text = "Wonderful work! Most mushi have found their way home."
 		_reward_toast.visible = true
 	if _xr_reward != null:
-		_xr_reward.text = "Wonderful work! Broom flight unlocked."
+		_xr_reward.text = "Wonderful work! Most mushi have found their way home."
 
 
 func update_reveal(amount: float) -> void:

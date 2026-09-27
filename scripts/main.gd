@@ -15,7 +15,6 @@ const RUN_RECORDS_PATH := "user://m0_run_records.jsonl"
 const AVATAR_FIT_PATH := "user://mushi_avatar_fit.json"
 const VOICE_SETTINGS_PATH := "user://mushi_voice_settings.json"
 const XR_COMFORT_PATH := "user://mushi_xr_comfort.json"
-const BROOM_UNLOCK_PATH := "user://mushi_broom_unlock.json"
 const UI_FONT: Font = preload("res://assets/fonts/KleeOne-SemiBold.ttf")
 ## Desktop palm contact corrections in staff-local metres. XR tracking has its
 ## own pose path and never uses these artist-tunable offsets.
@@ -43,6 +42,7 @@ var _tutorial_movement_locked: bool = false
 var _xr_tutorial_centered: bool = false
 var _xr_recenter_cooldown: float = 0.0
 var _tutorial_chain_label: Label3D
+var _ukon_authored_yaw := 0.0
 var _quality_settings: Dictionary = {}
 var _menu_was_paused: bool = false
 var _friend_was_paused: bool = false
@@ -52,7 +52,6 @@ var _network: Variant
 var _network_extension: Resource
 var _voice: MushiVoice
 var _voice_start_unmuted := false
-var _broom_test_enabled := false
 var _voice_input_device := ""
 var _voice_gain_db := 0.0
 var _voice_gate_db := -38.0
@@ -76,7 +75,6 @@ var _xr_avatar_scale_ready := false
 var _xr_avatar_calibration_seconds := 0.0
 var _xr_avatar_raw_eye_height := 0.0
 var _xr_comfort := {"snap_turn": false, "move_hand": "left", "vignette_strength": 0.0, "haptics": true}
-var _broom_permanently_unlocked := false
 var _joined_peers: Dictionary = {}
 var _network_status := "Offline"
 var _last_sent_score: int = -1
@@ -228,7 +226,6 @@ func _ready() -> void:
 	_load_avatar_fit()
 	_load_voice_settings()
 	_load_xr_comfort()
-	_load_broom_unlock()
 	_voice_start_unmuted = _voice_start_unmuted or OS.get_environment("MUSHI_VOICE_UNMUTED") == "1" or OS.get_environment("MUSHI_VOICE_TRANSMIT") == "1"
 	_impair_rng.seed = 40721
 	_impair_jitter_ms = maxi(0, int(OS.get_environment("MUSHI_NET_JITTER_MS")))
@@ -261,7 +258,7 @@ func _ready() -> void:
 	tutorial_director.reveal_changed.connect(_on_tutorial_reveal_changed)
 	tutorial_director.adaptation_started.connect(_on_tutorial_adaptation_started)
 	tutorial_director.reward_unlocked.connect(_on_tutorial_reward_unlocked)
-	tutorial_director.broom_reward_unlocked.connect(_on_tutorial_broom_reward_unlocked)
+	tutorial_director.near_complete_reached.connect(_on_tutorial_near_complete_reached)
 	tutorial_director.guide_released.connect(_on_tutorial_guide_released)
 	tutorial_guide = TutorialGuideVisual.new()
 	tutorial_guide.name = "TutorialGuide"
@@ -496,9 +493,7 @@ func _process(delta: float) -> void:
 		if guide != null:
 			tutorial_ui.update_ukon_proximity(_viewer_eye_position().distance_to(guide.global_position),
 				tutorial_director, xr_player != null and xr_player.xr_active)
-			if guide.has_method("set_guide_look_target"):
-				guide.call("set_guide_look_target", _viewer_eye_position(),
-					tutorial_director.tutorial_enabled and tutorial_director.stage == TutorialDirector.Stage.FREE_PLAY, delta)
+			_update_ukon_gaze(guide, delta, _viewer_eye_position())
 	_update_xr_tutorial_chain_cue()
 	if friend_menu != null and tutorial_director != null:
 		var session_status: String = tutorial_director.status_text + " · " + _network_status
@@ -736,16 +731,6 @@ func _load_xr_comfort() -> void:
 	var saved: Variant = JSON.parse_string(file.get_as_text())
 	if saved is Dictionary:
 		_xr_comfort = _validated_xr_comfort(saved)
-
-
-func _load_broom_unlock() -> void:
-	if not FileAccess.file_exists(BROOM_UNLOCK_PATH):
-		return
-	var file := FileAccess.open(BROOM_UNLOCK_PATH, FileAccess.READ)
-	if file == null:
-		return
-	var saved: Variant = JSON.parse_string(file.get_as_text())
-	_broom_permanently_unlocked = saved is Dictionary and bool(saved.get("unlocked", false))
 
 
 func _validated_xr_comfort(value: Dictionary) -> Dictionary:
@@ -1001,10 +986,21 @@ func _add_miko_presentation() -> void:
 		return
 	avatar.name = "Miko"
 	avatar.rotation.y = atan2(TUTORIAL_XZ.x - xz.x, TUTORIAL_XZ.y - xz.y)
+	_ukon_authored_yaw = avatar.rotation.y
 	presentation.add_child(avatar)
 	add_child(presentation)
 	avatar.set_guide_idle(true)
 	avatar.eye_glow = 2.5
+
+
+func _update_ukon_gaze(guide: Node3D, delta: float, viewer_position: Vector3) -> void:
+	if guide == null or not guide.has_method("set_guide_look_target"):
+		return
+	if tutorial_director != null and tutorial_director.tutorial_enabled \
+			and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY:
+		guide.rotation.y = _ukon_authored_yaw
+		return
+	guide.call("set_guide_look_target", viewer_position, true, delta)
 
 func _build_player() -> void:
 	player = DesktopPlayer.new()
@@ -1076,8 +1072,7 @@ func _build_xr_player() -> void:
 	staff_tool.reset_to_pose(_xr_initial_staff_pose(), 1.0, false)
 	xr_staff_interaction = load("res://scripts/xr_staff_interaction.gd").new()
 	xr_staff_interaction.configure(staff_tool, xr_player)
-	xr_staff_interaction.broom_test_override = _broom_test_enabled
-	xr_staff_interaction.broom_unlocked = _broom_test_enabled or _broom_permanently_unlocked
+	_update_broom_access()
 	_ensure_local_avatar()
 
 
@@ -1396,16 +1391,11 @@ func _on_tutorial_reward_unlocked() -> void:
 		tutorial_ui.set_sandbox_unlocked(true)
 
 
-func _on_tutorial_broom_reward_unlocked() -> void:
+func _on_tutorial_near_complete_reached() -> void:
 	if tutorial_director == null or not tutorial_director.tutorial_enabled:
 		return
-	_broom_permanently_unlocked = true
-	var file := FileAccess.open(BROOM_UNLOCK_PATH, FileAccess.WRITE)
-	if file != null:
-		file.store_string(JSON.stringify({"unlocked": true}))
-	_update_broom_access()
 	if tutorial_ui != null:
-		tutorial_ui.show_broom_unlocked()
+		tutorial_ui.show_progress_congratulations()
 
 
 func _on_tutorial_sandbox_visibility_changed(open: bool) -> void:
@@ -2358,9 +2348,6 @@ func _parse_arguments() -> void:
 		elif args[index] == "--voice-unmuted":
 			_voice_start_unmuted = true
 			index += 1
-		elif args[index] == "--broom-test":
-			_broom_test_enabled = true
-			index += 1
 		elif args[index] == "--skip-tutorial":
 			_skip_tutorial_requested = true
 			_force_tutorial = false
@@ -2762,7 +2749,7 @@ func _on_multiplayer_join_requested(secret: String) -> void:
 func _update_broom_access() -> void:
 	if xr_staff_interaction == null:
 		return
-	var enabled := _broom_test_enabled or _broom_permanently_unlocked or _multiplayer_role != "offline"
+	var enabled := _multiplayer_role != "offline"
 	xr_staff_interaction.broom_test_override = enabled
 	xr_staff_interaction.broom_unlocked = enabled
 

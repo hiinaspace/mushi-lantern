@@ -11,9 +11,20 @@ func _ready() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	var game: Node3D = load("res://scripts/main.gd").new()
-	game._parse_arguments()
-	assert(game._broom_test_enabled, "--broom-test must unlock the gesture")
+	var game = load("res://scripts/main.gd").new()
+	game.xr_staff_interaction = MushiXRStaffInteraction.new()
+	game._multiplayer_role = "offline"
+	game._update_broom_access()
+	assert(not game.xr_staff_interaction.broom_unlocked,
+		"Broom flight stays locked during a singleplayer session")
+	game._multiplayer_role = "host"
+	game._update_broom_access()
+	assert(game.xr_staff_interaction.broom_unlocked,
+		"Multiplayer enables broom flight")
+	game._multiplayer_role = "offline"
+	game._update_broom_access()
+	assert(not game.xr_staff_interaction.broom_unlocked,
+		"Leaving multiplayer disables broom flight again")
 	game.free()
 	var interaction := MushiXRStaffInteraction.new()
 	assert(not MushiXRStaffInteraction.triggers_held(0.9, 0.0))

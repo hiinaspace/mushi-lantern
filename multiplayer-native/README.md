@@ -66,7 +66,7 @@ Avatar fit changes apply when the menu closes so XR pointer placement stays
 stable while dragging its sliders.
 
 For an experimental offline XR broom flight/IK check, run
-`./launch.sh --xr --broom-test`. Multiplayer enables the gesture by default.
+`./launch.sh --xr`. Multiplayer enables the gesture while a private room is active.
 Hold the staff with both hands,
 then hold both controller triggers for one second, regardless of staff pose.
 Releasing either grip stops flight or starts a controlled landing when high

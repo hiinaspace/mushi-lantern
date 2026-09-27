@@ -3,7 +3,7 @@ extends SceneTree
 var failures: Array[String] = []
 var release_count := 0
 var reward_count := 0
-var broom_reward_count := 0
+var near_complete_count := 0
 var gate_events: Array[bool] = []
 var adaptation_start_count := 0
 
@@ -14,7 +14,7 @@ func _run() -> void:
 	var director := TutorialDirector.new()
 	director.guide_released.connect(func() -> void: release_count += 1)
 	director.reward_unlocked.connect(func() -> void: reward_count += 1)
-	director.broom_reward_unlocked.connect(func() -> void: broom_reward_count += 1)
+	director.near_complete_reached.connect(func() -> void: near_complete_count += 1)
 	director.goal_acceptance_changed.connect(func(value: bool) -> void: gate_events.append(value))
 	director.adaptation_started.connect(func() -> void: adaptation_start_count += 1)
 	director.begin_run(true, 100)
@@ -57,11 +57,21 @@ func _run() -> void:
 	_check(director.stage == TutorialDirector.Stage.FREE_PLAY and director.goal_accepting, "lesson enters free play and opens goal", failures)
 	_check(gate_events == [false, true], "goal gate emits only transitions", failures)
 	_check(director.ukon_nearby_line().contains("hurt"), "free-play Ukon reassures", failures)
+	director.observe_score(24)
+	_check(director.ukon_nearby_line().contains("Take your time"), "early progress stays low pressure and gives light lore", failures)
+	director.observe_score(25)
+	_check(director.ukon_nearby_line(1).contains("light vein"), "quarter progress rotates a gentle tip", failures)
+	director.observe_score(50)
+	_check(director.ukon_nearby_line().contains("Half the grove"), "half progress congratulates and offers a tip", failures)
 	director.observe_score(60)
-	_check(director.reward_is_unlocked and reward_count == 1 and director.ukon_nearby_line().contains("Thank you"), "progress changes Ukon response", failures)
+	_check(director.reward_is_unlocked and reward_count == 1, "existing sandbox milestone still unlocks at 60 percent", failures)
 	director.observe_score(80)
-	director.observe_score(90)
-	_check(director.broom_reward_is_unlocked and broom_reward_count == 1 and director.ukon_nearby_line().contains("broom gesture"), "80 percent unlocks broom tip once", failures)
+	_check(director.near_complete_milestone_reached and near_complete_count == 1 and director.ukon_nearby_line().contains("optional"), "80 percent frames completion as optional", failures)
+	_check(director.ukon_nearby_line().contains("Session"), "80 percent points to saved completion times", failures)
+	director.observe_score(95)
+	_check(director.ukon_nearby_line().contains("Nearly everyone"), "95 percent gives a near-complete message", failures)
+	director.observe_score(100)
+	_check(director.ukon_nearby_line().contains("Every mushi") and director.ukon_nearby_line().contains("wonderful migration"), "full completion gets stronger congratulations", failures)
 	director.begin_run(true, 20)
 	director.skip()
 	director.skip()
@@ -72,6 +82,7 @@ func _run() -> void:
 	_check(director.stage == TutorialDirector.Stage.ADAPTATION, "already closed shutter starts adaptation after choice", failures)
 	director.begin_run(false, 10)
 	_check(director.stage == TutorialDirector.Stage.FREE_PLAY and director.goal_accepting, "disabled tutorial begins in free play", failures)
+	_check(director.ukon_nearby_line().is_empty(), "modes without the tutorial guide do not show Ukon dialogue", failures)
 	for failure in failures:
 		push_error(failure)
 	print("TUTORIAL_DIRECTOR_CHECKS failures=%d" % failures.size())
