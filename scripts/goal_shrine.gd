@@ -96,26 +96,49 @@ func _build() -> void:
 	_architecture_root.name = "GateArchitecture"
 	_architecture_root.rotation.y = PI * 0.5
 	add_child(_architecture_root)
-	var dark_wood := _material(Color("211b18"), Color("100b08"), 0.12)
-	var warm_wood := _material(Color("38261b"), Color("1b0c05"), 0.1)
-	var stone := _material(Color("30312d"), Color("100f0d"), 0.08)
-	var altar_top := _material(Color("52473a"), Color("271607"), 0.12)
-	_ember_material = _material(Color("e6853e"), Color("ff6b28"), 1.0)
+	var dark_wood := _material(Color("38251d"), Color("160b07"), 0.02)
+	var warm_wood := _material(Color("65452f"), Color("1c1009"), 0.025)
+	var lacquer := _material(Color("713c2b"), Color("210b06"), 0.035)
+	var stone := _material(Color("41413b"), Color("000000"), 0.0)
+	var altar_top := _material(Color("887255"), Color("170d08"), 0.02)
+	var paper := _material(Color("b4a17f"), Color("000000"), 0.0)
+	var vermilion := _material(Color("8e3b27"), Color("000000"), 0.0)
+	var bronze := _material(Color("786348"), Color("000000"), 0.0)
+	bronze.metallic = 0.72
+	bronze.roughness = 0.4
+	_ember_material = _material(Color("cf7139"), Color("ff6b28"), 0.48)
 
 	# Keep the center clear for descending returns; place the altar and tally at the far rim.
 	var altar_z := -maxf(0.35, goal_radius * 0.66)
 	_add_box("Foundation", Vector3(1.15, 0.16, 0.82), Vector3(0.0, 0.08, altar_z), stone)
-	_add_box("Altar", Vector3(0.76, 0.55, 0.54), Vector3(0.0, 0.435, altar_z), warm_wood)
+	_add_box("Altar", Vector3(0.76, 0.55, 0.54), Vector3(0.0, 0.435, altar_z), lacquer)
+	_add_box("AltarBand", Vector3(0.84, 0.055, 0.61), Vector3(0.0, 0.68, altar_z), bronze)
 	_add_box("AltarCap", Vector3(1.02, 0.11, 0.74), Vector3(0.0, 0.765, altar_z), altar_top)
+	# A restrained pitched canopy breaks up the altar silhouette without filling
+	# the return passage with a solid panel.
+	var roof_left := _add_box("AltarRoofLeft", Vector3(0.62, 0.09, 0.78),
+		Vector3(-0.29, 1.08, altar_z), warm_wood)
+	roof_left.rotation.z = deg_to_rad(23.0)
+	var roof_right := _add_box("AltarRoofRight", Vector3(0.62, 0.09, 0.78),
+		Vector3(0.29, 1.08, altar_z), warm_wood)
+	roof_right.rotation.z = deg_to_rad(-23.0)
+	_add_box("AltarRoofRidge", Vector3(0.09, 0.11, 0.82),
+		Vector3(0.0, 1.23, altar_z), lacquer)
 	var post_x := 0.82
 	for side in [-1.0, 1.0]:
-		_add_box("GatewayPost", Vector3(0.12, 1.3, 0.12), Vector3(side * post_x, 0.73, 0.0), dark_wood)
-	_add_box("GatewayLintel", Vector3(2.05, 0.16, 0.2), Vector3(0.0, 1.45, 0.0), warm_wood)
-	_add_box("GatewayCrown", Vector3(2.24, 0.08, 0.25), Vector3(0.0, 1.57, 0.0), altar_top)
+		_add_box("GatewayPost", Vector3(0.17, 1.38, 0.17), Vector3(side * post_x, 0.76, 0.0), lacquer)
+		_add_box("PostCollar", Vector3(0.205, 0.055, 0.205), Vector3(side * post_x, 1.19, 0.0), bronze)
+	_add_box("GatewayLintel", Vector3(2.18, 0.15, 0.22), Vector3(0.0, 1.43, 0.0), warm_wood)
+	_add_box("GatewayCrown", Vector3(2.48, 0.21, 0.36), Vector3(0.0, 1.58, 0.0), altar_top)
+	# A small ofuda makes the gate read as a shrine. The paper is
+	# matte and non-emissive so it catches the lantern instead of becoming a lamp.
+	_add_box("OfudaCord", Vector3(0.035, 0.14, 0.028), Vector3(0.0, 1.36, 0.15), bronze)
+	_add_box("Ofuda", Vector3(0.29, 0.39, 0.035), Vector3(0.0, 1.08, 0.17), paper)
+	_add_box("OfudaSeal", Vector3(0.115, 0.115, 0.012), Vector3(0.0, 1.09, 0.195), vermilion)
 
 	# Eight short amber marks communicate the total returned at a glance.
 	for index in range(PROGRESS_TICKS):
-		var material := _material(Color("302c2a"), Color("e9b872"), 0.025)
+		var material := _material(Color("302c2a"), Color("e9b872"), 0.012)
 		var tick := _add_box("ProgressTick", Vector3(0.075, 0.055, 0.035),
 			Vector3((float(index) - 3.5) * 0.105, 0.86, altar_z + 0.39), material)
 		_progress_ticks.append(tick)
@@ -130,8 +153,8 @@ func _build() -> void:
 		var ember := MeshInstance3D.new()
 		ember.name = "Ember"
 		var ember_mesh := SphereMesh.new()
-		ember_mesh.radius = 0.09
-		ember_mesh.height = 0.18
+		ember_mesh.radius = 0.07
+		ember_mesh.height = 0.14
 		ember.mesh = ember_mesh
 		ember.position = Vector3(x, 0.56, 0.0)
 		ember.material_override = _ember_material
@@ -139,8 +162,8 @@ func _build() -> void:
 		var light := OmniLight3D.new()
 		light.name = "BrazierGlow"
 		light.light_color = Color("ff8d4c")
-		light.light_energy = 0.22
-		light.omni_range = 2.2
+		light.light_energy = 0.12
+		light.omni_range = 1.7
 		light.shadow_enabled = false
 		light.position = Vector3(x, 0.6, 0.0)
 		_architecture_root.add_child(light)
@@ -193,9 +216,9 @@ func _add_goal_boundary() -> void:
 func _apply_night_vision() -> void:
 	# Keep the landmark legible at low adaptation without acting like another beacon.
 	if _ember_material != null:
-		_ember_material.emission_energy_multiplier = lerpf(0.5, 1.0, night_vision)
+		_ember_material.emission_energy_multiplier = lerpf(0.32, 0.72, night_vision)
 	for light in _ember_lights:
-		light.light_energy = lerpf(0.14, 0.24, night_vision)
+		light.light_energy = lerpf(0.07, 0.14, night_vision)
 
 
 func _add_box(node_name: String, size: Vector3, at: Vector3, material: Material) -> MeshInstance3D:
@@ -230,6 +253,8 @@ func _material(color: Color, emission: Color, energy: float) -> StandardMaterial
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 0.92
+	material.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
+	material.metallic = 0.0
 	if energy > 0.0:
 		material.emission_enabled = true
 		material.emission = emission
