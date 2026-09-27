@@ -17,6 +17,10 @@ const VOICE_SETTINGS_PATH := "user://mushi_voice_settings.json"
 const XR_COMFORT_PATH := "user://mushi_xr_comfort.json"
 const BROOM_UNLOCK_PATH := "user://mushi_broom_unlock.json"
 const UI_FONT: Font = preload("res://assets/fonts/KleeOne-SemiBold.ttf")
+## Desktop palm contact corrections in staff-local metres. XR tracking has its
+## own pose path and never uses these artist-tunable offsets.
+@export var desktop_right_grip_offset := Vector3.ZERO
+@export var desktop_left_control_offset := Vector3.ZERO
 
 var environment_enabled: bool = true
 var terrain_size: int = 128
@@ -453,8 +457,10 @@ func _process(delta: float) -> void:
 		light_field.range_m = lantern.spot.spot_range
 	light_field.mode_strength = strength_slider.value if strength_slider != null else 1.0
 	_update_multiplayer(delta)
+	# The final explanation introduces the living grove, so let the swarm
+	# appear and move while that line is still on screen.
 	var tutorial_playing := tutorial_director != null and tutorial_director.tutorial_enabled \
-		and tutorial_director.stage != TutorialDirector.Stage.FREE_PLAY
+		and tutorial_director.stage not in [TutorialDirector.Stage.GROUPS, TutorialDirector.Stage.FREE_PLAY]
 	_tutorial_swarm_alpha = move_toward(_tutorial_swarm_alpha, 0.0 if tutorial_playing else 1.0, delta * 0.8)
 	if glyph_swarm != null:
 		glyph_swarm.set_scene_opacity(_tutorial_swarm_alpha)
@@ -1253,13 +1259,14 @@ func _build_xr_tutorial_chain_cue() -> void:
 	_tutorial_chain_label = Label3D.new()
 	_tutorial_chain_label.name = "TutorialChainTooltip"
 	_tutorial_chain_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_tutorial_chain_label.font = UI_FONT
 	_tutorial_chain_label.pixel_size = 0.00115
 	_tutorial_chain_label.font_size = 27
 	_tutorial_chain_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_tutorial_chain_label.modulate = Color("ffdfa4")
 	_tutorial_chain_label.outline_size = 10
 	_tutorial_chain_label.outline_modulate = Color(0.015, 0.012, 0.01, 0.94)
-	_tutorial_chain_label.no_depth_test = false
+	_tutorial_chain_label.no_depth_test = true
 	_tutorial_chain_label.visible = false
 	add_child(_tutorial_chain_label)
 
@@ -1284,7 +1291,8 @@ func _update_xr_tutorial_chain_cue() -> void:
 		return
 	var control: Vector3 = staff_tool.control_world_position()
 	_tutorial_chain_marker.global_position = control
-	_tutorial_chain_label.global_position = control + Vector3(0.0, 0.18, 0.0)
+	var viewer: Camera3D = xr_player.camera if xr_player != null and xr_player.xr_active else player.camera
+	_tutorial_chain_label.global_position = control - viewer.global_basis.x * 0.42 + Vector3.UP * 0.13
 	_tutorial_chain_label.text = caption
 
 
@@ -3121,10 +3129,12 @@ func _sample_local_avatar_pose() -> Dictionary:
 	var right := Transform3D.IDENTITY
 	var tracked := 0
 	if staff_tool != null and staff_tool.placement == StaffTool.Placement.HELD:
-		right = Transform3D(staff_tool.global_basis, staff_tool.grip_world_position(staff_tool.grip_index))
+		right = Transform3D(staff_tool.global_basis,
+			staff_tool.grip_world_position(staff_tool.grip_index) + staff_tool.global_basis * desktop_right_grip_offset)
 		tracked = 2
 		if player.lamp_adjusting:
-			left = Transform3D(staff_tool.global_basis, staff_tool.control_world_position())
+			left = Transform3D(staff_tool.lantern.global_basis,
+				staff_tool.control_world_position() + staff_tool.global_basis * desktop_left_control_offset)
 			tracked = 3
 	var motion := player.velocity
 	motion.y = 0.0

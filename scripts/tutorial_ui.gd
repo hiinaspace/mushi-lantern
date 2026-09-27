@@ -79,10 +79,12 @@ func attach_ukon(ukon_anchor: Node3D, viewer: Camera3D) -> void:
 	_world_line.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
 	_world_line.add_theme_constant_override("outline_size", 7)
 	_world_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_world_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_world_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_world_line.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	text_viewport.add_child(_world_line)
 	_world_line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_world_line.offset_left = 45.0
+	_world_line.offset_right = -45.0
 	var text_quad := MeshInstance3D.new()
 	text_quad.name = "DialogueText"
 	var text_mesh := QuadMesh.new()

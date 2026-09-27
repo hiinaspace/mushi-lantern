@@ -100,7 +100,10 @@ func update_desktop_adjust(relative: Vector2, allow_shutter: bool = true, allow_
 	var travel := signf(vertical) * maxf(absf(vertical) - 6.0, 0.0)
 	if allow_shutter:
 		lantern.set_shutter(clampf(_desktop_adjust_open - travel / 150.0, 0.0, 1.0))
-	var dial := clampf(float(_desktop_adjust_detent) * FILTER_STEP_YAW + (_desktop_adjust_drag.x if allow_filter else 0.0) * FILTER_STEP_YAW / 110.0,
+	# A deliberate sideways drag is needed before the filter dial moves. This
+	# keeps small diagonal mouse drift from changing color while pulling rope.
+	var horizontal := signf(_desktop_adjust_drag.x) * maxf(absf(_desktop_adjust_drag.x) - 32.0, 0.0)
+	var dial := clampf(float(_desktop_adjust_detent) * FILTER_STEP_YAW + (horizontal if allow_filter else 0.0) * FILTER_STEP_YAW / 120.0,
 		-FILTER_STEP_YAW, FILTER_STEP_YAW)
 	lantern.set_dial_preview(dial)
 	var detent := -1 if dial < -FILTER_ENTER_YAW else 1 if dial > FILTER_ENTER_YAW else 0

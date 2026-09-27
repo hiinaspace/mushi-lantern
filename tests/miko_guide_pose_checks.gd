@@ -24,6 +24,15 @@ func _run() -> void:
 		"Guide arms must hang below imported T-pose")
 	assert(left_relaxed.x > 0.0 and right_relaxed.x < 0.0,
 		"Guide hands must remain clear of the torso")
+	for frame in 200:
+		avatar.set_guide_look_target(Vector3(0.0, 1.4, -2.0), true, 1.0 / 60.0)
+	assert(absf(wrapf(avatar.rotation.y - PI, -PI, PI)) < 0.08,
+		"Guide should turn her whole body toward a visitor behind her")
+	var visited_yaw: float = avatar.rotation.y
+	for frame in 60:
+		avatar.set_guide_look_target(Vector3(0.0, 1.4, -8.0), true, 1.0 / 60.0)
+	assert(absf(wrapf(avatar.rotation.y - visited_yaw, -PI, PI)) < 0.01,
+		"Guide should keep her last facing when the visitor leaves")
 	if not OS.get_environment("MIKO_GUIDE_CAPTURE").is_empty():
 		var camera := Camera3D.new()
 		root.add_child(camera)

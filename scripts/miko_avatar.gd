@@ -36,9 +36,7 @@ var _idle_head := -1
 var _idle_head_rest := Quaternion.IDENTITY
 var _idle_spine := -1
 var _idle_spine_rest := Quaternion.IDENTITY
-var _guide_rest_yaw := 0.0
 var _guide_look_engaged := false
-var _guide_body_yaw := 0.0
 var _guide_head_yaw := 0.0
 var _guide_head_pitch := 0.0
 const GUIDE_ARM_DROP := 1.16
@@ -65,7 +63,6 @@ func _ready() -> void:
 	_update_materials()
 	_voice_expressions = VOICE_EXPRESSIONS.new()
 	_voice_expressions.call("configure", self)
-	_guide_rest_yaw = rotation.y
 	_idle_model = get_node_or_null("Model") as Node3D
 	if _idle_model != null:
 		_idle_origin = _idle_model.position
@@ -93,7 +90,6 @@ func set_guide_idle(enabled: bool) -> void:
 		_apply_guide_arm_pose(0.0)
 	else:
 		_guide_look_engaged = false
-		_guide_body_yaw = 0.0
 		_guide_head_yaw = 0.0
 		_guide_head_pitch = 0.0
 		if _idle_skeleton != null and _idle_spine >= 0:
@@ -121,7 +117,7 @@ func _process(delta: float) -> void:
 	_apply_guide_arm_pose(_idle_seconds)
 
 
-## The guide turns only for someone near her. A wider exit radius prevents
+## The guide turns toward a nearby visitor. A wider exit radius prevents
 ## repeated turn/settle changes while the player crosses the threshold.
 func set_guide_look_target(world_position: Vector3, active: bool, delta: float) -> void:
 	if not _guide_idle or _idle_model == null:
@@ -132,25 +128,27 @@ func set_guide_look_target(world_position: Vector3, active: bool, delta: float) 
 		_guide_look_engaged = active and distance < GUIDE_LOOK_EXIT_DISTANCE
 	else:
 		_guide_look_engaged = active and distance < GUIDE_LOOK_ENTER_DISTANCE
-	var desired_body := 0.0
-	var desired_head_yaw := 0.0
+	var desired_yaw := rotation.y
 	var desired_head_pitch := 0.0
 	if _guide_look_engaged:
 		var toward := world_position - (global_position + Vector3.UP * 1.45)
 		var horizontal := Vector2(toward.x, toward.z).length()
 		if horizontal > 0.1:
 			var target_yaw := atan2(toward.x, toward.z)
-			var relative_yaw := wrapf(target_yaw - _guide_rest_yaw, -PI, PI)
-			desired_body = clampf(relative_yaw, -0.4, 0.4)
-			desired_head_yaw = clampf(wrapf(relative_yaw - desired_body, -PI, PI), -0.55, 0.55)
+			desired_yaw = target_yaw
 			desired_head_pitch = clampf(atan2(toward.y, horizontal), -0.23, 0.22)
 	var step := maxf(delta, 0.0)
-	_guide_body_yaw = move_toward(_guide_body_yaw, desired_body, step * 1.1)
-	_guide_head_yaw = move_toward(_guide_head_yaw, desired_head_yaw, step * 1.7)
+	# Turn the whole rooted character, including her feet, through the full
+	# circle. Keep the last heading when the visitor leaves her conversation
+	# range so she does not swivel back to the shrine between visits.
+	rotation.y = rotate_toward(rotation.y, desired_yaw, step * 1.1) if _guide_look_engaged else rotation.y
+	if _guide_look_engaged:
+		_guide_head_yaw = clampf(wrapf(desired_yaw - rotation.y, -PI, PI), -0.48, 0.48)
+	else:
+		_guide_head_yaw = move_toward(_guide_head_yaw, 0.0, step * 1.7)
 	_guide_head_pitch = move_toward(_guide_head_pitch, desired_head_pitch, step * 1.2)
 	if _idle_skeleton != null and _idle_spine >= 0:
-		_idle_skeleton.set_bone_pose_rotation(_idle_spine, _idle_spine_rest *
-			Quaternion(Vector3.UP, _guide_body_yaw))
+		_idle_skeleton.set_bone_pose_rotation(_idle_spine, _idle_spine_rest)
 	if _idle_skeleton != null and _idle_head >= 0:
 		_idle_skeleton.set_bone_pose_rotation(_idle_head, _idle_head_rest *
 			Quaternion(Vector3.UP, _guide_head_yaw) * Quaternion(Vector3.RIGHT, -_guide_head_pitch))
