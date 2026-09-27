@@ -34,8 +34,16 @@ func _process(delta: float) -> void:
 		var dormant := _state == TutorialDirector.GuideState.DORMANT
 		var flutter := 6.4 if waking else 1.6 if dormant else 5.2
 		var height := 0.055 if waking else -0.075 if dormant else 0.0
-		var motion := 0.060 if waking else 0.008 if dormant else 0.025
-		_creature.position = Vector3(sin(_age * flutter * 0.54) * motion, height + sin(_age * flutter) * motion, cos(_age * flutter * 0.46) * motion)
+		if _state == TutorialDirector.GuideState.JARRED:
+			# Give blue light a clear before/after: an alert mushi hops and
+			# wheels within the jar instead of hovering nearly still.
+			_creature.position = Vector3(sin(_age * 2.9) * 0.085,
+				0.025 + absf(sin(_age * flutter)) * 0.12,
+				cos(_age * 2.3) * 0.07)
+		else:
+			var motion := 0.060 if waking else 0.008
+			_creature.position = Vector3(sin(_age * flutter * 0.54) * motion,
+				height + sin(_age * flutter) * motion, cos(_age * flutter * 0.46) * motion)
 		_glow.light_energy = (0.78 if waking else 0.12 if dormant else 0.32) * (0.88 + 0.12 * sin(_age * flutter))
 	var target_arousal := 1.0 if _state == TutorialDirector.GuideState.WAKING else 0.0 if _state == TutorialDirector.GuideState.DORMANT else 0.45
 	_display_arousal = move_toward(_display_arousal, target_arousal, delta * 1.8)
@@ -112,13 +120,21 @@ func _build() -> void:
 	jar_mesh.bottom_radius = 0.38
 	jar_mesh.height = 0.84
 	_jar.position.y = 0.49
-	var glass := StandardMaterial3D.new()
-	glass.albedo_color = Color(0.72, 0.78, 0.75, 0.10)
-	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-	glass.metallic = 0.22
-	glass.roughness = 0.14
-	glass.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var glass := ShaderMaterial.new()
+	var glass_shader := Shader.new()
+	glass_shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
+void fragment() {
+	float rim = pow(1.0 - abs(dot(normalize(NORMAL), normalize(VIEW))), 2.3);
+	ALBEDO = vec3(0.16, 0.23, 0.24);
+	ROUGHNESS = 0.18;
+	METALLIC = 0.12;
+	ALPHA = 0.025 + rim * 0.21;
+	EMISSION = vec3(0.09, 0.17, 0.18) * rim;
+}
+"""
+	glass.shader = glass_shader
 	_jar.material_override = glass
 
 	_jar_top = _mesh_instance(CylinderMesh.new(), "JarLid")
@@ -126,13 +142,13 @@ func _build() -> void:
 	(_jar_top.mesh as CylinderMesh).bottom_radius = 0.34
 	(_jar_top.mesh as CylinderMesh).height = 0.045
 	_jar_top.position.y = 0.91
-	_jar_top.material_override = _material(Color(0.39, 0.72, 0.77), 0.3)
+	_jar_top.material_override = _dark_jar_material(Color("252c29"))
 	_jar_bottom = _mesh_instance(CylinderMesh.new(), "JarBase")
 	(_jar_bottom.mesh as CylinderMesh).top_radius = 0.38
 	(_jar_bottom.mesh as CylinderMesh).bottom_radius = 0.38
 	(_jar_bottom.mesh as CylinderMesh).height = 0.055
 	_jar_bottom.position.y = 0.075
-	_jar_bottom.material_override = _material(Color(0.23, 0.48, 0.52), 0.22)
+	_jar_bottom.material_override = _dark_jar_material(Color("1f2523"))
 
 	_build_glyph()
 	_glow = OmniLight3D.new()
@@ -152,12 +168,11 @@ func _mesh_instance(mesh: Mesh, node_name: String) -> MeshInstance3D:
 	return instance
 
 
-func _material(color: Color, glow: float) -> StandardMaterial3D:
+func _dark_jar_material(color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
-	material.emission_enabled = true
-	material.emission = color
-	material.emission_energy_multiplier = glow
+	# A dark unshaded value keeps the lid legible during full adaptation
+	# without any emitted light or bloom.
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	return material
 
@@ -206,8 +221,8 @@ func _update_glyph() -> void:
 	# rotation. Turning the old creature node had no visible effect because its
 	# one-agent glyph faces the camera and writes clip-space vertices directly.
 	var heading := Vector3.UP
-	if _state == TutorialDirector.GuideState.WAKING and not _released:
-		var turn := _age * 3.4
+	if not _released and _state in [TutorialDirector.GuideState.JARRED, TutorialDirector.GuideState.WAKING]:
+		var turn := _age * (3.4 if _state == TutorialDirector.GuideState.WAKING else 2.8)
 		heading = Vector3(0.16 * sin(turn * 0.7), cos(turn), sin(turn)).normalized()
 	_glyph_image.set_pixel(0, 2, Color(heading.x, heading.y, heading.z, 0.0))
 	_glyph_texture.update(_glyph_image)
