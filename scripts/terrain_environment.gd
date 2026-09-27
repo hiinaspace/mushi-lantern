@@ -25,6 +25,7 @@ var terrain_reveal_active: bool = false
 var _river_far_receiver: RiverFarReceiver
 var _river_mesh: MeshInstance3D
 var _river_mesh_active := false
+var _fern_groundcover: FernGroundcoverAudition
 ## Optional naturalistic audition. "procedural" keeps the shipped greybox kit.
 ## Oak and pine use the same seeded prop records and differ only in tree and
 ## ground materials, so visual captures can be compared in the same framing.
@@ -132,12 +133,20 @@ func build(world_surface: EnvironmentSurface) -> void:
 	for prop in surface.get_props():
 		if prop.kind == "tree" or prop.kind == "rock":
 			_add_prop_collision(prop)
+	if forest_style == "pine":
+		_fern_groundcover = FernGroundcoverAudition.new()
+		_fern_groundcover.name = "CulledFernGroundcover"
+		add_child(_fern_groundcover)
 	apply_quality(_quality)
 
 func set_night_vision(value: float) -> void:
 	_night_vision = clampf(value, 0.0, 1.0)
 	for material in _foliage_materials:
 		material.set_shader_parameter("night_vision", _night_vision)
+	if _fern_groundcover != null:
+		_fern_groundcover.set_night_vision(_night_vision)
+	if terrain_reveal_active and forest_style == "pine":
+		terrain.material.set_shader_param("mushi_moss_night_vision", _night_vision)
 
 
 func set_stream_visibility(value: float) -> void:
@@ -247,6 +256,9 @@ func apply_quality(settings: Dictionary) -> void:
 	var low_shadows: bool = str(_quality.get("shadows", "high")) == "low"
 	var vegetation_mode := "low" if low_vegetation else "high"
 	if _instanced_vegetation_mode != vegetation_mode:
+		if _fern_groundcover != null:
+			_fern_groundcover.build(surface, low_vegetation)
+			_fern_groundcover.set_night_vision(_night_vision)
 		var groups: Array[Array] = [[], [], [], []]
 		var decorative_index := 0
 		for prop in surface.get_props():
@@ -367,8 +379,8 @@ func _install_smooth_moss_blend() -> void:
 	var code := terrain_shader.code
 	const HEADER := "shader_type spatial;\n"
 	const BASE_ALBEDO := "ALBEDO = mat.albedo_height.rgb * color_map.rgb * macrov;"
-	const MOSS_UNIFORMS := "uniform sampler2D mushi_moss_albedo : source_color, filter_linear_mipmap, repeat_enable;\nuniform sampler2D mushi_moss_coverage : filter_linear_mipmap, repeat_disable;\nuniform float mushi_moss_world_extent = 128.0;\n"
-	const MOSS_BLEND := "\n vec2 mushi_moss_uv = (v_vertex.xz + vec2(mushi_moss_world_extent * 0.5)) / mushi_moss_world_extent;\n float mushi_moss_weight = texture(mushi_moss_coverage, mushi_moss_uv).r;\n vec3 mushi_moss_color = texture(mushi_moss_albedo, v_vertex.xz / 3.0).rgb;\n ALBEDO = mix(ALBEDO, mushi_moss_color, mushi_moss_weight);"
+	const MOSS_UNIFORMS := "uniform sampler2D mushi_moss_albedo : source_color, filter_linear_mipmap, repeat_enable;\nuniform sampler2D mushi_moss_coverage : filter_linear_mipmap, repeat_disable;\nuniform float mushi_moss_world_extent = 128.0;\nuniform float mushi_moss_night_vision = 0.0;\n"
+	const MOSS_BLEND := "\n vec2 mushi_moss_uv = (v_vertex.xz + vec2(mushi_moss_world_extent * 0.5)) / mushi_moss_world_extent;\n float mushi_moss_weight = texture(mushi_moss_coverage, mushi_moss_uv).r;\n vec3 mushi_moss_color = texture(mushi_moss_albedo, v_vertex.xz / 3.0).rgb;\n ALBEDO = mix(ALBEDO, mushi_moss_color, mushi_moss_weight);\n float mushi_moss_glow = smoothstep(0.54, 0.84, mushi_moss_night_vision);\n float mushi_moss_fleck = smoothstep(0.24, 0.54, mushi_moss_color.g);\n EMISSION += vec3(0.018, 0.055, 0.030) * mushi_moss_weight * mushi_moss_fleck * mushi_moss_glow;"
 	if not code.begins_with(HEADER) or not code.contains(BASE_ALBEDO):
 		push_warning("Pine moss blend skipped: Terrain3D shader anchor changed")
 		return
@@ -380,6 +392,7 @@ func _install_smooth_moss_blend() -> void:
 	terrain.material.set_shader_param("mushi_moss_albedo", _mipmapped_texture("res://assets/forest/polyhaven/mossy_rock_diff_1k.jpg"))
 	terrain.material.set_shader_param("mushi_moss_coverage", _moss_coverage_texture())
 	terrain.material.set_shader_param("mushi_moss_world_extent", float(surface.size_m))
+	terrain.material.set_shader_param("mushi_moss_night_vision", _night_vision)
 
 
 func _moss_coverage_texture() -> ImageTexture:
