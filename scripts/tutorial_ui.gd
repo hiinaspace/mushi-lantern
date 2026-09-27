@@ -260,7 +260,7 @@ func _styled_dialogue(line: String) -> String:
 
 func _world_prompt(director: TutorialDirector, xr_active: bool) -> String:
 	if director.stage == TutorialDirector.Stage.WELCOME:
-		return "Trigger: begin · Y / B > Play > Skip introduction" if xr_active else "Enter: quick lesson · K: explore"
+		return "Trigger: begin tutorial · open menu with Y/B to skip" if xr_active else "Enter: quick lesson · K: explore"
 	if director.stage == TutorialDirector.Stage.PICKUP:
 		return "Grip the staff shaft beside you" if xr_active else ""
 	if director.stage == TutorialDirector.Stage.SHUTTER:

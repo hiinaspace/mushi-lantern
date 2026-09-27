@@ -41,7 +41,8 @@ func run_checks() -> void:
 	assert(ui._world_root.visible, "Ukon's world dialogue should be visible while tutorial is active")
 	assert(ui._world_root.get_parent() == ukon, "dialogue must be attached to Ukon, not the tracked headset")
 	assert(not ui._desktop_skip.visible, "desktop K skip button should not appear in XR")
-	assert(ui._world_hint.text.contains("Y / B"))
+	assert(ui._world_hint.text == "Trigger: begin tutorial · open menu with Y/B to skip",
+		"welcome hint names the trigger action and direct menu skip")
 	director.choose_tutorial(true)
 	ui.update_director(director, true)
 	assert(ui._world_hint.text.contains("Grip the staff shaft"), "pickup instruction appears before the shutter instruction")

@@ -36,6 +36,11 @@ func _run() -> void:
 	friend.update_session("test", true, false)
 	assert(friend._xr_skip != null and friend._xr_skip.visible)
 	assert(friend._xr_skip.get_index() < friend._xr_start.get_index())
+	for button in [friend._xr_skip, friend._xr_start, friend._room_host_buttons[0]]:
+		var button_style := button.get_theme_stylebox("normal") as StyleBoxFlat
+		assert(button_style != null and button_style.bg_color.a > 0.9
+			and button_style.border_width_left >= 2 and button_style.border_color != style.border_color,
+			"XR actions have a distinct filled button surface and border")
 	friend._comfort_turns[-1].pressed.emit()
 	assert(friend._comfort.snap_turn)
 	friend._comfort_hands[-1].pressed.emit()

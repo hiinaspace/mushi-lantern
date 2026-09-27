@@ -103,9 +103,41 @@ func _ready() -> void:
 	# Control scale does not increase dynamic-font raster resolution.
 	menu_font.oversampling = 2.0
 	_font_theme.default_font = menu_font
+	_style_menu_buttons()
 	_build_desktop_menu()
 	_desktop_root.theme = _font_theme
 	_desktop_root.visible = _desktop_visible
+
+
+func _style_menu_buttons() -> void:
+	# The XR laser needs a visible target even before the pointer hovers it.
+	for control_type in ["Button", "OptionButton", "CheckButton"]:
+		for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+			var style := StyleBoxFlat.new()
+			match state:
+				"hover":
+					style.bg_color = Color("276777")
+					style.border_color = Color("b4e7df")
+				"pressed":
+					style.bg_color = Color("123c48")
+					style.border_color = Color("f4d796")
+				"disabled":
+					style.bg_color = Color("26383d")
+					style.border_color = Color("597077")
+				"focus":
+					style.bg_color = Color.TRANSPARENT
+					style.border_color = Color("f4d796")
+				_:
+					style.bg_color = Color("194e5b")
+					style.border_color = Color("71b5bb")
+			style.set_border_width_all(2)
+			style.set_corner_radius_all(7)
+			style.set_content_margin_all(8)
+			_font_theme.set_stylebox(state, control_type, style)
+		_font_theme.set_color("font_color", control_type, Color("f4f7ed"))
+		_font_theme.set_color("font_hover_color", control_type, Color.WHITE)
+		_font_theme.set_color("font_pressed_color", control_type, Color("fff0ca"))
+		_font_theme.set_color("font_disabled_color", control_type, Color("a5b6b5"))
 
 
 func _process(_delta: float) -> void:
@@ -1010,6 +1042,8 @@ func _update_mute_button(button: Button) -> void:
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var style := StyleBoxFlat.new()
 		style.bg_color = color.lightened(0.12) if state == "hover" else color.darkened(0.08) if state == "pressed" else color
+		style.border_color = Color("d8f2e4") if state == "hover" or state == "focus" else Color("91cbb0")
+		style.set_border_width_all(2)
 		style.set_corner_radius_all(8)
 		style.set_content_margin_all(8)
 		button.add_theme_stylebox_override(state, style)
