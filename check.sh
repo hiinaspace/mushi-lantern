@@ -18,7 +18,7 @@ else
   exit 127
 fi
 
-"$godot_bin" --headless --xr-mode off --path "$project_dir" --editor --quit
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --import
 "$godot_bin" --headless --xr-mode off --path "$project_dir" --scene res://scenes/test_runner.tscn
 
 

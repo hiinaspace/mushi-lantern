@@ -18,7 +18,7 @@ mushi_gpu_data="$(mktemp -d /tmp/mushi-gpu-data.XXXXXX)"
 trap 'rm -r -- "$mushi_gpu_data"' EXIT
 export XDG_DATA_HOME="$mushi_gpu_data"
 export MUSHI_TEST_DATA_ROOT="$mushi_gpu_data"
-"$godot_bin" --headless --xr-mode off --path "$project_dir" --editor --quit
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --import
 
 run_gpu_check() {
   local script="$1" marker="$2"

@@ -5,7 +5,7 @@ godot_bin="${GODOT_BIN:-$(command -v godot4 || command -v godot)}"
 mushi_env_data="$(mktemp -d /tmp/mushi-environment-check.XXXXXX)"
 trap 'rm -r -- "$mushi_env_data"' EXIT
 export XDG_DATA_HOME="$mushi_env_data"
-"$godot_bin" --headless --xr-mode off --path "$project_dir" --editor --quit
+"$godot_bin" --headless --xr-mode off --path "$project_dir" --import
 run_check() {
   local mode="$1" script="$2" marker="$3"
   shift 3

@@ -30,7 +30,7 @@ else
 fi
 
 if [[ ! -f "$project_dir/.godot/global_script_class_cache.cfg" ]]; then
-  "$godot_bin" --headless --path "$project_dir" --editor --quit
+  "$godot_bin" --headless --path "$project_dir" --import
 fi
 
 # The desktop session can stall on V-Sync presentation. Its 60 FPS cap must not

@@ -24,6 +24,10 @@ window/size/window_width_override=1440
 window/size/window_height_override=900
 window/stretch/mode="canvas_items"
 
+[filesystem]
+
+import/blender/enabled=false
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/terrain_3d/plugin.cfg", "res://addons/Godot-MToon-Shader/plugin.cfg", "res://addons/vrm/plugin.cfg")
