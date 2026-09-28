@@ -17,7 +17,7 @@ python3 scripts/generate_audio_placeholders.py --if-missing
 ./build-support/steam-audio/build-windows.sh
 ./multiplayer-native/build.sh windows-release
 python3 tools/fetch-viseme-runtime.py --platform windows
-windows_prefix="${MUSHI_WINDOWS_MINGW_PREFIX:-$HOME/code/prim/.local/windows/msys/mingw64}"
+windows_prefix="${MUSHI_WINDOWS_MINGW_PREFIX:-$project_dir/.local/windows/msys/mingw64}"
 if [[ ! -f "$windows_prefix/bin/libopus-0.dll" ]]; then
   echo "Windows Opus DLL is missing: $windows_prefix/bin/libopus-0.dll" >&2
   exit 1
@@ -75,6 +75,12 @@ cp bin/windows/onnxruntime.dll "$package_dir/"
 cp bin/windows/onnxruntime_providers_shared.dll "$package_dir/"
 cp "$windows_prefix/bin/libopus-0.dll" "$package_dir/"
 cp scripts/friend-desktop.bat scripts/friend-vr.bat "$package_dir/"
+cp UNLICENSE LICENSES.md CREDITS.md "$package_dir/"
+mkdir -p "$package_dir/licenses/vrm" "$package_dir/licenses/mtoon"
+cp addons/vrm/LICENSE "$package_dir/licenses/vrm/"
+cp addons/Godot-MToon-Shader/LICENSE "$package_dir/licenses/mtoon/"
+cp addons/godot-xr-tools/hands/License.md "$package_dir/licenses/godot-xr-tools/hands-License.md"
+cp addons/godot-xr-tools/editor/icons/LICENSE "$package_dir/licenses/godot-xr-tools/icons-LICENSE"
 cp addons/terrain_3d/LICENSE.txt "$package_dir/licenses/terrain3d/"
 cp addons/godot-xr-tools/LICENSE "$package_dir/licenses/godot-xr-tools/"
 cp build-support/steam-audio/UPSTREAM_EXTENSION_LICENSE.md "$package_dir/licenses/godot-steam-audio/"

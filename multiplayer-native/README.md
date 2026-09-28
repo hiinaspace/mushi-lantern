@@ -10,20 +10,39 @@ OpenLipSync model.
 Build with the project's Rust environment, for example:
 
 ```sh
-nix develop /home/s/code/prim --command ./multiplayer-native/build.sh debug
-nix develop /home/s/code/prim --command ./multiplayer-native/build.sh test
-nix develop /home/s/code/prim --command ./multiplayer-native/build.sh windows-release
-nix develop /home/s/code/prim --command ./build-support/steam-audio/package-windows.sh
+nix develop . --command ./multiplayer-native/build.sh debug
+nix develop . --command ./multiplayer-native/build.sh test
+nix develop . --command ./multiplayer-native/build.sh windows-release
+nix develop . --command ./build-support/steam-audio/package-windows.sh
 ```
 
-The Windows target uses the staged Rust Windows GNU standard library and
-MinGW/Opus toolchain under `/home/s/code/prim/.local/windows` on sayu. Set
-`MUSHI_WINDOWS_MINGW_PREFIX` for another MinGW prefix. The package script
+The Linux environment is provided by the root `flake.nix`; it has no private
+Prim dependency. Build commands use the committed Cargo lockfile.
+
+Windows cross-builds require a Rust toolchain with the
+`x86_64-pc-windows-gnu` standard library plus MinGW GCC and Windows Opus.
+Stage the MinGW prefix at `.local/windows/msys/mingw64`, or set
+`MUSHI_WINDOWS_MINGW_PREFIX=/absolute/path/to/mingw64` for an existing prefix.
+The prefix needs `lib/pkgconfig/opus.pc`, `lib/libopus*`, `bin/libopus-0.dll`
+and `share/licenses/opus/COPYING`. Set `RUSTC` and add MinGW GCC to `PATH` if
+your tools are elsewhere; an optional `.local/windows/rustc` and
+`.local/windows/toolchain/bin` are detected automatically.
+For example, an existing cross-toolchain can be selected without copying it:
+
+```sh
+export MUSHI_WINDOWS_MINGW_PREFIX=/absolute/path/to/mingw64
+export RUSTC=/absolute/path/to/windows-capable/rustc
+export PATH=/absolute/path/to/mingw/bin:$PATH
+nix develop . --command ./build-support/steam-audio/package-windows.sh
+```
+
+There is not yet a turnkey Windows Rust/Opus bootstrap script in this repository.
+The package script
 fetches the SHA-256-pinned ONNX Runtime DLL, exports the Windows GDExtension,
 and includes its required Opus DLL and notices. The packaged executable
 started a private host under Wine; native Windows/OpenXR remains a friend gate.
 
-For the friend build, open the in-game menu and select Room. Enter the same
+For the friend build, open the in-game menu and select Multiplayer. Enter the same
 three-or-more-character code with the desktop keyboard or XR pointer keyboard,
 then choose Host on one machine and Join on the others. Codes are
 case-insensitive. Room hosting skips the singleplayer tutorial and enables
@@ -62,16 +81,13 @@ desktop uses its camera height. Both XR and desktop receive voice but start
 muted. Use `--voice-unmuted` or `MUSHI_VOICE_UNMUTED=1` to transmit from launch
 for testing. Microphone choice, gain, gate threshold and received voice volume
 persist locally; mute resets on launch.
-Avatar fit changes apply when the menu closes so XR pointer placement stays
-stable while dragging its sliders.
+The Comfort tab also offers an immediate standing-height calibration from the current headset height.
 
-For an experimental offline XR broom flight/IK check, run
-`./launch.sh --xr`. Multiplayer enables the gesture while a private room is active.
+Broom flight is enabled only while a multiplayer room is active.
 Hold the staff with both hands,
 then hold both controller triggers for one second, regardless of staff pose.
 Releasing either grip stops flight or starts a controlled landing when high
-above the ground. The flag bypasses the planned grove reward for this run.
-During flight, the Ukon avatar keeps tracked head and arms while its ground leg
+above the ground. During flight, the Ukon avatar keeps tracked head and arms while its ground leg
 animation and foot planting pause. That flight state rides the existing avatar
 pose byte so peers see dangling legs too. The XR Tools hand meshes are hidden while
 the local multiplayer Ukon avatar is present; their hand nodes still provide
@@ -143,4 +159,5 @@ relay identity. With ONNX Runtime available,
 `MUSHI_ONNXRUNTIME_LIBRARY=/path/to/libonnxruntime.so godot --headless --path . -s tests/mushi_viseme_smoke.gd`
 checks inference. Separate-process Godot
 tests exercised pkarr rendezvous and synthetic receiver jitter/loss; relay
-paths, headset behavior, and actual network shaping remain untested.
+paths and actual network shaping still need testing in each intended friend setup.
+Local desktop and XR user checks are separate from these automated checks.

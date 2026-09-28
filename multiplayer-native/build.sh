@@ -3,12 +3,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 case "${1:-release}" in
-  debug) cargo build ;;
-  release) cargo build --release ;;
-  test) cargo test ;;
+  debug) cargo build --locked ;;
+  release) cargo build --locked --release ;;
+  test) cargo test --locked ;;
   windows-debug|windows-release)
     target=x86_64-pc-windows-gnu
-    windows_prefix="${MUSHI_WINDOWS_MINGW_PREFIX:-$HOME/code/prim/.local/windows/msys/mingw64}"
+    windows_prefix="${MUSHI_WINDOWS_MINGW_PREFIX:-$SCRIPT_DIR/../.local/windows/msys/mingw64}"
     if [[ -d "$windows_prefix/lib/pkgconfig" ]]; then
       export PKG_CONFIG_ALLOW_CROSS=1
       export PKG_CONFIG_PATH="$windows_prefix/lib/pkgconfig"
@@ -38,9 +38,9 @@ case "${1:-release}" in
     # the PE ordinal limit. Rust's explicit exports include the GDExtension entry.
     export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,--exclude-all-symbols"
     if [[ "$1" == windows-release ]]; then
-      cargo build --target "$target" --release
+      cargo build --locked --target "$target" --release
     else
-      cargo build --target "$target"
+      cargo build --locked --target "$target"
     fi
     ;;
   *) echo "usage: $0 [debug|release|test|windows-debug|windows-release]" >&2; exit 2 ;;

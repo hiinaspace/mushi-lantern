@@ -15,3 +15,10 @@ __pycache__/
 /assets/forest/ez-tree/*-lod[0-2]_[0-3].png
 /assets/forest/polyhaven/groundcover_audition/*/*_audition_*_1k.jpg
 /assets/forest/polyhaven/groundcover_audition/*/*_audition_*_1k.png
+
+# Local credentials, presentation source and encoder pass records.
+.env
+.env.*
+!.env.example
+/talk/
+/x264_2pass.log*

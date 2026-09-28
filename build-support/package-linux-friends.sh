@@ -21,7 +21,7 @@ for file in libgodot-steam-audio.linux.template_release.x86_64.so libphonon.so; 
 done
 multiplayer_library="$project_dir/multiplayer-native/target/release/libmushi_multiplayer_native.so"
 if [[ ! -s "$multiplayer_library" ]]; then
-  echo "Build the multiplayer release library first: nix develop ../prim --command ./multiplayer-native/build.sh release" >&2
+  echo "Build the multiplayer release library first: nix develop . --command ./multiplayer-native/build.sh release" >&2
   exit 1
 fi
 if [[ ! -s "$project_dir/bin/linux/libonnxruntime.so" ]]; then
@@ -71,6 +71,12 @@ cp bin/linux/libonnxruntime.so bin/linux/libonnxruntime_providers_shared.so "$pa
 cp assets/fonts/DejaVu-LICENSE.txt assets/fonts/KleeOne-OFL.txt \
   "$package_dir/licenses/fonts/"
 install -m 755 scripts/friend-desktop.sh scripts/friend-vr.sh "$package_dir/"
+cp UNLICENSE LICENSES.md CREDITS.md "$package_dir/"
+mkdir -p "$package_dir/licenses/vrm" "$package_dir/licenses/mtoon"
+cp addons/vrm/LICENSE "$package_dir/licenses/vrm/"
+cp addons/Godot-MToon-Shader/LICENSE "$package_dir/licenses/mtoon/"
+cp addons/godot-xr-tools/hands/License.md "$package_dir/licenses/godot-xr-tools/hands-License.md"
+cp addons/godot-xr-tools/editor/icons/LICENSE "$package_dir/licenses/godot-xr-tools/icons-LICENSE"
 cp addons/terrain_3d/LICENSE.txt "$package_dir/licenses/terrain3d/"
 cp addons/godot-xr-tools/LICENSE "$package_dir/licenses/godot-xr-tools/"
 cp build-support/steam-audio/UPSTREAM_EXTENSION_LICENSE.md "$package_dir/licenses/godot-steam-audio/"
