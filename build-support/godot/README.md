@@ -27,3 +27,21 @@ matching the known MinGW route. The helper uses four jobs by default; set
 `JOBS=N` to change the bound. The build applies only this project's audio
 teardown patch and stages the result in the ignored `.local` directory. The
 Windows packaging script runs it automatically before export.
+
+## Linux release export template
+
+`./tools/build-godot-linux-template.sh` uses the same pinned engine source and
+teardown patch, but deliberately does not inherit the nixpkgs editor recipe.
+Upstream built-ins, `use_static_cpp=yes`, and `use_sowrap=yes` keep the normal
+export-template structure. Embree and the other standard engine features are
+retained. Wayland scanner is provided at build time; the upstream-pinned
+AccessKit 0.22.3 static SDK preserves screen-reader support.
+
+`build-support/linux-release-toolchain.nix` pins GCC 11 / glibc 2.35 for the
+release template and Steam Audio wrapper. The main development shell/editor
+pin is unchanged. Nix remains a build tool; the distributed executable uses
+`/lib64/ld-linux-x86-64.so.2` and the user's system libraries.
+
+The package audit rejects unexpected ELF files, new system-library dependencies,
+Nix loader paths, and symbol requirements above the documented baseline. See
+`docs/linux-packaging.md` for the resulting package contract and test evidence.

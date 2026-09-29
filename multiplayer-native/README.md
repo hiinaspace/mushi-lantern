@@ -40,9 +40,9 @@ There is not yet a turnkey Windows Rust/Opus bootstrap script in this repository
 The package script
 fetches the SHA-256-pinned ONNX Runtime DLL, exports the Windows GDExtension,
 and includes its required Opus DLL and notices. The packaged executable
-started a private host under Wine; native Windows/OpenXR remains a friend gate.
+started a private host under Wine; native Windows/OpenXR remains a separate validation gate.
 
-For the friend build, open the in-game menu and select Multiplayer. Enter the same
+For multiplayer, open the in-game menu and select Multiplayer. Enter the same
 three-or-more-character code with the desktop keyboard or XR pointer keyboard,
 then choose Host on one machine and Join on the others. Codes are
 case-insensitive. Room hosting skips the singleplayer tutorial and enables
@@ -161,3 +161,10 @@ checks inference. Separate-process Godot
 tests exercised pkarr rendezvous and synthetic receiver jitter/loss; relay
 paths and actual network shaping still need testing in each intended friend setup.
 Local desktop and XR user checks are separate from these automated checks.
+
+For a packaging-only refresh with **unchanged native source**, pass
+`--reuse-native` to `build-support/steam-audio/package-windows.sh`. This reuses
+the staged multiplayer DLL, while still building the cached patched engine and
+Steam Audio outputs and exporting the current game. The Opus runtime DLL and
+notice must still be staged in the documented prefix; no Rust/MinGW compilation
+is performed in this mode. Do not use this option after changing native code.

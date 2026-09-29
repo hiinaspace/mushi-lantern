@@ -33,7 +33,9 @@ independent rewrite.
 
 The committed `multiplayer-native/Cargo.lock` pins the remaining Rust graph.
 Those crates retain their source licenses and notices. Opus is linked through
-the voice library; binary export scripts collect the Opus runtime notice.
+the voice library. Linux voice currently links it statically; its notice is
+preserved from `audiopus_sys` 0.2.2 at `build-support/OPUS-COPYING` and copied
+into the archive. Windows packaging collects its toolchain Opus notice.
 
 ## Engine and other user-library patches
 

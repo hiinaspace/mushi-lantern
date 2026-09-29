@@ -34,10 +34,11 @@ export_dir="$project_dir/artifacts/export/linux"
 package_dir="$export_dir/package/Mushi-Lantern-Linux"
 archive="$export_dir/Mushi-Lantern-Linux.zip"
 mkdir -p "$export_dir"
-if [[ ! -s "$project_dir/.local/godot-linux-template/bin/linux_release.x86_64" ]]; then
-  "$project_dir/tools/build-godot-linux-template.sh"
-fi
-rm -f -- "$export_dir/mushi-lantern.x86_64" "$export_dir/mushi-lantern.pck"
+"$project_dir/tools/build-godot-linux-template.sh"
+rm -f -- "$export_dir/mushi-lantern.x86_64" "$export_dir/mushi-lantern.pck" \
+  "$export_dir/libterrain.linux.release.x86_64.so" \
+  "$export_dir/libgodot-steam-audio.linux.template_release.x86_64.so" \
+  "$export_dir/libphonon.so" "$export_dir/libmushi_multiplayer_native.so"
 "$godot_bin" --headless --path "$project_dir" --export-release 'Linux Desktop'
 [[ -s "$export_dir/mushi-lantern.x86_64" ]] || { echo "Linux release export missing standalone executable" >&2; exit 1; }
 [[ -s "$export_dir/mushi-lantern.pck" ]] || { echo "Linux release export missing mushi-lantern.pck" >&2; exit 1; }
@@ -57,20 +58,20 @@ mkdir -p "$package_dir/licenses/terrain3d" \
   "$package_dir/licenses/godot-engine"
 cp "$export_dir/mushi-lantern.pck" "$package_dir/"
 install -m 755 "$export_dir/mushi-lantern.x86_64" "$package_dir/"
-mkdir -p "$package_dir/addons/terrain_3d/bin" \
-  "$package_dir/addons/godot-steam-audio/bin" \
-	"$package_dir/multiplayer-native/target/release" \
-	"$package_dir/lib" \
-  "$package_dir/licenses/fonts"
-cp addons/terrain_3d/bin/libterrain.linux.release.x86_64.so \
-  "$package_dir/addons/terrain_3d/bin/"
-cp addons/godot-steam-audio/bin/libgodot-steam-audio.linux.template_release.x86_64.so \
-  addons/godot-steam-audio/bin/libphonon.so "$package_dir/addons/godot-steam-audio/bin/"
-cp "$multiplayer_library" "$package_dir/multiplayer-native/target/release/"
+# Use Godot's normal exported library layout; its Unix loader resolves these
+# beside the executable when the original res:// source path is absent.
+mkdir -p "$package_dir/lib" "$package_dir/licenses/fonts"
+for file in libterrain.linux.release.x86_64.so \
+  libgodot-steam-audio.linux.template_release.x86_64.so \
+  libphonon.so libmushi_multiplayer_native.so; do
+  cp "$export_dir/$file" "$package_dir/"
+done
 cp bin/linux/libonnxruntime.so bin/linux/libonnxruntime_providers_shared.so "$package_dir/lib/"
 cp assets/fonts/DejaVu-LICENSE.txt assets/fonts/KleeOne-OFL.txt \
   "$package_dir/licenses/fonts/"
-install -m 755 scripts/friend-desktop.sh scripts/friend-vr.sh "$package_dir/"
+install -m 755 scripts/play-desktop.sh scripts/play-vr.sh "$package_dir/"
+mkdir -p "$package_dir/licenses/opus"
+cp build-support/OPUS-COPYING "$package_dir/licenses/opus/COPYING"
 cp UNLICENSE LICENSES.md CREDITS.md "$package_dir/"
 mkdir -p "$package_dir/licenses/vrm" "$package_dir/licenses/mtoon"
 cp addons/vrm/LICENSE "$package_dir/licenses/vrm/"
@@ -99,47 +100,30 @@ if [[ -z "$patchelf_bin" ]]; then
   patchelf_bin="$patchelf_out/bin/patchelf"
 fi
 python3 build-support/bundle-linux-runtime.py "$package_dir" --patchelf "$patchelf_bin"
-glibc_dir="${GLIBC_RUNTIME:-}"
-if [[ -z "$glibc_dir" ]]; then
-  mkdir -p .local
-  glibc_dir="$(nix-build build-support/linux-glibc.nix -o .local/linux-glibc --cores "${JOBS:-4}")"
-fi
-python3 build-support/install-linux-glibc.py "$package_dir" --glibc "$glibc_dir" --patchelf "$patchelf_bin"
-# With the bundled loader as /proc/self/exe, Godot looks for this PCK name
-# next to the loader. This template disables --main-pack path overrides.
-mv "$package_dir/mushi-lantern.pck" "$package_dir/lib/ld-linux-x86-64.so.pck"
-# Godot also resolves unpacked GDExtension paths relative to /proc/self/exe.
-mv "$package_dir/addons" "$package_dir/lib/addons"
-mv "$package_dir/multiplayer-native" "$package_dir/lib/multiplayer-native"
-glibc_source="$(nix-instantiate --eval --strict --json --expr '(import ./build-support/linux-glibc.nix {}).src.outPath' | python3 -c 'import json,sys; print(json.load(sys.stdin))')"
-mkdir -p "$package_dir/licenses/glibc"
-tar -xOf "$glibc_source" glibc-2.43/COPYING.LIB > "$package_dir/licenses/glibc/COPYING.LIB"
 cat > "$package_dir/README-Linux.txt" <<'EOF'
-Mushi Lantern Linux x86_64 friend build
+Mushi Lantern — Linux x86_64
 
-Run ./friend-desktop.sh for keyboard and mouse, or ./friend-vr.sh with a
-working OpenXR runtime selected and a headset connected. On Linux, the runtime
-selection is normally provided by the user's OpenXR runtime configuration.
-Both launchers use the same saved game data and start a fresh session. The
-archive includes its standalone game executable; no Godot installation is
-needed.
+Run ./play-desktop.sh for keyboard and mouse, or ./play-vr.sh with a working
+OpenXR runtime selected and a headset connected. Both scripts just select a
+play mode. The executable can also be run directly; Godot is included.
 
-For experimental peer-to-peer multiplayer, open Multiplayer, enter the same code
-(at least three characters) on each computer, then choose Host on one and Join
-on the others. Codes are case-insensitive. The XR menu has a pointer keyboard.
-Mics start muted; use Settings > Voice to choose a mic, adjust levels, and unmute.
+Requires a normal glibc-based Linux desktop: glibc 2.35 or newer, libstdc++
+with GLIBCXX_3.4.29 / CXXABI_1.3.11 or newer, Vulkan graphics drivers, and
+ordinary X11/Wayland and audio libraries. VR requires your own OpenXR runtime.
+NixOS users can use an FHS compatibility environment such as steam-run.
+No private glibc, systemd, SDL or desktop-service libraries are bundled.
 
-The game needs a Vulkan-capable graphics driver. Steam Audio's optional GPU
-utilities may need OpenCL from the graphics driver. Game libraries and a
-matched glibc 2.43 runtime are bundled; graphics drivers and the OpenXR
-runtime come from your Linux install. Third-party notices are in the licenses
-directory.
+The additional native libraries provide Terrain3D, Steam Audio, multiplayer
+and voice, and ONNX-based avatar lip sync. Iroh and the voice Opus codec are
+compiled into the multiplayer extension. lib/ contains the ONNX runtime.
+See native-libraries.json for library purposes, dependencies and ABI checks;
+third-party notices are in licenses/.
 
-Portability smoke: tested on natto (Ubuntu 26.04.1 x86_64) with /nix hidden.
-The game started under isolated Sway/Wayland, rendered through Vulkan 1.4.335
-on AMD Radeon 780M (RADV PHOENIX), and exited cleanly after 240 frames. This
-checks startup, rendering, and exit; it does not qualify headset behavior,
-OpenXR, performance on other hardware, or VR comfort.
+For experimental peer-to-peer multiplayer, open Multiplayer, enter the same
+code (at least three characters) on each computer, then choose Host on one
+and Join on the others. Codes are case-insensitive. Mics start muted; use
+Settings > Voice to choose a mic, adjust levels, and unmute.
+
 EOF
 
 python3 - "$package_dir" "$archive" <<'PY'

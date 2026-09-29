@@ -12,10 +12,22 @@ if [[ -z "$godot_bin" || ! -x "$godot_bin" ]]; then
   exit 127
 fi
 
+reuse_native=false
+if [[ "${1:-}" == "--reuse-native" && "$#" == 1 ]]; then
+  reuse_native=true
+elif [[ "$#" != 0 ]]; then
+  echo "usage: $0 [--reuse-native]" >&2
+  exit 2
+fi
 python3 scripts/generate_audio_placeholders.py --if-missing
 ./tools/build-godot-windows-template.sh
 ./build-support/steam-audio/build-windows.sh
-./multiplayer-native/build.sh windows-release
+if [[ "$reuse_native" == true ]]; then
+  # Packaging-only refresh: callers must have an unchanged, previously built DLL.
+  test -s multiplayer-native/target/x86_64-pc-windows-gnu/release/mushi_multiplayer_native.dll
+else
+  ./multiplayer-native/build.sh windows-release
+fi
 python3 tools/fetch-viseme-runtime.py --platform windows
 windows_prefix="${MUSHI_WINDOWS_MINGW_PREFIX:-$project_dir/.local/windows/msys/mingw64}"
 if [[ ! -f "$windows_prefix/bin/libopus-0.dll" ]]; then
@@ -28,13 +40,21 @@ package_root="$export_dir/package"
 package_dir="$package_root/Mushi Lantern Windows"
 zip_path="$export_dir/Mushi-Lantern-Windows.zip"
 mkdir -p "$export_dir"
+# Remove known export outputs so stale artifacts cannot satisfy the checks.
+for file in mushi-lantern.exe mushi-lantern.pck \
+  libterrain.windows.release.x86_64.dll \
+  libgodot-steam-audio.windows.template_release.x86_64.dll \
+  mushi_multiplayer_native.dll phonon.dll TrueAudioNext.dll GPUUtilities.dll \
+  libmcfgthread-2.dll; do
+  rm -f -- "$export_dir/$file"
+done
 "$godot_bin" --headless --path "$project_dir" --export-release 'Windows OpenXR'
 
 for file in mushi-lantern.exe mushi-lantern.pck \
   libterrain.windows.release.x86_64.dll \
   libgodot-steam-audio.windows.template_release.x86_64.dll \
   mushi_multiplayer_native.dll \
-  phonon.dll TrueAudioNext.dll GPUUtilities.dll libmcfgthread-2.dll phonon.lib; do
+  phonon.dll TrueAudioNext.dll GPUUtilities.dll libmcfgthread-2.dll; do
   if [[ ! -f "$export_dir/$file" ]]; then
     echo "Windows export is missing required file: $file" >&2
     exit 1
@@ -61,20 +81,19 @@ mkdir -p "$package_dir/licenses/terrain3d" \
   "$package_dir/licenses/opus" \
   "$package_dir/licenses/godot-engine"
 
-cp "$export_dir/mushi-lantern.exe" "$export_dir/mushi-lantern.pck" \
-  "$export_dir"/*.dll "$export_dir/phonon.lib" "$package_dir/"
-# GDExtension loads this library by the res:// path declared in
-# mushi_multiplayer.gdextension. Keep a loose copy at that package-relative
-# path; the root copy remains alongside the other runtime DLLs for Windows
-# dependency resolution.
-windows_extension_dir="$package_dir/multiplayer-native/target/x86_64-pc-windows-gnu/release"
-mkdir -p "$windows_extension_dir"
-cp "$export_dir/mushi_multiplayer_native.dll" \
-  "$windows_extension_dir/mushi_multiplayer_native.dll"
+# Explicit runtime inventory: no import libraries, stale DLLs or duplicate
+# source-tree layouts. Godot's Windows loader resolves extensions beside the EXE.
+for file in mushi-lantern.exe mushi-lantern.pck \
+  libterrain.windows.release.x86_64.dll \
+  libgodot-steam-audio.windows.template_release.x86_64.dll \
+  mushi_multiplayer_native.dll phonon.dll TrueAudioNext.dll GPUUtilities.dll \
+  libmcfgthread-2.dll; do
+  cp "$export_dir/$file" "$package_dir/"
+done
 cp bin/windows/onnxruntime.dll "$package_dir/"
 cp bin/windows/onnxruntime_providers_shared.dll "$package_dir/"
 cp "$windows_prefix/bin/libopus-0.dll" "$package_dir/"
-cp scripts/friend-desktop.bat scripts/friend-vr.bat "$package_dir/"
+cp scripts/play-desktop.bat scripts/play-vr.bat "$package_dir/"
 cp UNLICENSE LICENSES.md CREDITS.md "$package_dir/"
 mkdir -p "$package_dir/licenses/vrm" "$package_dir/licenses/mtoon"
 cp addons/vrm/LICENSE "$package_dir/licenses/vrm/"
@@ -113,9 +132,9 @@ cp build-support/godot/licenses/LICENSE.txt \
   "$package_dir/licenses/godot-engine/"
 
 cat > "$package_dir/README-Windows.txt" <<'EOF'
-Mushi Lantern Windows x86_64 friend build
+Mushi Lantern Windows x86_64
 
-Run friend-desktop.bat for keyboard and mouse, or friend-vr.bat with a working
+Run play-desktop.bat for keyboard and mouse, or play-vr.bat with a working
 Windows OpenXR runtime selected and a headset connected. Both launchers use
 the same saved game data and start a fresh session.
 
@@ -127,10 +146,11 @@ Mics start muted; use Settings > Voice to choose a mic, adjust levels, and unmut
 This package is exported on Linux. It has not been validated on a native
 Windows headset.
 
-The Steam Audio SDK's optional TrueAudioNext/GPU utilities import the Microsoft
-Visual C++ 2015-2022 x64 runtime and OpenCL.dll. Install the latest supported
-Microsoft Visual C++ Redistributable (x64) if it is missing. OpenCL.dll is
-provided by the graphics driver. The Microsoft redistributable is not bundled.
+Avatar lip sync (ONNX Runtime) and Steam Audio's optional TrueAudioNext/GPU
+utilities require the Microsoft Visual C++ 2015-2022 x64 runtime. Install the
+Microsoft Visual C++ Redistributable (x64) if it is missing. The optional GPU
+utilities also need OpenCL.dll from the graphics driver. The Microsoft
+redistributable and OpenCL driver are not bundled.
 
 Third-party license notices are in the licenses directory.
 EOF

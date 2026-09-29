@@ -97,10 +97,18 @@ to guess. See [native transport, voice and build notes](multiplayer-native/READM
 ```bash
 ./tools/build-steam-audio-release.sh
 nix develop . --command ./multiplayer-native/build.sh release
-./build-support/package-linux-friends.sh
+./build-support/package-linux.sh
 ```
 
-Linux packaging builds the matching export template and bundles its runtime.
+Linux packaging builds the matching patched export template with upstream
+built-in libraries and uses the host's ordinary Linux runtime. The package
+requires glibc 2.35+, the GCC 11 C++ runtime (GLIBCXX 3.4.29 / CXXABI 1.3.11),
+a Vulkan driver, and normal desktop audio/window libraries. VR additionally
+requires a configured OpenXR runtime. NixOS users can use `steam-run` or an
+appropriate FHS environment. `play-desktop.sh` and `play-vr.sh` only select the
+play mode; they do not substitute a loader or runtime.
+See [Linux packaging and validation](docs/linux-packaging.md) for the native
+library inventory and build baseline.
 Windows packaging requires a separately staged Windows GNU Rust/MinGW/Opus
 toolchain; its environment variables and package command are documented in the
 [native build notes](multiplayer-native/README.md). Exported desktop and VR

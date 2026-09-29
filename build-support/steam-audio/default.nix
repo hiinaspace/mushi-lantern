@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, stdenv ? pkgs.stdenv }:
 let
   sdk = pkgs.fetchzip {
     url = "https://github.com/ValveSoftware/steam-audio/releases/download/v4.8.1/steamaudio_4.8.1.zip";
@@ -17,7 +17,7 @@ let
       "Resource" "SphereMesh" "SphereShape3D" "Thread"
     ];
   });
-in pkgs.stdenv.mkDerivation {
+in stdenv.mkDerivation {
   pname = "godot-steam-audio";
   version = "8f65c29-sdk-4.8.1";
   src = pkgs.fetchzip {
@@ -32,7 +32,7 @@ in pkgs.stdenv.mkDerivation {
     ./patches/0005-point-source-binaural.patch
   ];
   nativeBuildInputs = with pkgs; [ cmake ninja python3 autoPatchelfHook ];
-  buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+  buildInputs = [ stdenv.cc.cc.lib ];
   postPatch = ''
     cp ${./CMakeLists.txt} CMakeLists.txt
   '';

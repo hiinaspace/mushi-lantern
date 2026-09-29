@@ -1,7 +1,7 @@
 class_name FriendMenu
 extends CanvasLayer
 
-## Small player-facing menu for friend builds. Game-specific reset/settings
+## Small player-facing game menu. Game-specific reset/settings
 ## behavior stays in the main scene and is connected through these signals.
 signal new_game_requested
 signal settings_requested
